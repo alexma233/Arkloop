@@ -130,11 +130,7 @@ export function TopLevelCopToolBlock({
   activeCodeExecutionId?: string
 }) {
   if (entry.kind === 'todo') {
-    return (
-      <RootToolFrame toolName={entry.item.toolName}>
-        <TodoListCard todo={entry.item} />
-      </RootToolFrame>
-    )
+    return <TodoListCard todo={entry.item} />
   }
 
   if (entry.kind === 'file') {
