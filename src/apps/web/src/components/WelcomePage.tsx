@@ -205,7 +205,6 @@ export function WelcomePage() {
     const handleWorkFolderChange = () => {
       const nextFolder = readWorkFolder()
       setWorkFolder(nextFolder)
-      if (appMode === 'work' && nextFolder?.trim()) setRightPanelVisible(true)
     }
     const handleStorageChange = () => {
       setWorkFolder(readWorkFolder())
@@ -479,7 +478,7 @@ export function WelcomePage() {
 
   return (
     <div className="flex h-full min-w-0 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* 顶部 header */}
         <div className="relative z-10 flex min-h-[51px] items-center justify-end gap-2 px-[15px] py-[15px]">
           {!isDesktop() && (
@@ -502,12 +501,13 @@ export function WelcomePage() {
         </div>
 
         <div
-          className="flex flex-1 flex-col items-center"
+          className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain"
           style={{
             paddingTop: appMode === 'work' ? '32vh' : '27vh',
+            paddingBottom: appMode === 'work' ? '28vh' : '18vh',
             paddingLeft: 'calc(20px + var(--main-content-axis-padding-left, 0px))',
             paddingRight: 'calc(20px + var(--main-content-axis-padding-right, 0px))',
-            transition: 'padding-top 0.38s cubic-bezier(0.16, 1, 0.3, 1)',
+            transition: 'padding-top 0.38s cubic-bezier(0.16, 1, 0.3, 1), padding-bottom 0.38s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
         {/* 标题：三层绝对定位交叉淡出 */}
