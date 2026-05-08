@@ -5,6 +5,7 @@ import { getDesktopApi } from '@arkloop/shared/desktop'
 import { iconButtonSmCls } from '../buttonStyles'
 import { DropdownAction } from '../DropdownAction'
 import { openExternal } from '../../openExternal'
+import { useLocale } from '../../contexts/LocaleContext'
 import type { BrowserResourceRef } from './types'
 import { browserFaviconUrl, browserTitleFromUrl, displayBrowserUrl, normalizeBrowserUrl } from './browserIdentity'
 import { BrowserSiteIcon } from './BrowserSiteIcon'
@@ -110,6 +111,8 @@ function withCacheBust(url: string): string {
 }
 
 export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Props) {
+  const { t } = useLocale()
+  const text = t.browserPanel
   const initialUrl = useMemo(() => normalizeBrowserUrl(resource.url), [resource.url])
   const saved = useMemo(readSavedState, [])
   const [currentUrl, setCurrentUrl] = useState(initialUrl ?? '')
@@ -168,7 +171,7 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
     if (!nextUrl) return
     if (nextUrl === currentUrl) return
     const nextResource = resourceFromUrl(nextUrl)
-    const entry = { ...nextResource, at: Date.now() }
+    const entry = historyEntryFromResource(nextResource)
     const nextHistory = replace
       ? history.map((item, index) => index === historyIndex ? entry : item)
       : upsertHistoryEntry(history, entry)
@@ -296,32 +299,32 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
   return (
     <section
       className="browser-panel"
-      aria-label="Browser preview"
+      aria-label={text.preview}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div className="browser-panel__toolbar">
         <button
           type="button"
-          title="History"
+          title={text.history}
           aria-pressed={historyOpen}
           onClick={() => setHistoryOpen((open) => !open)}
           className={`${iconButtonSmCls} browser-panel__tool${historyOpen ? ' browser-panel__tool--active' : ''}`}
         >
           <List size={15} />
         </button>
-        <button type="button" title="Back" disabled={historyIndex === 0} onClick={goBack} className={`${iconButtonSmCls} browser-panel__tool`}>
+        <button type="button" title={text.back} disabled={historyIndex === 0} onClick={goBack} className={`${iconButtonSmCls} browser-panel__tool`}>
           <ArrowLeft size={15} />
         </button>
-        <button type="button" title="Forward" disabled={historyIndex >= history.length - 1} onClick={goForward} className={`${iconButtonSmCls} browser-panel__tool`}>
+        <button type="button" title={text.forward} disabled={historyIndex >= history.length - 1} onClick={goForward} className={`${iconButtonSmCls} browser-panel__tool`}>
           <ArrowRight size={15} />
         </button>
-        <button type="button" title="Reload" disabled={!hasPage} onClick={() => reload(false)} className={`${iconButtonSmCls} browser-panel__tool`}>
+        <button type="button" title={text.reload} disabled={!hasPage} onClick={() => reload(false)} className={`${iconButtonSmCls} browser-panel__tool`}>
           <RefreshCw size={15} className={loading ? 'browser-panel__spin' : undefined} />
         </button>
         <button
           type="button"
-          title={bookmarked ? 'Remove Bookmark' : 'Bookmark'}
+          title={bookmarked ? text.removeBookmark : text.bookmark}
           disabled={!hasPage}
           aria-pressed={bookmarked}
           onClick={toggleBookmark}
@@ -341,18 +344,18 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
           <input
             value={address}
             onChange={(event) => setAddress(event.target.value)}
-            placeholder="Search or enter URL"
+            placeholder={text.addressPlaceholder}
             spellCheck={false}
             className="browser-panel__address-input"
           />
         </form>
-        <button type="button" title="Open External" disabled={!hasPage} onClick={() => openExternal(currentUrl)} className={`${iconButtonSmCls} browser-panel__tool`}>
+        <button type="button" title={text.openExternal} disabled={!hasPage} onClick={() => openExternal(currentUrl)} className={`${iconButtonSmCls} browser-panel__tool`}>
           <ExternalLink size={15} />
         </button>
         <div ref={menuRef} className="browser-panel__menu-wrap">
           <button
             type="button"
-            title="More"
+            title={text.more}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             className={`${iconButtonSmCls} browser-panel__tool${menuOpen ? ' browser-panel__tool--active' : ''}`}
@@ -360,18 +363,18 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
             <MoreHorizontal size={16} />
           </button>
           <div className="browser-panel__menu" data-open={menuOpen}>
-            <DropdownAction icon={<RefreshCw size={14} />} label="Hard Reload" disabled={!hasPage} onClick={() => { reload(true); setMenuOpen(false) }} />
-            <DropdownAction icon={<Copy size={14} />} label="Copy Current URL" disabled={!hasPage} onClick={copyCurrentUrl} />
+            <DropdownAction icon={<RefreshCw size={14} />} label={text.hardReload} disabled={!hasPage} onClick={() => { reload(true); setMenuOpen(false) }} />
+            <DropdownAction icon={<Copy size={14} />} label={text.copyCurrentUrl} disabled={!hasPage} onClick={copyCurrentUrl} />
             <DropdownAction
               icon={<Star size={14} />}
-              label={showBookmarkBar ? 'Hide Bookmark Bar' : 'Show Bookmark Bar'}
+              label={showBookmarkBar ? text.hideBookmarkBar : text.showBookmarkBar}
               onClick={() => { setShowBookmarkBar((show) => !show); setMenuOpen(false) }}
             />
-            <DropdownAction icon={<Trash2 size={14} />} label="Clear Browsing History" disabled={history.length === 0} onClick={() => { clearHistory(); setMenuOpen(false) }} />
+            <DropdownAction icon={<Trash2 size={14} />} label={text.clearBrowsingHistory} disabled={history.length === 0} onClick={() => { clearHistory(); setMenuOpen(false) }} />
           </div>
         </div>
         {onClose ? (
-          <button type="button" title="Close" onClick={onClose} className={`${iconButtonSmCls} browser-panel__tool`}>
+          <button type="button" title={text.close} onClick={onClose} className={`${iconButtonSmCls} browser-panel__tool`}>
             <X size={15} />
           </button>
         ) : null}
@@ -403,11 +406,11 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
         <aside className={`browser-panel__history${historyOpen ? '' : ' browser-panel__history--closed'}`}>
           <div className="browser-panel__search">
             <Search size={14} aria-hidden="true" />
-            <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search" />
+            <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder={text.search} />
           </div>
           <div className="browser-panel__history-list">
             {filteredHistory.length === 0 ? (
-              <div className="browser-panel__empty">No history</div>
+              <div className="browser-panel__empty">{text.noHistory}</div>
             ) : filteredHistory.map((item) => (
               <Button
                 key={`${item.at}:${item.url}`}
@@ -429,7 +432,7 @@ export function BrowserResourcePanel({ resource, onClose, onResourceChange }: Pr
           {history.length > 1 ? (
             <Button variant="ghost" size="sm" className="browser-panel__clear" onClick={clearHistory}>
               <Trash2 size={13} />
-              <span>Clear</span>
+              <span>{text.clear}</span>
             </Button>
           ) : null}
         </aside>

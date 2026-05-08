@@ -31,7 +31,7 @@ function formatSize(size?: number): string {
 
 function getResourceFilename(resource: ResourceRef): string {
   const pathName = 'path' in resource ? resource.path.split('/').filter(Boolean).at(-1) : undefined
-  return resource.filename ?? ('name' in resource ? resource.name : undefined) ?? ('title' in resource ? resource.title : undefined) ?? pathName ?? 'Preview'
+  return ('filename' in resource ? resource.filename : undefined) ?? ('name' in resource ? resource.name : undefined) ?? ('title' in resource ? resource.title : undefined) ?? pathName ?? 'Preview'
 }
 
 export function ResourcePreviewPanel({ resource, accessToken, artifacts, runId, onClose, onResourceChange }: Props) {

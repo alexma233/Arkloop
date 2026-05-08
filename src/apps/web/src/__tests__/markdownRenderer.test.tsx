@@ -301,6 +301,44 @@ describe('MarkdownRenderer', () => {
     }
   })
 
+  it('file URI 点击应打开任意本地 markdown resource', async () => {
+    const onOpenResource = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    try {
+      await act(async () => {
+        root.render(
+          <LocaleProvider>
+            <MarkdownRenderer
+              content="[Plan](file:///Users/dev/.arkloop/home/plans/thread-1.md)"
+              onOpenResource={onOpenResource}
+            />
+          </LocaleProvider>,
+        )
+      })
+
+      const button = container.querySelector('button')
+      expect(button).not.toBeNull()
+
+      await act(async () => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      const resource = onOpenResource.mock.calls[0]?.[0] as ResourceRef
+      expect(resource).toMatchObject({
+        kind: 'local-file',
+        rootPath: '/Users/dev/.arkloop/home/plans',
+        path: 'thread-1.md',
+        mimeType: 'text/markdown',
+      })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
   it('browser URI 点击应打开 browser resource，普通 HTTP 链接仍保持外部链接', async () => {
     const originalArkloop = window.arkloop
     const openExternal = vi.fn().mockResolvedValue(undefined)

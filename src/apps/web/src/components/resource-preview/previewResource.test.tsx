@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
+import { LocaleProvider } from '../../contexts/LocaleContext'
 import { PreviewResourceView } from './PreviewResourceView'
 import { ResourcePreviewPanel } from './ResourcePreviewPanel'
 import { getPreviewRendererKind } from './rendererKind'
@@ -29,11 +30,21 @@ function preview(source: PreviewResource['source'], mimeType: string, filename: 
       ? { kind: source, source, key: `${source}-key`, filename }
       : source === 'local-file'
         ? { kind: source, source, rootPath: '/root', path: filename }
-        : { kind: source, source, path: filename, runId: 'run-1' },
+        : source === 'workspace-file'
+          ? { kind: source, source, path: filename, runId: 'run-1' }
+          : { kind: source, source, url: `https://example.com/${filename}` },
     mimeType,
     filename,
     text: 'hello',
   }
+}
+
+function LocalizedResourcePreviewPanel(props: ComponentProps<typeof ResourcePreviewPanel>) {
+  return (
+    <LocaleProvider>
+      <ResourcePreviewPanel {...props} />
+    </LocaleProvider>
+  )
 }
 
 function setInputValue(input: HTMLInputElement, value: string): void {
@@ -87,7 +98,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: 'http://localhost:5173/app', title: 'localhost' }}
           />,
@@ -98,7 +109,7 @@ describe('resource preview renderer registry', () => {
       const input = container.querySelector('input.browser-panel__address-input') as HTMLInputElement | null
       expect(iframe).not.toBeNull()
       expect(iframe?.getAttribute('src')).toBe('http://localhost:5173/app')
-      expect(input?.placeholder).toBe('Search or enter URL')
+      expect(input?.placeholder).toBe('搜索或输入 URL')
       expect(openMock).not.toHaveBeenCalled()
     } finally {
       act(() => root.unmount())
@@ -115,7 +126,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: '', title: 'Web' }}
           />,
@@ -140,7 +151,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: 'http://localhost:5173/app', title: 'localhost' }}
           />,
@@ -191,7 +202,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: '', title: 'Web' }}
             onResourceChange={onResourceChange}
@@ -236,7 +247,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: 'https://example.com', title: 'example.com' }}
             onResourceChange={onResourceChange}
@@ -264,7 +275,7 @@ describe('resource preview renderer registry', () => {
     const firstRoot = createRoot(first)
 
     await act(async () => {
-      firstRoot.render(<ResourcePreviewPanel accessToken="token" resource={{ kind: 'browser', url: '', title: 'Web' }} />)
+      firstRoot.render(<LocalizedResourcePreviewPanel accessToken="token" resource={{ kind: 'browser', url: '', title: 'Web' }} />)
     })
     const firstForm = first.querySelector('form.browser-panel__address') as HTMLFormElement
     const firstInput = first.querySelector('input.browser-panel__address-input') as HTMLInputElement
@@ -282,7 +293,7 @@ describe('resource preview renderer registry', () => {
     const secondRoot = createRoot(second)
     try {
       await act(async () => {
-        secondRoot.render(<ResourcePreviewPanel accessToken="token" resource={{ kind: 'browser', url: '', title: 'Web' }} />)
+        secondRoot.render(<LocalizedResourcePreviewPanel accessToken="token" resource={{ kind: 'browser', url: '', title: 'Web' }} />)
       })
 
       expect(second.querySelector('.browser-panel__history-list')?.textContent).toContain('example.com')
@@ -302,7 +313,7 @@ describe('resource preview renderer registry', () => {
     try {
       await act(async () => {
         root.render(
-          <ResourcePreviewPanel
+          <LocalizedResourcePreviewPanel
             accessToken="token"
             resource={{ kind: 'browser', url: 'http://xn--yeto2zmxe103c.fun/', title: '清风小栈.fun' }}
           />,

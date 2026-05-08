@@ -288,13 +288,8 @@ export function DesktopTitleBar({
           {onToggleRightPanel && (
             <button
               onClick={onToggleRightPanel}
-              title="Right panel"
-              className={[
-                'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
-                rightPanelOpen
-                  ? 'bg-[var(--c-bg-deep)] text-[var(--c-text-primary)]'
-                  : 'text-[var(--c-text-tertiary)] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]',
-              ].join(' ')}
+              title={t.rightPanel.toggle}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
             >
               {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
             </button>

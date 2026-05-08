@@ -46,6 +46,34 @@ export interface LocaleStrings {
   letGo: string;
   // project view
   projectUnassigned: string;
+  rightPanel: {
+    empty: string;
+    toggle: string;
+    newTab: string;
+    browser: string;
+    files: string;
+  };
+  browserPanel: {
+    preview: string;
+    history: string;
+    back: string;
+    forward: string;
+    reload: string;
+    bookmark: string;
+    removeBookmark: string;
+    addressPlaceholder: string;
+    openExternal: string;
+    more: string;
+    hardReload: string;
+    copyCurrentUrl: string;
+    showBookmarkBar: string;
+    hideBookmarkBar: string;
+    clearBrowsingHistory: string;
+    close: string;
+    search: string;
+    noHistory: string;
+    clear: string;
+  };
   // settings nav
   nav: {
     account: string;

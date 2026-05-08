@@ -102,6 +102,16 @@ function relativeLocalPath(rootPath: string, filePath: string): string | null {
   return file.slice(prefix.length)
 }
 
+function splitAbsoluteLocalPath(path: string): { rootPath: string; path: string } | null {
+  const normalized = normalizeAbsolutePath(path)
+  const slashIndex = normalized.lastIndexOf('/')
+  if (slashIndex <= 0) return null
+  return {
+    rootPath: normalized.slice(0, slashIndex),
+    path: normalized.slice(slashIndex + 1),
+  }
+}
+
 export function filePathToResourceRef(
   value: string,
   options: {
@@ -145,7 +155,17 @@ export function filePathToResourceRef(
     }
   }
 
-  return null
+  const localPath = splitAbsoluteLocalPath(path)
+  if (!localPath) return null
+  const filename = filenameFromPath(localPath.path)
+  return {
+    kind: 'local-file',
+    rootPath: localPath.rootPath,
+    path: localPath.path,
+    filename,
+    name: filename,
+    mimeType: normalizeMimeType(guessMimeType(localPath.path), filename),
+  }
 }
 
 export function resourceUriToResourceRef(

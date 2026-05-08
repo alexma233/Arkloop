@@ -105,7 +105,7 @@ async function loadFetchResource(
   const contentLength = Number(response.headers.get('content-length') ?? '')
   const size = Number.isFinite(contentLength) && contentLength >= 0 ? contentLength : undefined
   const blob = await response.blob()
-  return blobToPreviewResource(ref, blob, mimeType, filename, ref.size ?? size)
+  return blobToPreviewResource(ref, blob, mimeType, filename, ('size' in ref ? ref.size : undefined) ?? size)
 }
 
 async function loadArtifact(

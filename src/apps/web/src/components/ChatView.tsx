@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, memo, Fragment, type ComponentProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, CornerDownLeft, Pencil, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, CornerDownLeft, Globe2, Pencil, Trash2 } from 'lucide-react'
 import { AutoResizeTextarea, DebugTrigger } from '@arkloop/shared'
 import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
 import { RunDetailPanel } from './RunDetailPanel'
@@ -868,7 +868,9 @@ export const ChatView = memo(function ChatView() {
   const [rightPanelTabs, setRightPanelTabs] = useState<RightPanelStoredTab[]>([])
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null)
   const [webPanelResource, setWebPanelResource] = useState<BrowserResourceRef | null>(null)
+  const [extraBrowserTabs, setExtraBrowserTabs] = useState<Array<{ id: string; resource: BrowserResourceRef | null }>>([])
   const [filesPreviewResource, setFilesPreviewResource] = useState<LocalFileResourceRef | null>(null)
+  const browserTabSeqRef = useRef(0)
   const localFileTabSeqRef = useRef(0)
   const isPanelOpenRef = useRef(false)
   const effectiveRightPanelTabIdRef = useRef<string | null>(null)
@@ -2260,10 +2262,7 @@ export const ChatView = memo(function ChatView() {
   const sourcePanelSources = sourcePanelMessageId ? resolvedMessageSources.get(sourcePanelMessageId) : undefined
   const workPanelFolder = threadId ? resolveThreadWorkFolder(threadId) : undefined
   const isSourcePanelOpen = !!(sourcePanelSources && sourcePanelSources.length > 0)
-  const hasRightPanelContent = !!workPanelFolder?.trim() || rightPanelTabs.some((tab) => (
-    tab.kind !== 'source' || (resolvedMessageSources.get(tab.messageId)?.length ?? 0) > 0
-  ))
-  const isPanelOpen = rightPanelVisible && hasRightPanelContent
+  const isPanelOpen = rightPanelVisible
 
   useEffect(() => {
     if (activePanel) setRightPanelVisible(true)
@@ -2275,14 +2274,10 @@ export const ChatView = memo(function ChatView() {
 
   useEffect(() => {
     setTitleBarRightPanelClick(() => {
-      if (!hasRightPanelContent) {
-        setRightPanelVisible(false)
-        return
-      }
       setRightPanelVisible((visible) => !visible)
     })
     return () => setTitleBarRightPanelClick(null)
-  }, [hasRightPanelContent, setTitleBarRightPanelClick])
+  }, [setTitleBarRightPanelClick])
 
   useEffect(() => {
     if (!isPanelOpen) return
@@ -2356,6 +2351,11 @@ export const ChatView = memo(function ChatView() {
       setActiveRightPanelTabId('web')
       return
     }
+    if (id.startsWith('web:')) {
+      setExtraBrowserTabs((current) => current.filter((tab) => tab.id !== id))
+      setActiveRightPanelTabId((activeId) => activeId === id ? 'web' : activeId)
+      return
+    }
     setRightPanelTabs((current) => {
       const index = current.findIndex((item) => item.id === id)
       if (index < 0) return current
@@ -2374,6 +2374,19 @@ export const ChatView = memo(function ChatView() {
       return next
     })
   }, [activePanel, closePanel, setCodePanelExecution, setDocumentPanelArtifact, setSourcePanelMessageId, workPanelFolder])
+
+  const setBrowserResourceForCurrentTab = useCallback((resource: BrowserResourceRef) => {
+    const activeId = effectiveRightPanelTabIdRef.current
+    if (activeId?.startsWith('web:')) {
+      setExtraBrowserTabs((current) => current.map((tab) => (
+        tab.id === activeId ? { ...tab, resource } : tab
+      )))
+      setActiveRightPanelTabId(activeId)
+      return
+    }
+    setWebPanelResource(resource)
+    setActiveRightPanelTabId('web')
+  }, [])
 
   useEffect(() => {
     if (isSourcePanelOpen && sourcePanelMessageId) {
@@ -2413,8 +2426,7 @@ export const ChatView = memo(function ChatView() {
   useEffect(() => {
     if (resourcePanelResource) {
       if (resourcePanelResource.kind === 'browser') {
-        setWebPanelResource(resourcePanelResource)
-        setActiveRightPanelTabId('web')
+        setBrowserResourceForCurrentTab(resourcePanelResource)
         return
       }
       const tabId = resourceTabId(resourcePanelResource)
@@ -2436,20 +2448,20 @@ export const ChatView = memo(function ChatView() {
       })
       setActiveRightPanelTabId(tabId)
     }
-  }, [resourcePanelResource])
+  }, [resourcePanelResource, setBrowserResourceForCurrentTab])
 
   const rightPanelRenderedTabs = useMemo<RightPanelTab[]>(() => {
     const tabs: RightPanelTab[] = []
     tabs.push({
       id: 'web',
       kind: 'web',
-      title: webPanelResource ? resourceTitle(webPanelResource) : 'Web',
+      title: webPanelResource ? resourceTitle(webPanelResource) : t.rightPanel.browser,
       closable: !!webPanelResource,
       hideTitle: !webPanelResource,
       icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} />,
       content: (
         <ResourcePreviewPanel
-          resource={webPanelResource ?? { kind: 'browser', url: '', title: 'Web' }}
+          resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
           accessToken={accessToken}
           onResourceChange={(resource) => {
             if (resource.kind === 'browser') setWebPanelResource(resource)
@@ -2457,8 +2469,30 @@ export const ChatView = memo(function ChatView() {
         />
       ),
     })
+    for (const browserTab of extraBrowserTabs) {
+      tabs.push({
+        id: browserTab.id,
+        kind: 'web',
+        title: browserTab.resource ? resourceTitle(browserTab.resource) : t.rightPanel.browser,
+        closable: true,
+        hideTitle: !browserTab.resource,
+        icon: <BrowserSiteIcon url={browserTab.resource?.url} faviconUrl={browserTab.resource?.faviconUrl} />,
+        content: (
+          <ResourcePreviewPanel
+            resource={browserTab.resource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
+            accessToken={accessToken}
+            onResourceChange={(resource) => {
+              if (resource.kind !== 'browser') return
+              setExtraBrowserTabs((current) => current.map((tab) => (
+                tab.id === browserTab.id ? { ...tab, resource } : tab
+              )))
+            }}
+          />
+        ),
+      })
+    }
     if (workPanelFolder?.trim()) {
-      const filesPreviewTitle = filesPreviewResource ? resourceTitle(filesPreviewResource) : 'Files'
+      const filesPreviewTitle = filesPreviewResource ? resourceTitle(filesPreviewResource) : t.rightPanel.files
       tabs.push({
         id: 'files',
         kind: 'files',
@@ -2567,10 +2601,13 @@ export const ChatView = memo(function ChatView() {
     accessToken,
     closePanel,
     closeRightPanelTab,
+    extraBrowserTabs,
     filesPreviewResource,
     pinLocalFileResource,
     resolvedMessageSources,
     rightPanelTabs,
+    t.rightPanel.browser,
+    t.rightPanel.files,
     webPanelResource,
     workPanelFolder,
   ])
@@ -2580,6 +2617,21 @@ export const ChatView = memo(function ChatView() {
     : rightPanelRenderedTabs[0]?.id ?? null
   isPanelOpenRef.current = isPanelOpen
   effectiveRightPanelTabIdRef.current = effectiveRightPanelTabId
+
+  const rightPanelAddOptions = useMemo(() => [
+    {
+      id: 'web',
+      label: t.rightPanel.browser,
+      icon: <Globe2 size={14} />,
+      onSelect: () => {
+        const id = `web:${browserTabSeqRef.current + 1}`
+        browserTabSeqRef.current += 1
+        setExtraBrowserTabs((current) => [...current, { id, resource: null }])
+        setRightPanelVisible(true)
+        setActiveRightPanelTabId(id)
+      },
+    },
+  ], [t.rightPanel.browser])
 
   const openCodePanel = useCallback((ce: CodeExecution) => {
     const tabId = `code:${ce.id}`
@@ -2619,9 +2671,8 @@ export const ChatView = memo(function ChatView() {
   const openResourcePanel = useCallback((resource: ResourceRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => {
     stabilizeDocumentPanelScroll(options?.trigger)
     if (resource.kind === 'browser') {
-      setWebPanelResource(resource)
+      setBrowserResourceForCurrentTab(resource)
       setRightPanelVisible(true)
-      setActiveRightPanelTabId('web')
       return
     }
     const tabId = resourceTabId(resource)
@@ -2652,7 +2703,7 @@ export const ChatView = memo(function ChatView() {
       runId: options?.runId,
     })
     openResourcePanelState(resource)
-  }, [closeRightPanelTab, openResourcePanelState, resourcePanelResource, stabilizeDocumentPanelScroll, upsertRightPanelTab])
+  }, [closeRightPanelTab, openResourcePanelState, resourcePanelResource, setBrowserResourceForCurrentTab, stabilizeDocumentPanelScroll, upsertRightPanelTab])
 
   // COP step 计数：timeline 中所有非 finished 的点
   const dedupedTopLevelCodeExecutions = useMemo(() => {
@@ -3306,6 +3357,9 @@ export const ChatView = memo(function ChatView() {
           activeTabId={effectiveRightPanelTabId}
           onSelectTab={setActiveRightPanelTabId}
           onCloseTab={closeRightPanelTab}
+          addOptions={rightPanelAddOptions}
+          addLabel={t.rightPanel.newTab}
+          emptyLabel={t.rightPanel.empty}
         />
       </motion.div>
       </div>
