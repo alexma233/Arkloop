@@ -106,7 +106,8 @@ export function PersonaModelBar({
   const effectiveFolderMenuOpen = folderMenuOpen && showWorkFolderPicker
   const currentThread = workThreadId ? threads.find((thread) => thread.id === workThreadId) ?? null : null
   const showLearningMode = learningModeEnabled || Boolean(onToggleLearningMode)
-  const showPlanMode = isWorkMode && planMode && Boolean(onTogglePlanMode)
+  const showPlanModeMenuItem = isWorkMode && Boolean(onTogglePlanMode)
+  const showPlanMode = showPlanModeMenuItem && planMode
   const learningModeDisabled = learningModeUpdating || !onToggleLearningMode
   const togglePlanMode = useCallback(() => {
     if (!onTogglePlanMode) return
@@ -384,28 +385,49 @@ export function PersonaModelBar({
                     <Paperclip size={14} style={{ color: 'var(--c-text-secondary)', flexShrink: 0 }} />
                     {t.addFromLocal}
                   </button>
-                  {showLearningMode && (
+                  {(showPlanModeMenuItem || showLearningMode) && (
                     <>
                       <div style={{ height: '1px', background: 'var(--c-border-subtle)', margin: '2px 4px' }} />
-                      <button
-                        type="button"
-                        onClick={toggleLearningMode}
-                        disabled={learningModeDisabled}
-                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[var(--c-bg-deep)]"
-                        style={{
-                          color: learningModeEnabled ? 'var(--c-text-primary)' : 'var(--c-text-secondary)',
-                          fontWeight: learningModeEnabled ? 500 : 400,
-                          opacity: learningModeDisabled ? 0.55 : undefined,
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <BookOpen size={14} style={{ flexShrink: 0 }} />
-                          {t.learningMode}
-                        </span>
-                        {learningModeEnabled && (
-                          <Check size={13} style={{ color: '#4691F6', flexShrink: 0 }} />
-                        )}
-                      </button>
+                      {showPlanModeMenuItem && (
+                        <button
+                          type="button"
+                          onClick={togglePlanMode}
+                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[var(--c-bg-deep)]"
+                          style={{
+                            color: planMode ? 'var(--c-text-primary)' : 'var(--c-text-secondary)',
+                            fontWeight: planMode ? 500 : 400,
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <ListTodo size={14} style={{ flexShrink: 0 }} />
+                            {t.planMode}
+                          </span>
+                          {planMode && (
+                            <Check size={13} style={{ color: '#4691F6', flexShrink: 0 }} />
+                          )}
+                        </button>
+                      )}
+                      {showLearningMode && (
+                        <button
+                          type="button"
+                          onClick={toggleLearningMode}
+                          disabled={learningModeDisabled}
+                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[var(--c-bg-deep)]"
+                          style={{
+                            color: learningModeEnabled ? 'var(--c-text-primary)' : 'var(--c-text-secondary)',
+                            fontWeight: learningModeEnabled ? 500 : 400,
+                            opacity: learningModeDisabled ? 0.55 : undefined,
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <BookOpen size={14} style={{ flexShrink: 0 }} />
+                            {t.learningMode}
+                          </span>
+                          {learningModeEnabled && (
+                            <Check size={13} style={{ color: '#4691F6', flexShrink: 0 }} />
+                          )}
+                        </button>
+                      )}
                     </>
                   )}
                 </>
