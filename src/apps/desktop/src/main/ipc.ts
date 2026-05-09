@@ -1024,18 +1024,6 @@ function getDesktopIconDataUrl(): string | null {
   return null
 }
 
-function readReleaseLabel(): string {
-  const fs = require('fs') as typeof import('fs')
-  const path = require('path') as typeof import('path')
-  try {
-    const metaPath = path.join(__dirname, '..', 'release-meta.json')
-    const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as { releaseLabel?: string }
-    return raw.releaseLabel?.trim() || ''
-  } catch {
-    return ''
-  }
-}
-
 async function buildAdvancedOverview(): Promise<{
   appName: string
   appVersion: string
@@ -1059,11 +1047,9 @@ async function buildAdvancedOverview(): Promise<{
   } catch {
     updater = null
   }
-  const releaseLabel = readReleaseLabel()
-  const versionDisplay = releaseLabel ? `${app.getVersion()} ${releaseLabel}` : app.getVersion()
   return {
     appName: 'Arkloop',
-    appVersion: versionDisplay,
+    appVersion: app.getVersion(),
     githubUrl: DESKTOP_GITHUB_URL,
     telegramUrl: null,
     iconDataUrl: getDesktopIconDataUrl(),

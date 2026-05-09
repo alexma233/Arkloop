@@ -14,7 +14,6 @@ export const zh: LocaleStrings = {
   loading: "加载中...",
   connectionFailed: "无法连接到本地服务器",
   retryConnection: "重新连接",
-  enterprisePlan: "Early Access",
   sidebarGrouping: '侧边栏',
   sidebarGroupingDesc: 'Chat 模式侧边栏分组方式',
   sidebarGroupingNormal: '普通',

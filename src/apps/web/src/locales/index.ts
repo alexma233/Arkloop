@@ -19,7 +19,6 @@ export interface LocaleStrings {
   loading: string;
   connectionFailed: string;
   retryConnection: string;
-  enterprisePlan: string;
   // sidebar grouping
   sidebarGrouping: string;
   sidebarGroupingDesc: string;

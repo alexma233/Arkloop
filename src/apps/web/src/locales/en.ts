@@ -14,7 +14,6 @@ export const en: LocaleStrings = {
   loading: "Loading...",
   connectionFailed: "Unable to connect to local server",
   retryConnection: "Reconnect",
-  enterprisePlan: "Early Access",
   sidebarGrouping: 'Sidebar',
   sidebarGroupingDesc: 'Chat mode sidebar grouping',
   sidebarGroupingNormal: 'Normal',

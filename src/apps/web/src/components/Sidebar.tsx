@@ -1751,9 +1751,6 @@ export function Sidebar({
               <div className="truncate text-sm font-medium text-[var(--c-text-secondary)]">
                 {me?.username ?? t.loading}
               </div>
-              <div className="text-xs font-normal text-[var(--c-text-tertiary)]">
-                {t.enterprisePlan}
-              </div>
             </div>
           </button>
         )}
