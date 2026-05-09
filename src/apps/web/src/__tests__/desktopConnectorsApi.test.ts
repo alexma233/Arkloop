@@ -168,6 +168,25 @@ describe('desktop connectors API', () => {
     expect(credentialBodies).toContainEqual({ base_url: null })
   })
 
+  it('does not activate exa without an api key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(jsonResponse({ groups: [] })))
+
+    const api = getDesktopConnectorsApi('local-jwt')
+    expect(api).toBeTruthy()
+
+    await expect(api!.set({
+      fetch: { provider: 'basic' },
+      search: {
+        provider: 'exa',
+        exaApiKey: '',
+        exaApiKeyStored: false,
+      },
+    })).rejects.toThrow('missing exa api key')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('prefers Electron preload connectors API when present', () => {
     const electronConnectors = {
       get: vi.fn(),
