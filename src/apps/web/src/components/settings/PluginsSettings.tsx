@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useToast } from '@arkloop/shared'
 import { motion } from 'framer-motion'
 import {
@@ -56,6 +56,9 @@ type BusyAction = {
   action: PluginAction
 }
 
+let activeBusyAction: BusyAction | null = null
+const busyActionListeners = new Set<(action: BusyAction | null) => void>()
+
 type Props = {
   accessToken: string
 }
@@ -71,6 +74,18 @@ function hasRuntime(manifest: Record<string, unknown>): boolean {
 
 function sourceLabel(sourceKind: string, builtIn: string, custom: string) {
   return sourceKind === 'builtin' ? builtIn : custom
+}
+
+function setActiveBusyAction(action: BusyAction | null) {
+  activeBusyAction = action
+  busyActionListeners.forEach((listener) => listener(action))
+}
+
+function subscribeBusyAction(listener: (action: BusyAction | null) => void) {
+  busyActionListeners.add(listener)
+  return () => {
+    busyActionListeners.delete(listener)
+  }
 }
 
 function textValue(value: unknown) {
@@ -129,6 +144,21 @@ function settingSelectOptions(
   }))
 }
 
+function runtimeStatusValue(status: PluginStatus, suffixes: string[]) {
+  const raw = status.runtime?.status_json
+  if (!isRecord(raw)) return ''
+  for (const suffix of suffixes) {
+    const value = raw[suffix]
+    if (typeof value === 'string' && value.trim() !== '') return value
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (suffixes.some((suffix) => key.endsWith(`.${suffix}`)) && typeof value === 'string' && value.trim() !== '') {
+      return value
+    }
+  }
+  return ''
+}
+
 export function PluginsSettings({ accessToken }: Props) {
   const { t } = useLocale()
   const { addToast } = useToast()
@@ -137,8 +167,9 @@ export function PluginsSettings({ accessToken }: Props) {
   const [tab, setTab] = useState<PluginTab>('installed')
   const [state, setState] = useState<LoadState>({ plugins: [], statusByID: {} })
   const [loading, setLoading] = useState(true)
-  const [busyAction, setBusyAction] = useState<BusyAction | null>(null)
+  const [busyAction, setBusyAction] = useState<BusyAction | null>(activeBusyAction)
   const [selectedPluginID, setSelectedPluginID] = useState<string | null>(null)
+  const previousBusyActionRef = useRef<BusyAction | null>(activeBusyAction)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -165,6 +196,15 @@ export function PluginsSettings({ accessToken }: Props) {
     void load()
   }, [load])
 
+  useEffect(() => subscribeBusyAction(setBusyAction), [])
+
+  useEffect(() => {
+    if (previousBusyActionRef.current && !busyAction) {
+      void load()
+    }
+    previousBusyActionRef.current = busyAction
+  }, [busyAction, load])
+
   const items = useMemo(() => state.plugins.filter((plugin) => plugin.is_active), [state.plugins])
   const selectedPlugin = useMemo(
     () => items.find((plugin) => plugin.id === selectedPluginID) ?? null,
@@ -172,7 +212,7 @@ export function PluginsSettings({ accessToken }: Props) {
   )
 
   const installRuntime = useCallback(async (plugin: PluginPackage) => {
-    setBusyAction({ pluginID: plugin.id, action: 'install-runtime' })
+    setActiveBusyAction({ pluginID: plugin.id, action: 'install-runtime' })
     try {
       const runtime = await installPluginRuntime(accessToken, plugin.id)
       setState((current) => ({
@@ -185,12 +225,12 @@ export function PluginsSettings({ accessToken }: Props) {
     } catch (error) {
       addToast(error instanceof Error ? error.message : ps.runtimeInstallFailed, 'error')
     } finally {
-      setBusyAction(null)
+      setActiveBusyAction(null)
     }
   }, [accessToken, addToast, ps.runtimeInstallFailed])
 
   const toggleEnabled = useCallback(async (plugin: PluginPackage, enabled: boolean) => {
-    setBusyAction({ pluginID: plugin.id, action: 'toggle-enabled' })
+    setActiveBusyAction({ pluginID: plugin.id, action: 'toggle-enabled' })
     try {
       const enablement = await setPluginEnabled(accessToken, plugin.id, enabled)
       setState((current) => ({
@@ -203,7 +243,7 @@ export function PluginsSettings({ accessToken }: Props) {
     } catch (error) {
       addToast(error instanceof Error ? error.message : enabled ? ps.enableFailed : ps.disableFailed, 'error')
     } finally {
-      setBusyAction(null)
+      setActiveBusyAction(null)
     }
   }, [accessToken, addToast, ps.disableFailed, ps.enableFailed])
 
@@ -217,7 +257,7 @@ export function PluginsSettings({ accessToken }: Props) {
       ...previous,
       [definition.key]: settingPayloadValue(definition, value),
     }
-    setBusyAction({ pluginID: plugin.id, action: 'update-setting' })
+    setActiveBusyAction({ pluginID: plugin.id, action: 'update-setting' })
     try {
       const enablement = await updatePluginSettings(accessToken, plugin.id, nextSettings)
       setState((current) => ({
@@ -230,7 +270,7 @@ export function PluginsSettings({ accessToken }: Props) {
     } catch (error) {
       addToast(error instanceof Error ? error.message : ps.settingSaveFailed, 'error')
     } finally {
-      setBusyAction(null)
+      setActiveBusyAction(null)
     }
   }, [accessToken, addToast, ps.settingSaveFailed, state.statusByID])
 
@@ -429,6 +469,8 @@ function PluginDetailPage({
   const busy = busyAction !== null
   const installBusy = busyAction === 'install-runtime'
   const toggleBusy = busyAction === 'toggle-enabled'
+  const helperAppPath = runtimeStatusValue(status, ['helper_app_path', 'helperAppPath'])
+  const runtimeBinaryPath = runtimeStatusValue(status, ['command', 'path'])
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -492,6 +534,16 @@ function PluginDetailPage({
           <PluginDetailRow label={labels.runtimeStatus}>
             <PluginValue value={runtimeNeeded ? runtimeStatus : labels.notRequired} />
           </PluginDetailRow>
+          {runtimeNeeded && runtimeReady && helperAppPath && (
+            <PluginDetailRow label={labels.helperApp}>
+              <PluginValue value={helperAppPath} mono />
+            </PluginDetailRow>
+          )}
+          {runtimeNeeded && runtimeReady && runtimeBinaryPath && (
+            <PluginDetailRow label={labels.runtimeBinary}>
+              <PluginValue value={runtimeBinaryPath} mono />
+            </PluginDetailRow>
+          )}
         </PluginDetailCard>
       </PluginDetailSection>
 

@@ -1122,6 +1122,8 @@ export const en: LocaleStrings = {
       pluginId: "Plugin ID",
       source: "Source",
       runtimeStatus: "Runtime",
+      helperApp: "Helper app",
+      runtimeBinary: "Binary",
       notRequired: "Not required",
       status: "Status",
       overview: "Overview",

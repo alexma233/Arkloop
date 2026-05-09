@@ -1049,6 +1049,8 @@ export interface LocaleStrings {
       pluginId: string;
       source: string;
       runtimeStatus: string;
+      helperApp: string;
+      runtimeBinary: string;
       notRequired: string;
       status: string;
       overview: string;

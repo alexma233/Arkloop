@@ -1111,6 +1111,8 @@ export const zh: LocaleStrings = {
       pluginId: "插件 ID",
       source: "来源",
       runtimeStatus: "运行时",
+      helperApp: "辅助应用",
+      runtimeBinary: "运行文件",
       notRequired: "无需安装",
       status: "状态",
       overview: "概览",
