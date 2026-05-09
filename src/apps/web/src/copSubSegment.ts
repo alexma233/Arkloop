@@ -501,7 +501,14 @@ export function formatStatsSpans(stats: AggregatedCallStats): TitleSpan[] {
   const webSearchTitle = webSearchStatsTitle(stats)
   if (webSearchTitle) groups.push([{ text: webSearchTitle }])
 
-  return joinTitleSpans(groups.filter(g => g.length > 0).flatMap(g => g), ', ')
+  const filtered = groups.filter(g => g.length > 0)
+  if (filtered.length === 0) return []
+  const result: TitleSpan[] = []
+  for (let i = 0; i < filtered.length; i++) {
+    if (i > 0) result.push({ text: ', ' })
+    result.push(...filtered[i]!)
+  }
+  return result
 }
 
 function formatStatsParts(stats: AggregatedCallStats): string {
