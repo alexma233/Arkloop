@@ -217,6 +217,15 @@ function getReadPath(c: CallItem['call']): string {
 }
 
 function extractCallDiff(call: CallItem['call']): { added: number; removed: number } | null {
+  const n = normalizeToolName(call.toolName)
+  // write_file: diff = content line count
+  if (n === 'write_file') {
+    const content = typeof call.arguments.content === 'string' ? call.arguments.content : ''
+    if (!content) return null
+    const lines = content.replace(/\r\n/g, '\n').split('\n').length
+    return lines > 0 ? { added: lines, removed: 0 } : null
+  }
+  // edit / edit_file: diff from result.diff/patch/unified_diff
   const result = call.result
   if (!result || typeof result !== 'object') return null
   const r = result as Record<string, unknown>
