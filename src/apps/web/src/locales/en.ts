@@ -1126,6 +1126,8 @@ export const en: LocaleStrings = {
       status: "Status",
       overview: "Overview",
       contributions: "Contributions",
+      settingsSection: "Settings",
+      settingSaveFailed: "Failed to save setting.",
     },
     modules: "Modules",
     modulesTitle: "Local Modules",

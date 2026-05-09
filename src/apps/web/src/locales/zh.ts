@@ -1115,6 +1115,8 @@ export const zh: LocaleStrings = {
       status: "状态",
       overview: "概览",
       contributions: "贡献项",
+      settingsSection: "设置",
+      settingSaveFailed: "保存设置失败。",
     },
     modules: "模块",
     modulesTitle: "本地模块",

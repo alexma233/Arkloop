@@ -1053,6 +1053,8 @@ export interface LocaleStrings {
       status: string;
       overview: string;
       contributions: string;
+      settingsSection: string;
+      settingSaveFailed: string;
     };
     extensionsTitle: string;
     extensionsDesc: string;

@@ -2420,6 +2420,18 @@ export async function setPluginEnabled(
   })
 }
 
+export async function updatePluginSettings(
+  accessToken: string,
+  pluginID: string,
+  settings: Record<string, unknown>,
+): Promise<PluginEnablement> {
+  return apiFetch<PluginEnablement>(`/v1/plugins/${encodeURIComponent(pluginID)}/settings`, {
+    method: 'PATCH',
+    accessToken,
+    body: JSON.stringify({ settings }),
+  })
+}
+
 export async function getPluginRuntimeStatus(accessToken: string, pluginID: string): Promise<PluginRuntimeState> {
   return apiFetch<PluginRuntimeState>(`/v1/plugins/${encodeURIComponent(pluginID)}/runtime/status`, {
     accessToken,
