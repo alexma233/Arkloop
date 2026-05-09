@@ -7,6 +7,9 @@ import { ErrorCallout, type AppError } from './ErrorCallout'
 import { NotificationBell } from './NotificationBell'
 import { RightPanel, type RightPanelTab } from './RightPanel'
 import { LocalFilesPanel } from './local-files/LocalFilesPanel'
+import { ResourcePreviewPanel } from './resource-preview/ResourcePreviewPanel'
+import { BrowserSiteIcon } from './resource-preview/BrowserSiteIcon'
+import type { BrowserResourceRef } from './resource-preview/types'
 import { isDesktop } from '@arkloop/shared/desktop'
 import { DebugTrigger, useTimeZone } from '@arkloop/shared'
 import { buildDraftAttachmentRecords, restoreAttachmentFromDraftRecord } from '../draftAttachments'
@@ -168,6 +171,8 @@ export function WelcomePage() {
   const { refreshCredits } = useCredits()
   const [showDebugPanel, setShowDebugPanel] = useState(() => readDeveloperShowDebugPanel())
   const [rightPanelVisible, setRightPanelVisible] = useState(false)
+  const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>('web')
+  const [webPanelResource, setWebPanelResource] = useState<BrowserResourceRef | null>(null)
   const [workFolder, setWorkFolder] = useState(() => readWorkFolder())
   const chatInputRef = useRef<ChatInputHandle>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -181,8 +186,8 @@ export function WelcomePage() {
   const navigate = useNavigate()
   const { t } = useLocale()
 
-  const hasRightPanelContent = appMode === 'work' && !!workFolder?.trim()
-  const isRightPanelOpen = rightPanelVisible && hasRightPanelContent
+  const hasWorkFilesPanel = appMode === 'work' && !!workFolder?.trim()
+  const isRightPanelOpen = rightPanelVisible
 
   useEffect(() => {
     setRightPanelOpen(isRightPanelOpen)
@@ -190,14 +195,10 @@ export function WelcomePage() {
 
   useEffect(() => {
     setTitleBarRightPanelClick(() => {
-      if (!hasRightPanelContent) {
-        setRightPanelVisible(false)
-        return
-      }
       setRightPanelVisible((visible) => !visible)
     })
     return () => setTitleBarRightPanelClick(null)
-  }, [hasRightPanelContent, setTitleBarRightPanelClick])
+  }, [setTitleBarRightPanelClick])
 
   useEffect(() => {
     setWorkFolder(readWorkFolder())
@@ -218,16 +219,38 @@ export function WelcomePage() {
   }, [appMode])
 
   const rightPanelTabs = useMemo<RightPanelTab[]>(() => {
-    if (!hasRightPanelContent || !workFolder?.trim()) return []
-    return [{
-      id: 'files',
-      kind: 'files',
-      title: 'Files',
-      hideTitle: true,
+    const tabs: RightPanelTab[] = [{
+      id: 'web',
+      kind: 'web',
+      title: webPanelResource?.title ?? t.rightPanel.browser,
       closable: false,
-      content: <LocalFilesPanel rootPath={workFolder} accessToken={accessToken} />,
+      hideTitle: !webPanelResource,
+      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} />,
+      content: (
+        <ResourcePreviewPanel
+          resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
+          accessToken={accessToken}
+          onResourceChange={(resource) => {
+            if (resource.kind === 'browser') setWebPanelResource(resource)
+          }}
+        />
+      ),
     }]
-  }, [accessToken, hasRightPanelContent, workFolder])
+    if (hasWorkFilesPanel && workFolder?.trim()) {
+      tabs.push({
+        id: 'files',
+        kind: 'files',
+        title: t.rightPanel.files,
+        hideTitle: true,
+        closable: false,
+        content: <LocalFilesPanel rootPath={workFolder} accessToken={accessToken} />,
+      })
+    }
+    return tabs
+  }, [accessToken, hasWorkFilesPanel, t.rightPanel.browser, t.rightPanel.files, webPanelResource, workFolder])
+  const effectiveRightPanelTabId = rightPanelTabs.some((tab) => tab.id === activeRightPanelTabId)
+    ? activeRightPanelTabId
+    : rightPanelTabs[0]?.id ?? null
 
   const greeting = useMemo(
     () => buildGreeting(t.welcomeGreeting, me?.username ?? null, getGreetingParts(new Date(), timeZone)),
@@ -617,7 +640,7 @@ export function WelcomePage() {
           willChange: 'width, opacity',
         }}
       >
-        <RightPanel tabs={rightPanelTabs} activeTabId="files" onSelectTab={() => {}} />
+        <RightPanel tabs={rightPanelTabs} activeTabId={effectiveRightPanelTabId} onSelectTab={setActiveRightPanelTabId} />
       </div>
     </div>
   )
