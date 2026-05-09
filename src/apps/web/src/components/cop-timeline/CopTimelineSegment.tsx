@@ -21,6 +21,15 @@ import { localizeTimelineLabel, localizeTimelineTitleSpan } from './labels'
 import type { Locale } from '../../locales'
 
 const EXPLORE_BOTTOM_PAD = 0
+const SCROLL_EDGE_EPSILON = 1
+
+function cardShadowState(el: HTMLElement) {
+  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  return {
+    top: el.scrollTop > SCROLL_EDGE_EPSILON,
+    bottom: el.scrollTop < maxScrollTop - SCROLL_EDGE_EPSILON,
+  }
+}
 
 export function CopTimelineSegment({
   segment,
@@ -57,6 +66,10 @@ export function CopTimelineSegment({
   const [hovered, setHovered] = useState(false)
   const [viewportAnimating, setViewportAnimating] = useState(false)
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const cardScrollRef = useRef<HTMLDivElement | null>(null)
+  const cardContentRef = useRef<HTMLDivElement | null>(null)
+  const didPinInitialCardRef = useRef(false)
+  const [cardShadows, setCardShadows] = useState({ top: false, bottom: false })
 
   // Sync expanded state when defaultExpanded prop changes (e.g. new segment appears)
   useEffect(() => {
@@ -84,6 +97,36 @@ export function CopTimelineSegment({
     return () => ro.disconnect()
   }, [measure])
 
+  const updateCardShadows = useCallback(() => {
+    const el = cardScrollRef.current
+    if (!el) return
+    const next = cardShadowState(el)
+    setCardShadows((prev) => prev.top === next.top && prev.bottom === next.bottom ? prev : next)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = cardScrollRef.current
+    if (!el) return
+    if (isLive || !didPinInitialCardRef.current) {
+      el.scrollTop = el.scrollHeight
+      didPinInitialCardRef.current = true
+    }
+    updateCardShadows()
+  })
+
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver !== 'function') return
+    const ro = new ResizeObserver(() => {
+      const el = cardScrollRef.current
+      if (!el) return
+      if (isLive) el.scrollTop = el.scrollHeight
+      updateCardShadows()
+    })
+    if (cardScrollRef.current) ro.observe(cardScrollRef.current)
+    if (cardContentRef.current) ro.observe(cardContentRef.current)
+    return () => ro.disconnect()
+  }, [isLive, updateCardShadows])
+
   const displayMode: 'full' | 'closed' = expanded ? 'full' : 'closed'
 
   const viewportHeight = displayMode === 'full' ? contentHeight : 0
@@ -104,27 +147,35 @@ export function CopTimelineSegment({
   const headerLive = isOpen && isLive
   const hasTitleSpans = segment.titleSpans && segment.titleSpans.length > 0
 
+  const renderItemsCard = () => (
+    <div
+      className="cop-timeline-items-card"
+      data-top-shadow={cardShadows.top ? 'true' : 'false'}
+      data-bottom-shadow={cardShadows.bottom ? 'true' : 'false'}
+    >
+      <div
+        ref={cardScrollRef}
+        className="cop-timeline-items-card__scroll"
+        onScroll={updateCardShadows}
+      >
+        <div ref={cardContentRef} className="cop-timeline-items-card__content">
+          {segment.items.map((item) => (
+            <div key={itemTypeId(item)} style={{ position: 'relative', padding: '3px 0' }}>
+              {renderItem(item, pool, isLive, onOpenCodeExecution, activeCodeExecutionId, onOpenSubAgent, accessToken, baseUrl, typography, locale)}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
   if (hideHeader) {
     return (
       <div style={{ position: 'relative', paddingTop: flattenSingleItem ? 0 : 6, paddingBottom: flattenSingleItem || endsWithNarrative ? 0 : EXPLORE_BOTTOM_PAD }}>
         {flattenSingleItem && segment.items.length === 1 ? (
           renderItem(segment.items[0]!, pool, isLive, onOpenCodeExecution, activeCodeExecutionId, onOpenSubAgent, accessToken, baseUrl, typography, locale)
         ) : (
-          <div
-            style={{
-              borderRadius: 8,
-              background: 'var(--c-attachment-bg)',
-              border: '0.5px solid var(--c-border-subtle)',
-              padding: '6px 10px',
-              overflow: 'hidden',
-            }}
-          >
-            {segment.items.map((item) => (
-              <div key={itemTypeId(item)} style={{ position: 'relative', padding: '3px 0' }}>
-                {renderItem(item, pool, isLive, onOpenCodeExecution, activeCodeExecutionId, onOpenSubAgent, accessToken, baseUrl, typography, locale)}
-              </div>
-            ))}
-          </div>
+          renderItemsCard()
         )}
       </div>
     )
@@ -187,21 +238,7 @@ export function CopTimelineSegment({
             paddingBottom: endsWithNarrative ? 0 : EXPLORE_BOTTOM_PAD,
           }}
         >
-          <div
-            style={{
-              borderRadius: 8,
-              background: 'var(--c-attachment-bg)',
-              border: '0.5px solid var(--c-border-subtle)',
-              padding: '6px 10px',
-              overflow: 'hidden',
-            }}
-          >
-            {segment.items.map((item) => (
-              <div key={itemTypeId(item)} style={{ position: 'relative', padding: '3px 0' }}>
-                {renderItem(item, pool, isLive, onOpenCodeExecution, activeCodeExecutionId, onOpenSubAgent, accessToken, baseUrl, typography, locale)}
-              </div>
-            ))}
-          </div>
+          {renderItemsCard()}
         </motion.div>
       </motion.div>
     </div>

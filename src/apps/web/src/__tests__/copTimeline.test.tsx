@@ -588,6 +588,21 @@ describe('CopTimeline', () => {
       expect(html).toContain('Step 1')
       expect(html).not.toContain('1 step completed')
     })
+
+    it('single segment body uses the scrollable card shell', () => {
+      const seg = makeSeg({ id: 's1', status: 'open', title: 'Reading files', items: [
+        { kind: 'call', call: { toolCallId: 'c1', toolName: 'read_file', arguments: {} }, seq: 0 },
+        { kind: 'call', call: { toolCallId: 'c2', toolName: 'read_file', arguments: {} }, seq: 1 },
+      ]})
+      const html = renderTimeline({
+        segments: [seg],
+        pool: EMPTY_POOL,
+        isComplete: false,
+        live: true,
+      })
+      expect(html).toContain('class="cop-timeline-items-card"')
+      expect(html).toContain('class="cop-timeline-items-card__scroll"')
+    })
   })
 
   describe('collapse and expand behavior', () => {
@@ -663,6 +678,48 @@ describe('CopTimeline', () => {
         expect(motionAfter?.style.overflow).toBe('hidden')
       } finally {
         cleanup()
+      }
+    })
+
+    it('scrollable card starts pinned to bottom and updates edge shadows', async () => {
+      const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 320 : 160
+      })
+      const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function getClientHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 120 : 160
+      })
+      const seg = makeSeg({ id: 's1', status: 'closed', title: 'Read files', items: [
+        { kind: 'call', call: { toolCallId: 'c1', toolName: 'read_file', arguments: {} }, seq: 0 },
+        { kind: 'call', call: { toolCallId: 'c2', toolName: 'read_file', arguments: {} }, seq: 1 },
+      ]})
+      try {
+        const { container, cleanup } = await renderTimelineDom({
+          segments: [seg],
+          pool: EMPTY_POOL,
+          isComplete: true,
+          live: false,
+        })
+        try {
+          const card = container.querySelector('.cop-timeline-items-card') as HTMLElement | null
+          const scroll = container.querySelector('.cop-timeline-items-card__scroll') as HTMLElement | null
+          expect(card).not.toBeNull()
+          expect(scroll).not.toBeNull()
+          expect(scroll?.scrollTop).toBe(320)
+          expect(card?.dataset.topShadow).toBe('true')
+          expect(card?.dataset.bottomShadow).toBe('false')
+
+          await act(async () => {
+            scroll!.scrollTop = 0
+            scroll!.dispatchEvent(new Event('scroll', { bubbles: true }))
+          })
+          expect(card?.dataset.topShadow).toBe('false')
+          expect(card?.dataset.bottomShadow).toBe('true')
+        } finally {
+          cleanup()
+        }
+      } finally {
+        scrollHeightSpy.mockRestore()
+        clientHeightSpy.mockRestore()
       }
     })
   })
