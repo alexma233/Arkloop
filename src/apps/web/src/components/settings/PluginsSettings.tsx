@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useToast } from '@arkloop/shared'
 import {
   Download,
@@ -21,6 +21,7 @@ import { SettingsPage } from './_SettingsLayout'
 import { SettingsButton, SettingsIconButton } from './_SettingsButton'
 import { SettingsModalFrame } from './_SettingsModalFrame'
 import { SettingsSegmentedControl } from './_SettingsSegmentedControl'
+import { SettingsStatusBadge } from './_SettingsStatusBadge'
 import { SettingsSummaryCard, SettingsSummaryCardBadge, SettingsSummaryCardLine } from './_SettingsSummaryCard'
 
 type PluginTab = 'installed' | 'marketplace'
@@ -314,11 +315,12 @@ function PluginDetailModal({
       open
       title={plugin.display_name}
       onClose={onClose}
-      width={620}
+      width={560}
       footer={
         <>
           {runtimeNeeded && !runtimeReady && (
             <SettingsButton
+              size="modal"
               variant="secondary"
               icon={busy ? <Loader2 className="animate-spin" /> : <Download />}
               disabled={busy}
@@ -328,6 +330,7 @@ function PluginDetailModal({
             </SettingsButton>
           )}
           <SettingsButton
+            size="modal"
             variant={enabled ? 'secondary' : 'primary'}
             icon={busy ? <Loader2 className="animate-spin" /> : <Power />}
             disabled={busy || (runtimeNeeded && !runtimeReady && !enabled)}
@@ -338,45 +341,95 @@ function PluginDetailModal({
         </>
       }
     >
-      <div className="mt-6 flex flex-col gap-5">
+      <div className="mt-6 flex flex-col gap-4">
         {plugin.description && (
-          <p className="text-[13px] leading-5 text-[var(--c-text-secondary)]">{plugin.description}</p>
+          <p className="text-sm leading-relaxed text-[var(--c-text-secondary)]">{plugin.description}</p>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SettingsSummaryCardLine label={labels.pluginId} value={plugin.id} />
-          <SettingsSummaryCardLine label={labels.version} value={plugin.version} />
-          <SettingsSummaryCardLine label={labels.source} value={plugin.source_kind} />
-          <SettingsSummaryCardLine label={labels.runtimeStatus} value={runtimeNeeded ? runtimeStatus : labels.notRequired} />
-        </div>
-
-        <div>
-          <div className="mb-2 text-[11px] font-medium leading-tight text-[var(--c-text-muted)]">{labels.capabilities}</div>
-          <div className="flex flex-wrap gap-1.5">
-            <SettingsSummaryCardBadge>{enabled ? labels.enabled : labels.disabled}</SettingsSummaryCardBadge>
-            {runtimeNeeded && <SettingsSummaryCardBadge>{runtimeReady ? labels.ready : labels.needsSetup}</SettingsSummaryCardBadge>}
-            {capabilityLabels.map((label) => <SettingsSummaryCardBadge key={label}>{label}</SettingsSummaryCardBadge>)}
+        <PluginDetailSection title={labels.overview}>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+            <PluginMetaField className="col-span-2" label={labels.pluginId} value={plugin.id} mono />
+            <PluginMetaField label={labels.version} value={plugin.version} />
+            <PluginMetaField label={labels.source} value={plugin.source_kind} />
+            <PluginMetaField label={labels.runtimeStatus} value={runtimeNeeded ? runtimeStatus : labels.notRequired} />
+            <PluginMetaField label={labels.status} value={enabled ? labels.enabled : labels.disabled} />
           </div>
-        </div>
+        </PluginDetailSection>
 
-        <PluginContributionList label={labels.mcp} items={mcpServers} />
-        <PluginContributionList label={labels.skill} items={skills} />
-        <PluginContributionList label={labels.hook} items={hooks} />
-        {typeof plugin.manifest.context === 'string' && plugin.manifest.context.trim() && (
-          <PluginContributionList label={labels.context} items={[plugin.manifest.context]} />
-        )}
+        <PluginDetailSection title={labels.capabilities}>
+          <div className="flex flex-wrap gap-2">
+            <SettingsStatusBadge variant={enabled ? 'success' : 'neutral'}>{enabled ? labels.enabled : labels.disabled}</SettingsStatusBadge>
+            {runtimeNeeded && (
+              <SettingsStatusBadge variant={runtimeReady ? 'success' : 'warning'}>{runtimeReady ? labels.ready : labels.needsSetup}</SettingsStatusBadge>
+            )}
+            {capabilityLabels.map((label) => (
+              <SettingsStatusBadge key={label} variant="neutral">{label}</SettingsStatusBadge>
+            ))}
+          </div>
+        </PluginDetailSection>
+
+        <PluginDetailSection title={labels.contributions}>
+          <div className="flex flex-col gap-3">
+            <PluginContributionList label={labels.mcp} items={mcpServers} />
+            <PluginContributionList label={labels.skill} items={skills} />
+            <PluginContributionList label={labels.hook} items={hooks} />
+            {typeof plugin.manifest.context === 'string' && plugin.manifest.context.trim() && (
+              <PluginContributionList label={labels.context} items={[plugin.manifest.context]} />
+            )}
+          </div>
+        </PluginDetailSection>
       </div>
     </SettingsModalFrame>
+  )
+}
+
+function PluginDetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border-[0.5px] border-[var(--c-border-subtle)] bg-[var(--c-bg-page)] p-4">
+      <div className="mb-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--c-text-muted)]">{title}</div>
+      {children}
+    </section>
+  )
+}
+
+function PluginMetaField({
+  label,
+  value,
+  mono,
+  className,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <div className="mb-1 block text-[12px] font-medium text-[var(--c-text-secondary)]">{label}</div>
+      <div
+        className={[
+          'min-h-[35px] truncate rounded-lg border-[0.5px] border-[var(--c-border-subtle)] bg-[var(--c-bg-menu)] px-3 py-2 text-[13px] leading-[18px] text-[var(--c-text-primary)]',
+          mono ? 'font-mono text-[12px]' : '',
+        ].filter(Boolean).join(' ')}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
   )
 }
 
 function PluginContributionList({ label, items }: { label: string; items: string[] }) {
   if (items.length === 0) return null
   return (
-    <div>
-      <div className="mb-2 text-[11px] font-medium leading-tight text-[var(--c-text-muted)]">{label}</div>
+    <div className="grid gap-2 sm:grid-cols-[96px_1fr]">
+      <div className="text-[12px] font-medium leading-6 text-[var(--c-text-secondary)]">{label}</div>
       <div className="flex flex-wrap gap-1.5">
-        {items.map((item) => <SettingsSummaryCardBadge key={item}>{item}</SettingsSummaryCardBadge>)}
+        {items.map((item) => (
+          <span key={item} className="rounded-md bg-[var(--c-bg-menu)] px-2 py-1 text-[12px] font-medium leading-4 text-[var(--c-text-secondary)]">
+            {item}
+          </span>
+        ))}
       </div>
     </div>
   )

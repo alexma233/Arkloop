@@ -1050,6 +1050,9 @@ export interface LocaleStrings {
       source: string;
       runtimeStatus: string;
       notRequired: string;
+      status: string;
+      overview: string;
+      contributions: string;
     };
     extensionsTitle: string;
     extensionsDesc: string;
