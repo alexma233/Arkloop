@@ -1422,6 +1422,14 @@ export function applyFileOpToolCall(
   const fallbackLabel = fileOpLabel(toolName, args)
   const presentation = presentationForTool(toolName, args, fallbackLabel)
   const inputPreview = fileOpInputPreview(toolName, args)
+  // write_file: diff = content line count
+  let diffAdded: number | undefined
+  let diffRemoved: number | undefined
+  if (toolName === 'write_file' && typeof args.content === 'string') {
+    diffAdded = args.content.replace(/\r\n/g, '\n').split('\n').length
+    diffRemoved = 0
+  }
+
   const appended: FileOpRef = {
     id: pickToolCallId(event),
     toolName,
@@ -1436,6 +1444,7 @@ export function applyFileOpToolCall(
     displaySubject: presentation.subject,
     displayDetail: presentation.detail,
     ...(inputPreview ? { output: inputPreview } : {}),
+    ...(diffAdded !== undefined ? { diffAdded, diffRemoved } : {}),
   }
   return { appended, nextOps: [...ops, appended] }
 }
@@ -1458,12 +1467,26 @@ export function applyFileOpToolResult(
   if (targetIdx < 0) return { nextOps: ops }
 
   const formatted = hasError ? {} : formatFileOpResult(toolName, result)
+  // edit / edit_file: parse diff counts from result output
+  let resultDiffAdded: number | undefined
+  let resultDiffRemoved: number | undefined
+  if (!hasError && (toolName === 'edit' || toolName === 'edit_file') && typeof formatted.output === 'string') {
+    let add = 0
+    let rm = 0
+    for (const line of formatted.output.replace(/\r\n/g, '\n').split('\n')) {
+      if (line.startsWith('+++') || line.startsWith('---')) continue
+      if (line.startsWith('+')) add += 1
+      else if (line.startsWith('-')) rm += 1
+    }
+    if (add > 0 || rm > 0) { resultDiffAdded = add; resultDiffRemoved = rm }
+  }
   const updated: FileOpRef = {
     ...ops[targetIdx],
     status: hasError ? 'failed' : 'success',
     ...(formatted.output ? { output: formatted.output } : {}),
     ...(formatted.emptyLabel ? { emptyLabel: formatted.emptyLabel } : {}),
     ...(hasError ? { errorMessage: error.errorMessage ?? error.errorClass } : {}),
+    ...(resultDiffAdded !== undefined ? { diffAdded: resultDiffAdded, diffRemoved: resultDiffRemoved } : {}),
   }
   return {
     updated,

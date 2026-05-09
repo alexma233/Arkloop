@@ -113,6 +113,11 @@ function ToolTitle({ title, live, status: _status, highlightedSuffix }: { title:
 
 function fileOpDiffCounts(op: FileOpRef): { added: number; removed: number } | null {
   if (op.status === 'running') return null
+  if (typeof op.diffAdded === 'number' || typeof op.diffRemoved === 'number') {
+    const added = Math.max(0, op.diffAdded ?? 0)
+    const removed = Math.max(0, op.diffRemoved ?? 0)
+    return added > 0 || removed > 0 ? { added, removed } : null
+  }
   return summarizeDiff(op.output || op.errorMessage)
 }
 

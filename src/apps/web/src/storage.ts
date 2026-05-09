@@ -1271,6 +1271,8 @@ export type FileOpRef = {
   displayDescription?: string
   displaySubject?: string
   displayDetail?: string
+  diffAdded?: number
+  diffRemoved?: number
 }
 
 function isFileOpRef(v: unknown): v is FileOpRef {
