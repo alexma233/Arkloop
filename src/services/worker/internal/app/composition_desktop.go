@@ -1349,6 +1349,25 @@ func desktopChannelContext(db data.DesktopDB) pipeline.RunMiddleware {
 			}
 		}
 		rc.ChannelContext = channelCtx
+		if db != nil && rc.Run.ThreadID != uuid.Nil {
+			overrides := loadDesktopThreadRunOverrides(ctx, db, rc.Run.ThreadID)
+			if overrides.DefaultModel != "" {
+				if rc.InputJSON == nil {
+					rc.InputJSON = map[string]any{}
+				}
+				if _, ok := rc.InputJSON["model"]; !ok {
+					if _, higher := rc.InputJSON["output_model_key"]; !higher {
+						rc.InputJSON["model"] = overrides.DefaultModel
+					}
+				}
+			}
+			if overrides.ReasoningMode != "" && normalizeDesktopRunReasoningMode(rc.InputJSON["reasoning_mode"]) == "" {
+				rc.ReasoningMode = overrides.ReasoningMode
+				if rc.AgentConfig != nil {
+					rc.AgentConfig.ReasoningMode = overrides.ReasoningMode
+				}
+			}
+		}
 		rc.ChannelToolSurface = pipeline.NewChannelToolSurfaceFromContext(channelCtx)
 		if channelCtx.SenderUserID != nil {
 			rc.UserID = channelCtx.SenderUserID
@@ -2241,6 +2260,32 @@ func loadDesktopChannelConfigJSON(ctx context.Context, db data.DesktopDB, channe
 		return nil, fmt.Errorf("desktop channel config lookup: %w", err)
 	}
 	return configJSON, nil
+}
+
+type desktopThreadRunOverrides struct {
+	DefaultModel  string
+	ReasoningMode string
+}
+
+func loadDesktopThreadRunOverrides(ctx context.Context, db data.DesktopDB, threadID uuid.UUID) desktopThreadRunOverrides {
+	if db == nil || threadID == uuid.Nil {
+		return desktopThreadRunOverrides{}
+	}
+	var raw []byte
+	if err := db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1`, threadID.String()).Scan(&raw); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	var payload struct {
+		DefaultModel  string `json:"default_model"`
+		ReasoningMode string `json:"reasoning_mode"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return desktopThreadRunOverrides{}
+	}
+	return desktopThreadRunOverrides{
+		DefaultModel:  strings.TrimSpace(payload.DefaultModel),
+		ReasoningMode: normalizeDesktopRunReasoningMode(payload.ReasoningMode),
+	}
 }
 
 func loadDesktopDeliveryChannel(ctx context.Context, db data.DesktopDB, channelID uuid.UUID) (*desktopDeliveryChannelRecord, error) {

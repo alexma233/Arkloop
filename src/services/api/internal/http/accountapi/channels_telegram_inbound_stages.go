@@ -242,6 +242,25 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			if groupIdentity != nil {
 				heartbeatIdentity = *groupIdentity
 			}
+			threadID := uuid.Nil
+			if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+				threadProjectID := derefUUID(persona.ProjectID)
+				if threadProjectID == uuid.Nil {
+					ownerUserID := channelOwnerUserID(ch)
+					if ownerUserID != nil && *ownerUserID != uuid.Nil {
+						if pid, err := c.personasRepo.WithTx(tx).GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, *ownerUserID); err == nil {
+							threadProjectID = pid
+						}
+					}
+				}
+				if threadProjectID != uuid.Nil {
+					resolvedThreadID, err := c.resolveTelegramThreadID(ctx, tx, ch, *ch.PersonaID, threadProjectID, identity, incoming)
+					if err != nil {
+						return nil, err
+					}
+					threadID = resolvedThreadID
+				}
+			}
 			replyText, err := handleTelegramHeartbeatCommand(
 				ctx,
 				tx,
@@ -249,6 +268,7 @@ func (c telegramConnector) persistTelegramInboundStageA(
 				ch.AccountID,
 				ch.PersonaID,
 				cfg.DefaultModel,
+				threadID,
 				heartbeatIdentity,
 				incoming.CommandText,
 				c.channelIdentitiesRepo,
@@ -324,9 +344,18 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			if groupIdentity != nil {
 				statusIdentity = *groupIdentity
 			}
-			preferredModel, reasoningMode, err := c.channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, statusIdentity.ID)
-			if err != nil {
-				return nil, err
+			preferredModel, reasoningMode := "", ""
+			if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+				threadMap, err := c.channelGroupThreadsRepo.WithTx(tx).GetByBinding(ctx, ch.ID, incoming.PlatformChatID, *ch.PersonaID)
+				if err != nil {
+					return nil, err
+				}
+				if threadMap != nil {
+					preferredModel, reasoningMode, _, err = getInboundThreadModelPreference(ctx, tx, threadMap.ThreadID)
+					if err != nil {
+						return nil, err
+					}
+				}
 			}
 			modelDisplay := "跟随频道"
 			if strings.TrimSpace(preferredModel) != "" {
@@ -370,7 +399,12 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			if err != nil {
 				return nil, err
 			}
-			preferredModel, _, _ := c.channelIdentitiesRepo.WithTx(tx).GetPreferenceConfig(ctx, modelsIdentity.ID)
+			preferredModel := ""
+			if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+				if threadMap, err := c.channelGroupThreadsRepo.WithTx(tx).GetByBinding(ctx, ch.ID, incoming.PlatformChatID, *ch.PersonaID); err == nil && threadMap != nil {
+					preferredModel, _, _, _ = getInboundThreadModelPreference(ctx, tx, threadMap.ThreadID)
+				}
+			}
 			var rows [][]telegrambot.InlineKeyboardButton
 			for _, cand := range candidates {
 				if !cand.accountScoped && !allowUserScoped {
@@ -482,8 +516,27 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			if groupIdentity != nil {
 				modelIdentity = *groupIdentity
 			}
+			threadID := uuid.Nil
+			if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+				threadProjectID := derefUUID(persona.ProjectID)
+				if threadProjectID == uuid.Nil {
+					ownerUserID := channelOwnerUserID(ch)
+					if ownerUserID != nil && *ownerUserID != uuid.Nil {
+						if pid, err := c.personasRepo.WithTx(tx).GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, *ownerUserID); err == nil {
+							threadProjectID = pid
+						}
+					}
+				}
+				if threadProjectID != uuid.Nil {
+					resolvedThreadID, err := c.resolveTelegramThreadID(ctx, tx, ch, *ch.PersonaID, threadProjectID, identity, incoming)
+					if err != nil {
+						return nil, err
+					}
+					threadID = resolvedThreadID
+				}
+			}
 			replyText, replyMarkup, err := handleTelegramPreferenceCommand(
-				ctx, tx, ch.AccountID, modelIdentity, incoming.CommandText, c.channelIdentitiesRepo, c.entitlementSvc,
+				ctx, tx, ch.AccountID, threadID, incoming.CommandText, c.entitlementSvc,
 			)
 			if err != nil {
 				return nil, err
@@ -531,6 +584,9 @@ createRun:
 	threadProjectID := derefUUID(persona.ProjectID)
 	threadID, err := c.resolveTelegramThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, incoming)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureInboundThreadDefaultModel(ctx, tx, threadID, cfg.DefaultModel); err != nil {
 		return nil, err
 	}
 	timeCtx := c.resolveInboundTimeContext(ctx, ch, identity, incoming)
@@ -687,66 +743,40 @@ func (c telegramConnector) continueTelegramInboundDispatch(
 		return errInboundDispatchDeferred
 	}
 
-	if !channelAgentTriggerConsume(ch.ID) {
+	incomingFromLedger := buildTelegramIncomingFromLedger(latestEntry)
+	dispatchResult, err := DispatchInbound(ctx, tx, InboundDispatchRequest{
+		TraceID:             traceID,
+		Channel:             ch,
+		PersonaRef:          personaRef,
+		Identity:            data.ChannelIdentity{ID: *latestEntry.SenderChannelIdentityID},
+		Incoming:            incomingFromLedger,
+		ThreadID:            *latestEntry.ThreadID,
+		MessageID:           *latestEntry.MessageID,
+		InputContent:        strings.TrimSpace(msg.Content),
+		ThreadTailMessageID: latestEntry.MessageID.String(),
+		Source:              "telegram",
+		ForceActive:         true,
+		RunEventRepo:        c.runEventRepo,
+		JobRepo:             c.jobRepo,
+	})
+	if err != nil {
+		return err
+	}
+	if dispatchResult.FinalState != inboundStateEnqueuedNewRun {
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
 		slog.WarnContext(ctx, "telegram_inbound_processed",
-			"stage", inboundStateThrottledNoRun,
+			"stage", dispatchResult.FinalState,
 			"channel_id", ch.ID.String(),
 			"account_id", ch.AccountID.String(),
 			"thread_id", latestEntry.ThreadID.String(),
 			"platform_chat_id", latestEntry.PlatformConversationID,
 			"platform_message_id", latestEntry.PlatformMessageID,
-			"default_model", strings.TrimSpace(defaultModel),
 		)
 		return errInboundDispatchDeferred
 	}
-
-	preferredModel, reasoningMode, err := c.channelIdentitiesRepo.GetPreferenceConfig(ctx, *latestEntry.SenderChannelIdentityID)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(preferredModel) != "" {
-		defaultModel = preferredModel
-	}
-
-	incomingFromLedger := buildTelegramIncomingFromLedger(latestEntry)
-	runStartedData := buildTelegramRunStartedData(
-		personaRef,
-		defaultModel,
-		reasoningMode,
-		ch.ID,
-		*latestEntry.SenderChannelIdentityID,
-		incomingFromLedger,
-	)
-	runStartedData["thread_tail_message_id"] = latestEntry.MessageID.String()
-	run, _, err := c.runEventRepo.WithTx(tx).CreateRunWithStartedEvent(
-		ctx,
-		ch.AccountID,
-		*latestEntry.ThreadID,
-		channelOwnerUserID(ch),
-		"run.started",
-		runStartedData,
-	)
-	if err != nil {
-		return err
-	}
-	if _, err := c.jobRepo.WithTx(tx).EnqueueRun(
-		ctx,
-		ch.AccountID,
-		run.ID,
-		traceID,
-		data.RunExecuteJobType,
-		map[string]any{
-			"source":           "telegram",
-			"channel_delivery": buildTelegramChannelDeliveryPayload(ch.ID, *latestEntry.SenderChannelIdentityID, incomingFromLedger),
-		},
-		nil,
-	); err != nil {
-		return err
-	}
-	if err := markPendingBatchEnqueuedTx(ctx, c.channelLedgerRepo.WithTx(tx), ch.ID, entries, run.ID); err != nil {
+	if err := markPendingBatchEnqueuedTx(ctx, c.channelLedgerRepo.WithTx(tx), ch.ID, entries, dispatchResult.RunID); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -756,7 +786,7 @@ func (c telegramConnector) continueTelegramInboundDispatch(
 		"stage", inboundStateEnqueuedNewRun,
 		"channel_id", ch.ID.String(),
 		"account_id", ch.AccountID.String(),
-		"run_id", run.ID.String(),
+		"run_id", dispatchResult.RunID.String(),
 		"thread_id", latestEntry.ThreadID.String(),
 		"platform_chat_id", latestEntry.PlatformConversationID,
 		"platform_message_id", latestEntry.PlatformMessageID,

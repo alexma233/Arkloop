@@ -4,6 +4,7 @@ package telegram_heartbeat_command
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -116,6 +117,13 @@ func (e *Executor) Execute(ctx context.Context, toolName string, args map[string
 			DurationMs: ms(),
 		}
 	}
+	if execCtx.ThreadID == nil || *execCtx.ThreadID == uuid.Nil {
+		return tools.ExecutionResult{
+			Error:      &tools.ExecutionError{ErrorClass: tools.ErrorClassToolExecutionFailed, Message: "thread context not available"},
+			DurationMs: ms(),
+		}
+	}
+	threadID := *execCtx.ThreadID
 
 	token, err := e.tokens.BotToken(ctx, surface.ChannelID)
 	if err != nil {
@@ -143,21 +151,21 @@ func (e *Executor) Execute(ctx context.Context, toolName string, args map[string
 	var replyText string
 	switch action {
 	case "status":
-		replyText, err = e.getStatus(ctx, identityID)
+		replyText, err = e.getStatus(ctx, threadID)
 	case "on":
-		replyText, err = e.setEnabled(ctx, identityID, 1, 30)
+		replyText, err = e.setEnabled(ctx, threadID, 1, 30)
 	case "off":
-		replyText, err = e.setEnabled(ctx, identityID, 0, 0)
+		replyText, err = e.setEnabled(ctx, threadID, 0, 0)
 	case "interval":
 		interval, parseErr := strconv.Atoi(value)
 		if parseErr != nil || interval <= 0 {
 			replyText = "Invalid interval. Please provide a positive number (e.g., /heartbeat interval 30)"
 			err = nil
 		} else {
-			replyText, err = e.setInterval(ctx, identityID, interval)
+			replyText, err = e.setInterval(ctx, threadID, interval)
 		}
 	case "model":
-		replyText, err = e.setModel(ctx, identityID, value)
+		replyText, err = e.setModel(ctx, threadID, value)
 	default:
 		replyText = fmt.Sprintf("Unknown action: %s. Use: status, on, off, interval N, model NAME", action)
 	}
@@ -199,47 +207,42 @@ func (e *Executor) Execute(ctx context.Context, toolName string, args map[string
 	}
 }
 
-func (e *Executor) getStatus(ctx context.Context, identityID uuid.UUID) (string, error) {
-	row := e.db.QueryRow(ctx,
-		`SELECT heartbeat_enabled, heartbeat_interval_minutes, heartbeat_model
-		 FROM channel_identities WHERE id = $1`,
-		identityID.String(),
-	)
-	var enabled int
-	var interval int
-	var model string
-	if err := row.Scan(&enabled, &interval, &model); err != nil {
+func (e *Executor) getStatus(ctx context.Context, threadID uuid.UUID) (string, error) {
+	cfg, err := e.getThreadHeartbeatConfig(ctx, threadID)
+	if err != nil {
 		return "", fmt.Errorf("query heartbeat status: %w", err)
 	}
 	status := "disabled"
-	if enabled == 1 {
+	if cfg.Enabled != nil && *cfg.Enabled {
 		status = "enabled"
 	}
+	interval := cfg.Interval
+	if interval <= 0 {
+		interval = runkind.DefaultHeartbeatIntervalMinutes
+	}
 	modelDisplay := "(follow conversation)"
-	if model != "" {
-		modelDisplay = model
+	if cfg.Model != "" {
+		modelDisplay = cfg.Model
 	}
 	return fmt.Sprintf("Heartbeat: %s\nInterval: %d min\nModel: %s", status, interval, modelDisplay), nil
 }
 
-func (e *Executor) setEnabled(ctx context.Context, identityID uuid.UUID, enabled, interval int) (string, error) {
+func (e *Executor) setEnabled(ctx context.Context, threadID uuid.UUID, enabled, interval int) (string, error) {
 	if interval == 0 {
 		interval = runkind.DefaultHeartbeatIntervalMinutes
 	}
-	slog.DebugContext(ctx, "heartbeat_command: setEnabled", "identity_id", identityID, "enabled", enabled, "interval", interval)
-	_, err := e.db.Exec(ctx,
-		`UPDATE channel_identities
-		 SET heartbeat_enabled = $1, heartbeat_interval_minutes = $2
-		 WHERE id = $3`,
-		enabled, interval, identityID.String(),
-	)
-	if err != nil {
+	slog.DebugContext(ctx, "heartbeat_command: setEnabled", "thread_id", threadID, "enabled", enabled, "interval", interval)
+	if err := e.updateThreadHeartbeatConfig(ctx, threadID, func(cfg *threadHeartbeatConfig) {
+		value := enabled == 1
+		cfg.Enabled = &value
+		cfg.Interval = interval
+	}); err != nil {
 		return "", fmt.Errorf("update heartbeat enabled: %w", err)
 	}
 	if enabled == 0 {
 		if _, err := e.db.Exec(ctx,
-			`DELETE FROM scheduled_triggers WHERE channel_identity_id = $1`,
-			identityID.String(),
+			`DELETE FROM scheduled_triggers WHERE thread_id = $1`,
+			threadID.String(),
 		); err != nil {
 			return "", fmt.Errorf("delete heartbeat trigger: %w", err)
 		}
@@ -252,12 +255,12 @@ func (e *Executor) setEnabled(ctx context.Context, identityID uuid.UUID, enabled
 	return fmt.Sprintf("Heartbeat %s", status), nil
 }
 
-func (e *Executor) setInterval(ctx context.Context, identityID uuid.UUID, interval int) (string, error) {
-	_, err := e.db.Exec(ctx,
-		`UPDATE channel_identities SET heartbeat_interval_minutes = $1, heartbeat_enabled = 1 WHERE id = $2`,
-		interval, identityID.String(),
-	)
-	if err != nil {
+func (e *Executor) setInterval(ctx context.Context, threadID uuid.UUID, interval int) (string, error) {
+	if err := e.updateThreadHeartbeatConfig(ctx, threadID, func(cfg *threadHeartbeatConfig) {
+		enabled := true
+		cfg.Enabled = &enabled
+		cfg.Interval = interval
+	}); err != nil {
 		return "", fmt.Errorf("update heartbeat interval: %w", err)
 	}
 	if _, err := e.db.Exec(ctx,
@@ -265,11 +268,11 @@ func (e *Executor) setInterval(ctx context.Context, identityID uuid.UUID, interv
 		    SET interval_min = $1,
 		        next_fire_at = $2,
 		        updated_at = $3
-		  WHERE channel_identity_id = $4`,
+		  WHERE thread_id = $4`,
 		interval,
 		time.Now().UTC().Add(time.Duration(interval)*time.Minute).Format(time.RFC3339Nano),
 		time.Now().UTC().Format(time.RFC3339Nano),
-		identityID.String(),
+		threadID.String(),
 	); err != nil {
 		return "", fmt.Errorf("update heartbeat trigger interval: %w", err)
 	}
@@ -277,22 +280,23 @@ func (e *Executor) setInterval(ctx context.Context, identityID uuid.UUID, interv
 	return fmt.Sprintf("Heartbeat interval set to %d minutes", interval), nil
 }
 
-func (e *Executor) setModel(ctx context.Context, identityID uuid.UUID, model string) (string, error) {
-	_, err := e.db.Exec(ctx,
-		`UPDATE channel_identities SET heartbeat_model = $1, heartbeat_enabled = 1 WHERE id = $2`,
-		model, identityID.String(),
-	)
-	if err != nil {
+func (e *Executor) setModel(ctx context.Context, threadID uuid.UUID, model string) (string, error) {
+	model = strings.TrimSpace(model)
+	if err := e.updateThreadHeartbeatConfig(ctx, threadID, func(cfg *threadHeartbeatConfig) {
+		enabled := true
+		cfg.Enabled = &enabled
+		cfg.Model = model
+	}); err != nil {
 		return "", fmt.Errorf("update heartbeat model: %w", err)
 	}
 	if _, err := e.db.Exec(ctx,
 		`UPDATE scheduled_triggers
-		    SET model = $1,
-		        updated_at = $2
-		  WHERE channel_identity_id = $3`,
+			    SET model = $1,
+			        updated_at = $2
+			  WHERE thread_id = $3`,
 		model,
 		time.Now().UTC().Format(time.RFC3339Nano),
-		identityID.String(),
+		threadID.String(),
 	); err != nil {
 		return "", fmt.Errorf("update heartbeat trigger model: %w", err)
 	}
@@ -302,6 +306,85 @@ func (e *Executor) setModel(ctx context.Context, identityID uuid.UUID, model str
 		modelDisplay = model
 	}
 	return fmt.Sprintf("Heartbeat model set to %s", modelDisplay), nil
+}
+
+type threadHeartbeatConfig struct {
+	Enabled  *bool
+	Interval int
+	Model    string
+}
+
+func (e *Executor) getThreadHeartbeatConfig(ctx context.Context, threadID uuid.UUID) (threadHeartbeatConfig, error) {
+	if threadID == uuid.Nil {
+		return threadHeartbeatConfig{}, fmt.Errorf("thread_id is empty")
+	}
+	var raw []byte
+	if err := e.db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1`, threadID.String()).Scan(&raw); err != nil {
+		return threadHeartbeatConfig{}, err
+	}
+	var payload struct {
+		HeartbeatEnabled         *bool  `json:"heartbeat_enabled"`
+		HeartbeatIntervalMinutes int    `json:"heartbeat_interval_minutes"`
+		HeartbeatModel           string `json:"heartbeat_model"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return threadHeartbeatConfig{}, err
+	}
+	return threadHeartbeatConfig{
+		Enabled:  payload.HeartbeatEnabled,
+		Interval: payload.HeartbeatIntervalMinutes,
+		Model:    strings.TrimSpace(payload.HeartbeatModel),
+	}, nil
+}
+
+func (e *Executor) updateThreadHeartbeatConfig(ctx context.Context, threadID uuid.UUID, mutate func(*threadHeartbeatConfig)) error {
+	if threadID == uuid.Nil {
+		return fmt.Errorf("thread_id is empty")
+	}
+	var raw []byte
+	if err := e.db.QueryRow(ctx, `SELECT COALESCE(config_json, '{}') FROM threads WHERE id = $1`, threadID.String()).Scan(&raw); err != nil {
+		return err
+	}
+	config := map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &config); err != nil {
+			return err
+		}
+	}
+	cfg := threadHeartbeatConfig{}
+	if enabled, ok := config["heartbeat_enabled"].(bool); ok {
+		cfg.Enabled = &enabled
+	}
+	if interval, ok := config["heartbeat_interval_minutes"].(float64); ok {
+		cfg.Interval = int(interval)
+	}
+	if model, ok := config["heartbeat_model"].(string); ok {
+		cfg.Model = strings.TrimSpace(model)
+	}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	if cfg.Enabled == nil {
+		delete(config, "heartbeat_enabled")
+	} else {
+		config["heartbeat_enabled"] = *cfg.Enabled
+	}
+	if cfg.Interval > 0 {
+		config["heartbeat_interval_minutes"] = cfg.Interval
+	} else {
+		delete(config, "heartbeat_interval_minutes")
+	}
+	if strings.TrimSpace(cfg.Model) == "" {
+		delete(config, "heartbeat_model")
+	} else {
+		config["heartbeat_model"] = strings.TrimSpace(cfg.Model)
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	_, err = e.db.Exec(ctx, `UPDATE threads SET config_json = $2, updated_at = $3 WHERE id = $1`, threadID.String(), string(encoded), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
 }
 
 func (e *Executor) notifyHeartbeatScheduler(ctx context.Context) {

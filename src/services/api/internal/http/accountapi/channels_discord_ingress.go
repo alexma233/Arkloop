@@ -87,13 +87,16 @@ type discordInteractionReply struct {
 }
 
 type discordMessageContext struct {
-	ChannelID  string
-	MessageID  string
-	AuthorID   string
-	AuthorName string
-	Content    string
-	ReplyToID  *string
-	Timestamp  time.Time
+	ChannelID        string
+	MessageID        string
+	AuthorID         string
+	AuthorName       string
+	Content          string
+	ReplyToID        *string
+	Timestamp        time.Time
+	ConversationType string
+	MentionsBot      bool
+	IsReplyToBot     bool
 }
 
 func (c discordConnector) resolveInboundTimeContext(ctx context.Context, ch data.Channel, identity data.ChannelIdentity, ts time.Time) inboundTimeContext {
@@ -532,9 +535,12 @@ func (c discordConnector) persistDiscordInboundStageA(
 		return nil, err
 	}
 
+	mentionsBot := discordMessageMentionsBot(event, ch.ConfigJSON)
 	baseMetadata := map[string]any{
 		"source":            "discord",
 		"conversation_type": "private",
+		"mentions_bot":      mentionsBot,
+		"is_reply_to_bot":   discordMessageRepliesToBot(event),
 	}
 	if !linked {
 		accepted, err := c.channelLedgerRepo.WithTx(tx).Record(ctx, data.ChannelMessageLedgerRecordInput{
@@ -598,6 +604,9 @@ func (c discordConnector) persistDiscordInboundStageA(
 
 	threadID, err := c.resolveDiscordDMThreadID(ctx, tx, ch, persona.ID, derefUUID(persona.ProjectID), identity)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureInboundThreadDefaultModel(ctx, tx, threadID, resolveDiscordDefaultModel(ch.ConfigJSON)); err != nil {
 		return nil, err
 	}
 
@@ -694,40 +703,31 @@ func (c discordConnector) continueDiscordInboundDispatch(
 		return errInboundDispatchDeferred
 	}
 
-	if !channelAgentTriggerConsume(ch.ID) {
+	messageCtx := discordContextFromLedger(latestEntry)
+	dispatchResult, err := DispatchInbound(ctx, tx, InboundDispatchRequest{
+		TraceID:             traceID,
+		Channel:             ch,
+		PersonaRef:          personaRef,
+		Identity:            *identity,
+		Incoming:            discordInboundMessageFromContext(ch.ID, messageCtx),
+		ThreadID:            *latestEntry.ThreadID,
+		MessageID:           *latestEntry.MessageID,
+		ThreadTailMessageID: latestEntry.MessageID.String(),
+		Source:              "discord",
+		ForceActive:         true,
+		RunEventRepo:        c.runEventRepo,
+		JobRepo:             c.jobRepo,
+	})
+	if err != nil {
+		return err
+	}
+	if dispatchResult.FinalState != inboundStateEnqueuedNewRun {
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
 		return errInboundDispatchDeferred
 	}
-
-	runStartedData := buildDiscordRunStartedData(
-		personaRef,
-		resolveDiscordDefaultModel(ch.ConfigJSON),
-		ch.ID,
-		identity.ID,
-		discordContextFromLedger(latestEntry),
-	)
-	runStartedData["thread_tail_message_id"] = latestEntry.MessageID.String()
-	run, _, err := c.runEventRepo.WithTx(tx).CreateRunWithStartedEvent(
-		ctx,
-		ch.AccountID,
-		*latestEntry.ThreadID,
-		channelOwnerUserID(ch),
-		"run.started",
-		runStartedData,
-	)
-	if err != nil {
-		return err
-	}
-	jobPayload := map[string]any{
-		"source":           "discord",
-		"channel_delivery": buildDiscordChannelDeliveryPayload(ch.ID, identity.ID, discordContextFromLedger(latestEntry)),
-	}
-	if _, err := c.jobRepo.WithTx(tx).EnqueueRun(ctx, ch.AccountID, run.ID, traceID, data.RunExecuteJobType, jobPayload, nil); err != nil {
-		return err
-	}
-	if err := markPendingBatchEnqueuedTx(ctx, c.channelLedgerRepo.WithTx(tx), ch.ID, batch, run.ID); err != nil {
+	if err := markPendingBatchEnqueuedTx(ctx, c.channelLedgerRepo.WithTx(tx), ch.ID, batch, dispatchResult.RunID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -820,14 +820,13 @@ func (c discordConnector) recoverPendingDiscordInboundDispatches(ctx context.Con
 
 func buildDiscordRunStartedData(
 	personaRef string,
-	defaultModel string,
 	channelID uuid.UUID,
 	channelIdentityID uuid.UUID,
 	messageCtx discordMessageContext,
 ) map[string]any {
 	return buildChannelRunStartedData(
 		personaRef,
-		defaultModel,
+		"",
 		"",
 		buildDiscordChannelDeliveryPayload(channelID, channelIdentityID, messageCtx),
 	)
@@ -842,28 +841,27 @@ func resolveDiscordDefaultModel(raw json.RawMessage) string {
 }
 
 func buildDiscordChannelDeliveryPayload(channelID uuid.UUID, channelIdentityID uuid.UUID, messageCtx discordMessageContext) map[string]any {
-	payload := map[string]any{
-		"channel_id":   channelID.String(),
-		"channel_type": "discord",
-		"conversation_ref": map[string]any{
-			"target": messageCtx.ChannelID,
-		},
-		"inbound_message_ref": map[string]any{
-			"message_id": messageCtx.MessageID,
-		},
-		"trigger_message_ref": map[string]any{
-			"message_id": messageCtx.MessageID,
-		},
-		"platform_chat_id":           messageCtx.ChannelID,
-		"platform_message_id":        messageCtx.MessageID,
-		"reply_to_message_id":        messageCtx.MessageID,
-		"sender_channel_identity_id": channelIdentityID.String(),
-		"conversation_type":          "private",
+	return BuildChannelDeliveryPayload(discordInboundMessageFromContext(channelID, messageCtx), channelIdentityID)
+}
+
+func discordInboundMessageFromContext(channelID uuid.UUID, messageCtx discordMessageContext) InboundMessage {
+	conversationType := strings.TrimSpace(messageCtx.ConversationType)
+	if conversationType == "" {
+		conversationType = "private"
 	}
-	if messageCtx.ReplyToID != nil && strings.TrimSpace(*messageCtx.ReplyToID) != "" {
-		payload["inbound_reply_to_message_id"] = strings.TrimSpace(*messageCtx.ReplyToID)
+	return InboundMessage{
+		ChannelID:        channelID,
+		ChannelType:      "discord",
+		PlatformChatID:   messageCtx.ChannelID,
+		PlatformMsgID:    messageCtx.MessageID,
+		PlatformUserID:   messageCtx.AuthorID,
+		PlatformUsername: messageCtx.AuthorName,
+		ConversationType: conversationType,
+		Text:             messageCtx.Content,
+		ReplyToMsgID:     messageCtx.ReplyToID,
+		MentionsBot:      messageCtx.MentionsBot,
+		IsReplyToBot:     messageCtx.IsReplyToBot,
 	}
-	return payload
 }
 
 func discordContextFromEvent(event *discordgo.MessageCreate) discordMessageContext {
@@ -877,22 +875,62 @@ func discordContextFromEvent(event *discordgo.MessageCreate) discordMessageConte
 		userName = strings.TrimSpace(event.Author.Username)
 	}
 	return discordMessageContext{
-		ChannelID:  strings.TrimSpace(event.ChannelID),
-		MessageID:  strings.TrimSpace(event.ID),
-		AuthorID:   userID,
-		AuthorName: userName,
-		Content:    strings.TrimSpace(event.Content),
-		ReplyToID:  optionalDiscordReplyMessageID(event),
-		Timestamp:  event.Timestamp,
+		ChannelID:        strings.TrimSpace(event.ChannelID),
+		MessageID:        strings.TrimSpace(event.ID),
+		AuthorID:         userID,
+		AuthorName:       userName,
+		Content:          strings.TrimSpace(event.Content),
+		ReplyToID:        optionalDiscordReplyMessageID(event),
+		Timestamp:        event.Timestamp,
+		ConversationType: "private",
+		MentionsBot:      discordMessageMentionsBot(event, nil),
+		IsReplyToBot:     discordMessageRepliesToBot(event),
 	}
 }
 
 func discordContextFromLedger(entry data.ChannelInboundLedgerEntry) discordMessageContext {
 	return discordMessageContext{
-		ChannelID: strings.TrimSpace(entry.PlatformConversationID),
-		MessageID: strings.TrimSpace(entry.PlatformMessageID),
-		ReplyToID: entry.PlatformParentMessageID,
+		ChannelID:        strings.TrimSpace(entry.PlatformConversationID),
+		MessageID:        strings.TrimSpace(entry.PlatformMessageID),
+		ReplyToID:        entry.PlatformParentMessageID,
+		ConversationType: "private",
+		MentionsBot:      boolFromInboundLedger(entry.MetadataJSON, "mentions_bot"),
+		IsReplyToBot:     boolFromInboundLedger(entry.MetadataJSON, "is_reply_to_bot"),
 	}
+}
+
+func discordMessageRepliesToBot(event *discordgo.MessageCreate) bool {
+	if event == nil || event.ReferencedMessage == nil || event.ReferencedMessage.Author == nil {
+		return false
+	}
+	return event.ReferencedMessage.Author.Bot
+}
+
+func discordMessageMentionsBot(event *discordgo.MessageCreate, rawConfig json.RawMessage) bool {
+	if event == nil {
+		return false
+	}
+	botUserID := ""
+	if len(rawConfig) > 0 {
+		cfg, err := resolveDiscordConfig("discord", rawConfig)
+		if err == nil {
+			botUserID = strings.TrimSpace(cfg.DiscordBotUserID)
+		}
+	}
+	if botUserID == "" {
+		return false
+	}
+	for _, mention := range event.Mentions {
+		if mention != nil && strings.TrimSpace(mention.ID) == botUserID {
+			return true
+		}
+	}
+	return strings.Contains(event.Content, "<@"+botUserID+">") || strings.Contains(event.Content, "<@!"+botUserID+">")
+}
+
+func boolFromInboundLedger(raw json.RawMessage, key string) bool {
+	value, _ := inboundLedgerBool(raw, key)
+	return value
 }
 
 func optionalDiscordReplyMessageID(event *discordgo.MessageCreate) *string {

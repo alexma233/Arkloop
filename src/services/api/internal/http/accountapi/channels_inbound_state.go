@@ -8,6 +8,7 @@ import (
 
 const (
 	inboundStatePendingDispatch     = "pending_dispatch"
+	inboundStateReceived            = "received"
 	inboundStateDeliveredToRun      = "delivered_to_existing_run"
 	inboundStateEnqueuedNewRun      = "new_run_enqueued"
 	inboundStateIgnoredUnlinked     = "ignored_unlinked"

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -70,11 +71,53 @@ func NewChannelContextMiddleware(pool *pgxpool.Pool) RunMiddleware {
 			}
 		}
 		rc.ChannelContext = channelCtx
+		if pool != nil && rc.Run.ThreadID != uuid.Nil {
+			overrides := readThreadRunOverrides(ctx, pool, rc.Run.ThreadID)
+			if overrides.DefaultModel != "" {
+				if rc.InputJSON == nil {
+					rc.InputJSON = map[string]any{}
+				}
+				if _, ok := rc.InputJSON["model"]; !ok {
+					if _, higher := rc.InputJSON["output_model_key"]; !higher {
+						rc.InputJSON["model"] = overrides.DefaultModel
+					}
+				}
+			}
+			if overrides.ReasoningMode != "" && normalizeRunReasoningModeOverride(rc.InputJSON["reasoning_mode"]) == "" {
+				rc.ReasoningMode = overrides.ReasoningMode
+				if rc.AgentConfig != nil {
+					rc.AgentConfig.ReasoningMode = overrides.ReasoningMode
+				}
+			}
+		}
 		rc.ChannelToolSurface = NewChannelToolSurfaceFromContext(channelCtx)
 		if channelCtx.SenderUserID != nil {
 			rc.UserID = channelCtx.SenderUserID
 		}
 		return next(ctx, rc)
+	}
+}
+
+type threadRunOverrides struct {
+	DefaultModel  string
+	ReasoningMode string
+}
+
+func readThreadRunOverrides(ctx context.Context, pool *pgxpool.Pool, threadID uuid.UUID) threadRunOverrides {
+	var raw []byte
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(config_json, '{}'::jsonb) FROM threads WHERE id = $1`, threadID).Scan(&raw); err != nil {
+		return threadRunOverrides{}
+	}
+	var payload struct {
+		DefaultModel  string `json:"default_model"`
+		ReasoningMode string `json:"reasoning_mode"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return threadRunOverrides{}
+	}
+	return threadRunOverrides{
+		DefaultModel:  strings.TrimSpace(payload.DefaultModel),
+		ReasoningMode: normalizeRunReasoningModeOverride(payload.ReasoningMode),
 	}
 }
 

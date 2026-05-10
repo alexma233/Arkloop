@@ -3250,6 +3250,80 @@ func TestDesktopChannelContextOverridesUserIDFromPayload(t *testing.T) {
 	}
 }
 
+func TestDesktopChannelContextAppliesThreadRunOverrides(t *testing.T) {
+	ctx := context.Background()
+
+	sqlitePool, err := sqliteadapter.AutoMigrate(ctx, filepath.Join(t.TempDir(), "desktop.db"))
+	if err != nil {
+		t.Fatalf("auto migrate sqlite: %v", err)
+	}
+	defer sqlitePool.Close()
+
+	sqlitepgx.ConfigureDesktopSQLPool(sqlitePool.Unwrap())
+	db := sqlitepgx.New(sqlitePool.Unwrap())
+
+	accountID := uuid.New()
+	projectID := uuid.New()
+	threadID := uuid.New()
+	identityID := uuid.New()
+	for _, stmt := range []struct {
+		sql  string
+		args []any
+	}{
+		{
+			sql:  `INSERT INTO accounts (id, slug, name, type, status) VALUES ($1, $2, 'Desktop Account', 'personal', 'active')`,
+			args: []any{accountID.String(), "desktop-thread-overrides-" + accountID.String()},
+		},
+		{
+			sql:  `INSERT INTO projects (id, account_id, name) VALUES ($1, $2, 'Desktop Project')`,
+			args: []any{projectID.String(), accountID.String()},
+		},
+		{
+			sql:  `INSERT INTO threads (id, account_id, project_id, is_private, config_json) VALUES ($1, $2, $3, TRUE, '{"default_model":"gpt-desktop","reasoning_mode":"high"}')`,
+			args: []any{threadID.String(), accountID.String(), projectID.String()},
+		},
+		{
+			sql:  `INSERT INTO channel_identities (id, channel_type, platform_subject_id, metadata) VALUES ($1, 'telegram', '10001', '{}')`,
+			args: []any{identityID.String()},
+		},
+	} {
+		if _, err := db.Exec(ctx, stmt.sql, stmt.args...); err != nil {
+			t.Fatalf("seed desktop rows: %v", err)
+		}
+	}
+
+	rc := &pipeline.RunContext{
+		Run:         data.Run{ThreadID: threadID},
+		InputJSON:   map[string]any{},
+		AgentConfig: &pipeline.ResolvedAgentConfig{ReasoningMode: "auto"},
+		JobPayload: map[string]any{
+			"channel_delivery": map[string]any{
+				"channel_id":                 uuid.NewString(),
+				"channel_type":               "telegram",
+				"conversation_ref":           map[string]any{"target": "10001"},
+				"sender_channel_identity_id": identityID.String(),
+			},
+		},
+		ReasoningMode: "auto",
+	}
+
+	mw := desktopChannelContext(db)
+	if err := mw(ctx, rc, func(_ context.Context, rc *pipeline.RunContext) error {
+		if got := rc.InputJSON["model"]; got != "gpt-desktop" {
+			t.Fatalf("expected desktop thread model, got %#v", got)
+		}
+		if rc.ReasoningMode != "high" {
+			t.Fatalf("expected desktop thread reasoning mode, got %q", rc.ReasoningMode)
+		}
+		if rc.AgentConfig == nil || rc.AgentConfig.ReasoningMode != "high" {
+			t.Fatalf("expected agent config reasoning mode, got %#v", rc.AgentConfig)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("desktop channel context failed: %v", err)
+	}
+}
+
 func TestDesktopChannelDeliveryRecordsFailureWhenChannelMissing(t *testing.T) {
 	ctx := context.Background()
 
