@@ -1550,6 +1550,7 @@ func (rt *luaRuntime) runAgentLoop(
 		CancelSignal: func() bool {
 			return rt.ctx.Err() != nil
 		},
+		RunIdleTimeout:        rt.rc.RunIdleTimeout,
 		RunDeadline:           rt.rc.RunWallClockTimeout,
 		PausedInputTimeout:    rt.rc.PausedInputTimeout,
 		IdleHeartbeatInterval: rt.rc.IdleHeartbeatInterval,

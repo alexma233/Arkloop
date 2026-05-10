@@ -84,6 +84,7 @@ func (e *SimpleExecutor) Execute(
 		CancelSignal: func() bool {
 			return ctx.Err() != nil
 		},
+		RunIdleTimeout:        rc.RunIdleTimeout,
 		RunDeadline:           rc.RunWallClockTimeout,
 		PausedInputTimeout:    rc.PausedInputTimeout,
 		IdleHeartbeatInterval: rc.IdleHeartbeatInterval,

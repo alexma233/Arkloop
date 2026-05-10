@@ -209,6 +209,7 @@ type RunContext struct {
 	AgentReasoningIterationsLimit int
 	ToolContinuationBudgetLimit   int
 	MaxParallelTasks              int
+	RunIdleTimeout                time.Duration
 	RunWallClockTimeout           time.Duration
 	PausedInputTimeout            time.Duration
 	IdleHeartbeatInterval         time.Duration

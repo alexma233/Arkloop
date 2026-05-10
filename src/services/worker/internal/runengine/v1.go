@@ -435,7 +435,8 @@ func (e *EngineV1) Execute(ctx context.Context, pool *pgxpool.Pool, run data.Run
 	rc.AgentReasoningIterationsLimit = resolveNonNegativeInt(ctx, e.configResolver, registry, "limit.agent_reasoning_iterations", platformScope, 0)
 	rc.ToolContinuationBudgetLimit = resolvePositiveInt(ctx, e.configResolver, registry, "limit.tool_continuation_budget", platformScope, 32)
 	rc.MaxParallelTasks = resolvePositiveInt(ctx, e.configResolver, registry, "limit.max_parallel_tasks", sharedconfig.Scope{}, 32)
-	rc.RunWallClockTimeout = time.Duration(resolvePositiveInt(ctx, e.configResolver, registry, "limit.run_wall_clock_timeout_ms", platformScope, 900000)) * time.Millisecond
+	rc.RunIdleTimeout = time.Duration(resolveNonNegativeInt(ctx, e.configResolver, registry, "limit.run_idle_timeout_ms", platformScope, 900000)) * time.Millisecond
+	rc.RunWallClockTimeout = time.Duration(resolvePositiveInt(ctx, e.configResolver, registry, "limit.run_wall_clock_timeout_ms", platformScope, 14400000)) * time.Millisecond
 	rc.PausedInputTimeout = time.Duration(resolvePositiveInt(ctx, e.configResolver, registry, "limit.paused_input_timeout_ms", platformScope, 300000)) * time.Millisecond
 	rc.IdleHeartbeatInterval = time.Duration(resolvePositiveInt(ctx, e.configResolver, registry, "limit.idle_heartbeat_interval_ms", platformScope, 15000)) * time.Millisecond
 	rc.CreditPerUSD = resolvePositiveInt(ctx, e.configResolver, registry, "credit.per_usd", sharedconfig.Scope{}, 1000)

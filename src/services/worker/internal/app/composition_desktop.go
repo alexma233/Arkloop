@@ -632,6 +632,7 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	runRuntime.DesktopExecutionMode = strings.TrimSpace(desktop.GetExecutionMode())
 
 	llmRetryMaxAttempts, llmRetryBaseDelayMs := resolveDesktopLLMRetry(ctx, e.db)
+	runIdleTimeout, runWallClockTimeout := resolveDesktopRunTimeouts(ctx, e.db)
 
 	rc := &pipeline.RunContext{
 		Run:                  run,
@@ -665,7 +666,8 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 		AgentReasoningIterationsLimit: 0,
 		ToolContinuationBudgetLimit:   32,
 		MaxParallelTasks:              4,
-		RunWallClockTimeout:           15 * time.Minute,
+		RunIdleTimeout:                runIdleTimeout,
+		RunWallClockTimeout:           runWallClockTimeout,
 		PausedInputTimeout:            5 * time.Minute,
 		IdleHeartbeatInterval:         15 * time.Second,
 		CreditPerUSD:                  1000,
