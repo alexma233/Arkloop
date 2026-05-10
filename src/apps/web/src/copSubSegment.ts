@@ -887,19 +887,25 @@ export function buildFallbackSegments(tools: {
 export function buildThinkingOnlyFromItems(items: { kind: string; content?: string; seq: number; startedAtMs?: number; endedAtMs?: number }[]): { markdown: string; live?: boolean; durationSec: number; startedAtMs?: number } | null {
   let markdown = ''
   let live = false
-  let startedAtMs: number | undefined
-  let endedAtMs: number | undefined
+  let firstStartedAtMs: number | undefined
+  let liveStartedAtMs: number | undefined
+  let lastEndedAtMs: number | undefined
   for (const item of items) {
     if (item.kind === 'thinking' && item.content) {
       markdown += item.content
-      if (item.endedAtMs == null) live = true
-      if (startedAtMs == null && item.startedAtMs != null) startedAtMs = item.startedAtMs
-      if (item.endedAtMs != null) endedAtMs = item.endedAtMs
+      if (item.startedAtMs != null && firstStartedAtMs == null) firstStartedAtMs = item.startedAtMs
+      if (item.endedAtMs == null) {
+        live = true
+        if (liveStartedAtMs == null) liveStartedAtMs = item.startedAtMs
+      } else {
+        lastEndedAtMs = item.endedAtMs
+      }
     }
   }
   if (!markdown.trim()) return null
-  const durationSec = startedAtMs != null && endedAtMs != null
-    ? Math.max(0, Math.round((endedAtMs - startedAtMs) / 1000))
+  const startedAtMs = liveStartedAtMs ?? firstStartedAtMs
+  const durationSec = firstStartedAtMs != null && lastEndedAtMs != null
+    ? Math.max(0, Math.round((lastEndedAtMs - firstStartedAtMs) / 1000))
     : 0
   return { markdown, live, durationSec, startedAtMs }
 }

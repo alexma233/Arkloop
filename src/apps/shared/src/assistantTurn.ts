@@ -287,6 +287,7 @@ export function foldAssistantTurnEvent(state: AssistantTurnFoldState, event: Ass
       })
     }
     currentCop = null
+    state.thinkingMustBreakBeforeNext = false
   }
 
   const appendAssistantDelta = (delta: string) => {
@@ -531,17 +532,6 @@ export function assistantTurnPlainText(turn: AssistantTurnUi): string {
     }
     for (const it of s.items) {
       if (it.kind === 'assistant_text') out += it.content
-    }
-  }
-  return out
-}
-
-export function assistantTurnThinkingPlainText(turn: AssistantTurnUi): string {
-  let out = ''
-  for (const s of turn.segments) {
-    if (s.type !== 'cop') continue
-    for (const it of s.items) {
-      if (it.kind === 'thinking') out += it.content
     }
   }
   return out

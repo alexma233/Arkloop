@@ -115,30 +115,6 @@ export function getUrlScheme(url: string): string {
   }
 }
 
-export function initialThinkingElapsedSec(
-  thinkingStartedAt: number | undefined,
-  thinkingRows: Array<{ live?: boolean }> | null | undefined,
-  assistantThinking: { markdown: string; live?: boolean } | null | undefined,
-): number {
-  if (!thinkingStartedAt) return 0
-  const list = thinkingRows ?? []
-  const anyLive = list.some((r) => r.live) || !!assistantThinking?.live
-  if (anyLive) return 0
-  const hasAny =
-    list.length > 0 ||
-    !!(assistantThinking && (assistantThinking.markdown.trim() !== '' || !!assistantThinking.live))
-  if (!hasAny) return 0
-  return Math.max(0, Math.round((Date.now() - thinkingStartedAt) / 1000))
-}
-
-export function firstThinkingStartMs(
-  thinkingRows: Array<{ startedAtMs?: number }>,
-  fallback?: number,
-): number | undefined {
-  const first = thinkingRows.find((row) => typeof row.startedAtMs === 'number')?.startedAtMs
-  return first ?? fallback
-}
-
 export const REVIEWING_SOURCE_PREVIEW_COUNT = 12
 export const FAVICON_REVEAL_DELAY_MS = 140
 
