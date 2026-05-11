@@ -28,7 +28,7 @@ export function WorkGroup({ durationMs, children }: WorkGroupProps) {
   const durationLabel = durationMs > 0 ? formatDuration(durationMs) : null
 
   return (
-    <div>
+    <div className="work-group-root">
       <button
         type="button"
         onMouseEnter={() => setHovered(true)}
@@ -42,10 +42,10 @@ export function WorkGroup({ durationMs, children }: WorkGroupProps) {
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: hovered ? 'var(--c-cop-row-hover-fg)' : 'var(--c-cop-row-fg)',
-          fontSize: 'var(--c-cop-row-font-size)',
-          fontWeight: 400,
-          lineHeight: 'var(--c-cop-row-line-height)',
+          color: hovered ? 'var(--c-cop-row-hover-fg, var(--c-text-primary))' : 'var(--c-cop-row-fg, var(--c-text-tertiary))',
+          fontSize: 'var(--c-cop-row-font-size, 14px)',
+          fontWeight: 'var(--c-cop-row-weight, 400)',
+          lineHeight: 'var(--c-cop-row-line-height, 20px)',
           transition: 'color 0.15s ease',
           maxWidth: '100%',
           minWidth: 0,

@@ -817,7 +817,8 @@ button:not(:disabled) {
   --c-cop-think-card-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-.top-level-todo-root {
+.top-level-todo-root,
+.work-group-root {
   --c-cop-row-fg: var(--c-text-tertiary);
   --c-cop-row-hover-fg: var(--c-text-primary);
   --c-cop-row-subtle-fg: var(--c-text-tertiary);
