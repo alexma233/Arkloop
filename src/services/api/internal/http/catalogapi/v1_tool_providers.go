@@ -232,6 +232,7 @@ func listToolProviders(
 				item.RuntimeReason = status.RuntimeReason
 				if status.RuntimeState == sharedtoolruntime.ProviderRuntimeStateReady {
 					item.ConfigStatus = "active"
+					item.Configured = true
 				} else {
 					item.ConfigStatus = string(status.RuntimeState)
 					item.ConfigReason = status.RuntimeReason
@@ -472,7 +473,7 @@ func upsertToolProviderCredential(
 	if baseURLRaw != "" {
 		baseURL = baseURLRaw
 	}
-	if apiKey == "" && baseURL == "" {
+	if apiKey == "" && baseURL == "" && !req.BaseURLSet {
 		w.WriteHeader(nethttp.StatusNoContent)
 		return
 	}
@@ -520,6 +521,12 @@ func upsertToolProviderCredential(
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 		return
 	}
+	if req.BaseURLSet && baseURLPtr == nil && !def.RequiresBaseURL {
+		if err := clearToolProviderBaseURL(r.Context(), tx, ownerKind, ownerUserID, providerName); err != nil {
+			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
+			return
+		}
+	}
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
@@ -528,6 +535,30 @@ func upsertToolProviderCredential(
 
 	notifyToolProviderChanged(r.Context(), directPool, pool, notifyPayload)
 	w.WriteHeader(nethttp.StatusNoContent)
+}
+
+func clearToolProviderBaseURL(ctx context.Context, tx pgx.Tx, ownerKind string, ownerUserID *uuid.UUID, providerName string) error {
+	provider := strings.TrimSpace(providerName)
+	if provider == "" {
+		return nil
+	}
+	if ownerKind == "platform" {
+		_, err := tx.Exec(ctx, `
+			UPDATE tool_provider_configs
+			SET base_url = NULL, updated_at = now()
+			WHERE owner_kind = 'platform' AND provider_name = $1
+		`, provider)
+		return err
+	}
+	if ownerUserID == nil {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE tool_provider_configs
+		SET base_url = NULL, updated_at = now()
+		WHERE owner_kind = 'user' AND owner_user_id = $1 AND provider_name = $2
+	`, *ownerUserID, provider)
+	return err
 }
 
 func clearToolProviderCredential(

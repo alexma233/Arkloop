@@ -10,6 +10,7 @@ import (
 	"arkloop/services/worker/internal/tools"
 	loadtools "arkloop/services/worker/internal/tools/builtin/load_tools"
 	"arkloop/services/worker/internal/tools/builtin/read"
+	websearch "arkloop/services/worker/internal/tools/builtin/web_search"
 
 	"github.com/google/uuid"
 )
@@ -110,6 +111,7 @@ func NewToolBuildMiddleware() RunMiddleware {
 		dispatchRef = executor
 
 		allSpecs := FilterToolSpecs(rc.ToolSpecs, filteredAllowlist, rc.ToolRegistry)
+		allSpecs = applyProviderOwnedToolSpecs(allSpecs, rc.ActiveToolProviderByGroup)
 		readImageBridgeEnabled := hasImageBridgeProvider(rc.ActiveToolProviderByGroup)
 		nativeImageInput := supportsImageInput(rc.SelectedRoute)
 		allSpecs = ApplyReadImageSourceVisibility(allSpecs, readImageBridgeEnabled, nativeImageInput)
@@ -187,6 +189,23 @@ func NewToolBuildMiddleware() RunMiddleware {
 
 		return next(ctx, rc)
 	}
+}
+
+func applyProviderOwnedToolSpecs(specs []llm.ToolSpec, activeByGroup map[string]string) []llm.ToolSpec {
+	if len(specs) == 0 || len(activeByGroup) == 0 {
+		return specs
+	}
+	out := append([]llm.ToolSpec(nil), specs...)
+	if providerName := strings.TrimSpace(activeByGroup["web_search"]); providerName != "" {
+		if providerSpec, ok := websearch.ProviderLlmSpec(providerName); ok {
+			for i := range out {
+				if out[i].Name == "web_search" {
+					out[i] = providerSpec
+				}
+			}
+		}
+	}
+	return out
 }
 
 // resolveCoreToolSet returns the set of core tool names from persona config.

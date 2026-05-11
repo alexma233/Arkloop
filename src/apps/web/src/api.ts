@@ -2420,6 +2420,18 @@ export async function setPluginEnabled(
   })
 }
 
+export async function updatePluginSettings(
+  accessToken: string,
+  pluginID: string,
+  settings: Record<string, unknown>,
+): Promise<PluginEnablement> {
+  return apiFetch<PluginEnablement>(`/v1/plugins/${encodeURIComponent(pluginID)}/settings`, {
+    method: 'PATCH',
+    accessToken,
+    body: JSON.stringify({ settings }),
+  })
+}
+
 export async function getPluginRuntimeStatus(accessToken: string, pluginID: string): Promise<PluginRuntimeState> {
   return apiFetch<PluginRuntimeState>(`/v1/plugins/${encodeURIComponent(pluginID)}/runtime/status`, {
     accessToken,
@@ -2431,6 +2443,16 @@ export async function installPluginRuntime(accessToken: string, pluginID: string
     method: 'POST',
     accessToken,
     body: JSON.stringify({}),
+    signal: AbortSignal.timeout(300_000),
+  })
+}
+
+export async function checkPluginRuntime(accessToken: string, pluginID: string): Promise<PluginRuntimeState> {
+  return apiFetch<PluginRuntimeState>(`/v1/plugins/${encodeURIComponent(pluginID)}/runtime/check`, {
+    method: 'POST',
+    accessToken,
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30_000),
   })
 }
 
@@ -2490,6 +2512,20 @@ export type UpsertMCPInstallRequest = {
   clear_auth?: boolean
 }
 
+export type MCPOAuthStartResponse = {
+  authorization_url: string
+  state: string
+  expires_at: string
+}
+
+export type MCPOAuthStatusResponse = {
+  state: string
+  completed: boolean
+  expired: boolean
+  expires_at: string
+  completed_at?: string
+}
+
 export async function listMCPInstalls(accessToken: string): Promise<MCPInstall[]> {
   return apiFetch<MCPInstall[]>('/v1/mcp-installs', { accessToken })
 }
@@ -2528,7 +2564,31 @@ export async function checkMCPInstall(accessToken: string, id: string): Promise<
   return apiFetch<MCPInstall>(`/v1/mcp-installs/${id}:check`, {
     method: 'POST',
     accessToken,
+    signal: AbortSignal.timeout(30_000),
   })
+}
+
+export async function startMCPOAuth(accessToken: string, id: string): Promise<MCPOAuthStartResponse> {
+  return apiFetch<MCPOAuthStartResponse>(`/v1/mcp-installs/${id}:oauth/start`, {
+    method: 'POST',
+    accessToken,
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30_000),
+  })
+}
+
+export async function getMCPOAuthStatus(
+  accessToken: string,
+  id: string,
+  state: string,
+): Promise<MCPOAuthStatusResponse> {
+  return apiFetch<MCPOAuthStatusResponse>(
+    `/v1/mcp-installs/${id}:oauth/status?state=${encodeURIComponent(state)}`,
+    {
+      accessToken,
+      signal: AbortSignal.timeout(30_000),
+    },
+  )
 }
 
 export async function setWorkspaceMCPEnablement(

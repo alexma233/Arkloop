@@ -214,6 +214,21 @@ func toExecutionError(err error, toolName string, serverID string) *tools.Execut
 			Message:    typed.Error(),
 			Details:    details,
 		}
+	case AuthRequiredError:
+		details := map[string]any{
+			"tool_name":     toolName,
+			"server_id":     serverID,
+			"auth_required": true,
+			"reason":        typed.Reason,
+		}
+		if typed.StatusCode > 0 {
+			details["status_code"] = typed.StatusCode
+		}
+		return &tools.ExecutionError{
+			ErrorClass: ErrorClassMcpProtocolError,
+			Message:    typed.Error(),
+			Details:    details,
+		}
 	case ProtocolError:
 		return &tools.ExecutionError{
 			ErrorClass: ErrorClassMcpProtocolError,

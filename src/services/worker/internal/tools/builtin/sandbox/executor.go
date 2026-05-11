@@ -183,7 +183,7 @@ func (e *ToolExecutor) Execute(
 	case "python_execute":
 		return e.executePython(ctx, args, execCtx, started)
 	case "exec_command":
-		return e.executeProcessCommand(ctx, args, execCtx, started)
+		return e.executeProcessCommand(ctx, args, execCtx, toolCallID, started)
 	case "continue_process":
 		return e.executeContinueProcess(ctx, args, execCtx, started)
 	case "terminate_process":

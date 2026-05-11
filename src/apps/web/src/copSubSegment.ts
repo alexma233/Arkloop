@@ -3,6 +3,7 @@ import { normalizeToolName, compactCommandLine, presentationForTool, basename, t
 import { isWebSearchToolName, webSearchQueriesFromArguments } from './webSearchTimelineFromAgentEvent'
 import { planDisplayNameFromArgs } from './planMetadata'
 import { isWebFetchToolName } from './agentEventProcessing'
+import { contentText, renderTimelineText, type TimelineText } from './timelineText'
 
 export type CopSegmentCategory = 'explore' | 'exec' | 'edit' | 'agent' | 'fetch' | 'search' | 'image' | 'plan' | 'generic'
 
@@ -17,21 +18,21 @@ export type CopSubSegment = {
 }
 
 export type TitleSpan =
-  | { text: string; zh?: string }
+  | { text: TimelineText }
   | { text: string; diffKind: 'added' | 'removed' }
 
 export function titleSpansToText(spans: TitleSpan[]): string {
-  return spans.map(s => s.text).join('')
+  return spans.map(s => ('diffKind' in s ? s.text : renderTimelineText(s.text, 'en'))).join('')
 }
 
 export function titleSpansToLocaleText(spans: TitleSpan[], locale: 'zh' | 'en'): string {
-  return spans.map((s) => ('diffKind' in s ? s.text : locale === 'zh' && s.zh ? s.zh : s.text)).join('')
+  return spans.map((s) => ('diffKind' in s ? s.text : renderTimelineText(s.text, locale))).join('')
 }
 
 export function joinTitleSpans(spans: TitleSpan[], separator: string): TitleSpan[] {
   const result: TitleSpan[] = []
   for (let i = 0; i < spans.length; i++) {
-    if (i > 0) result.push({ text: separator })
+    if (i > 0) result.push({ text: contentText(separator) })
     result.push(spans[i]!)
   }
   return result
@@ -72,16 +73,20 @@ export function categoryForTool(toolName: string): CopSegmentCategory {
 }
 
 export function segmentLiveTitle(cat: CopSegmentCategory): string {
+  return `${renderTimelineText(segmentLiveText(cat), 'en')}...`
+}
+
+function segmentLiveText(cat: CopSegmentCategory): TimelineText {
   switch (cat) {
-    case 'explore': return 'Exploring code...'
-    case 'exec': return 'Running...'
-    case 'edit': return 'Editing...'
-    case 'agent': return 'Agent running...'
-    case 'fetch': return 'Fetching...'
-    case 'search': return 'Searching...'
-    case 'image': return `${imageGenerateTitle('live')}...`
-    case 'plan': return 'Working...'
-    case 'generic': return 'Working...'
+    case 'explore': return { kind: 'exploring_code' }
+    case 'exec': return { kind: 'running' }
+    case 'edit': return { kind: 'editing' }
+    case 'agent': return { kind: 'agent_running' }
+    case 'fetch': return { kind: 'fetching' }
+    case 'search': return { kind: 'search', tense: 'live' }
+    case 'image': return { kind: 'image_generation', status: 'live' }
+    case 'plan': return { kind: 'working' }
+    case 'generic': return { kind: 'working' }
   }
 }
 
@@ -94,23 +99,23 @@ function isImageGenerateToolName(toolName: string): boolean {
 }
 
 function imageGenerateTitle(status: 'live' | 'success' | 'failed'): string {
-  switch (status) {
-    case 'live': return 'Generating image'
-    case 'success': return 'Generated image'
-    case 'failed': return 'Image generation failed'
-  }
+  return renderTimelineText({ kind: 'image_generation', status }, 'en')
 }
 
-function imageGenerateDoneTitle(total: number, failed: number): string {
-  if (failed > 0) return failed === 1 ? 'Image generation failed' : `${failed} image generations failed`
-  return total === 1 ? imageGenerateTitle('success') : `Generated ${total} images`
+function imageGenerateText(status: 'live' | 'success' | 'failed', count?: number): TimelineText {
+  return { kind: 'image_generation', status, count }
 }
 
-function imageGenerateCallsTitle(calls: ReadonlyArray<CallItem['call']>): string | null {
+function imageGenerateDoneText(total: number, failed: number): TimelineText {
+  if (failed > 0) return imageGenerateText('failed', failed)
+  return imageGenerateText('success', total)
+}
+
+function imageGenerateCallsText(calls: ReadonlyArray<CallItem['call']>): TimelineText | null {
   if (calls.length === 0) return null
   if (!calls.every((call) => isImageGenerateToolName(call.toolName))) return null
   const failed = calls.filter((call) => typeof call.errorClass === 'string' && call.errorClass.trim() !== '').length
-  return imageGenerateDoneTitle(calls.length, failed)
+  return imageGenerateDoneText(calls.length, failed)
 }
 
 function countLoadToolsCall(call: CallItem['call']): number {
@@ -129,42 +134,55 @@ export function formatCount(count: number, singular: string, plural = `${singula
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-function span(text: string, zh: string): TitleSpan {
-  return { text, zh }
+function span(text: TimelineText): TitleSpan {
+  return { text }
 }
 
-function countZh(count: number, unit: string): string {
-  return `${count} ${unit}`
+function completedSpan(): TitleSpan {
+  return span({ kind: 'completed' })
+}
+
+function stepsCompletedSpan(count: number): TitleSpan {
+  return span({ kind: 'steps_completed', count })
+}
+
+function editCompletedSpan(): TitleSpan {
+  return span({ kind: 'edit_completed' })
+}
+
+function fetchCompletedSpan(count = 1): TitleSpan {
+  return span({ kind: 'fetch_completed', count })
+}
+
+function knownGenericToolSpan(toolName: string): TitleSpan | null {
+  if (toolName === 'todo_write') return span({ kind: 'updated_todos' })
+  if (toolName === 'todo_read') return span({ kind: 'read_todos' })
+  return null
+}
+
+function exploredCodeSpan(): TitleSpan {
+  return span({ kind: 'explored_code' })
 }
 
 function formatLoadToolsTitle(loadToolsCount: number, loadSkillCount: number, tense: 'live' | 'done'): TitleSpan {
-  const verb = tense === 'live' ? 'Loading' : 'Loaded'
-  const zhVerb = tense === 'live' ? '正在加载' : '已加载'
-  const parts: string[] = []
-  const zhParts: string[] = []
-  if (loadToolsCount > 0) parts.push(formatCount(loadToolsCount, 'tool', 'tools'))
-  if (loadToolsCount > 0) zhParts.push(countZh(loadToolsCount, '个工具'))
-  if (loadSkillCount > 0) parts.push(formatCount(loadSkillCount, 'skill', 'skills'))
-  if (loadSkillCount > 0) zhParts.push(countZh(loadSkillCount, '个技能'))
-  if (parts.length > 0) return span(`${verb} ${parts.join(', ')}`, `${zhVerb} ${zhParts.join(', ')}`)
-  return span(`${verb} 0 tools`, `${zhVerb} 0 个工具`)
+  return span({ kind: 'loaded_resources', tense, tools: loadToolsCount, skills: loadSkillCount })
 }
 
 function planModeSpan(toolName: string, args: Record<string, unknown>): TitleSpan {
-  const text = presentationForTool(toolName, args).description
-  if (toolName === 'enter_plan_mode') return span(text, '进入计划模式')
-  if (toolName === 'exit_plan_mode') return span(text, '退出计划模式')
-  return { text }
+  const presentation = presentationForTool(toolName, args)
+  if (toolName === 'enter_plan_mode') return span({ kind: 'plan_mode', action: 'enter' })
+  if (toolName === 'exit_plan_mode') return span({ kind: 'plan_mode', action: 'exit' })
+  return span(presentation.text)
 }
 
 export function segmentCompletedTitle(seg: CopSubSegment): TitleSpan[] {
   const calls = seg.items
     .filter((i): i is Extract<CopBlockItem, { kind: 'call' }> => i.kind === 'call')
     .map((i) => i.call)
-  if (calls.length === 0) return [{ text: 'Completed' }]
+  if (calls.length === 0) return [completedSpan()]
 
-  const imageTitle = imageGenerateCallsTitle(calls)
-  if (imageTitle) return [{ text: imageTitle }]
+  const imageText = imageGenerateCallsText(calls)
+  if (imageText) return [span(imageText)]
 
   switch (seg.category) {
     case 'explore': {
@@ -187,43 +205,40 @@ export function segmentCompletedTitle(seg: CopSubSegment): TitleSpan[] {
         return [formatLoadToolsTitle(loadToolsCount, loadSkillCount, 'done')]
       }
       const parts: TitleSpan[] = []
-      if (readPaths.size > 0) parts.push(span(`Read ${readPaths.size} file${readPaths.size === 1 ? '' : 's'}`, `已读取 ${countZh(readPaths.size, '个文件')}`))
-      if (searchCount > 0) parts.push(span(`${searchCount} search${searchCount === 1 ? '' : 'es'}`, `${searchCount} 次搜索`))
-      if (globCount > 0) parts.push(span(`Listed ${globCount} file${globCount === 1 ? '' : 's'}`, `已列出 ${countZh(globCount, '个文件')}`))
-      return parts.length > 0 ? joinTitleSpans(parts, ', ') : [span('Explored code', '已查看代码')]
+      if (readPaths.size > 0) parts.push(span({ kind: 'read_files', count: readPaths.size }))
+      if (searchCount > 0) parts.push(span({ kind: 'search_count', count: searchCount }))
+      if (globCount > 0) parts.push(span({ kind: 'listed_file_count', count: globCount }))
+      return parts.length > 0 ? joinTitleSpans(parts, ', ') : [exploredCodeSpan()]
     }
     case 'exec': {
       const n = calls.length
-      return [span(`${n} step${n === 1 ? '' : 's'} completed`, `${n} 步已完成`)]
+      return [stepsCompletedSpan(n)]
     }
     case 'edit': {
       const stats = aggregateCallStats(calls)
       const spans = formatStatsSpans(stats)
-      return spans.length > 0 ? spans : [{ text: 'Edit completed' }]
+      return spans.length > 0 ? spans : [editCompletedSpan()]
     }
     case 'agent': {
       const n = calls.length
-      return n === 1 ? [span('Agent completed', '子代理已完成')] : [span(`${n} agent tasks completed`, `${n} 个子代理任务已完成`)]
+      return [span({ kind: 'agent_completed', count: n })]
     }
-    case 'fetch': return [{ text: 'Fetch completed' }]
+    case 'fetch': return [fetchCompletedSpan()]
     case 'search': return [webSearchCompletedTitleSpan(calls)]
-    case 'image': return [{ text: imageGenerateCallsTitle(calls) ?? imageGenerateTitle('success') }]
+    case 'image': return [span(imageGenerateDoneText(calls.length, calls.filter((call) => typeof call.errorClass === 'string' && call.errorClass.trim() !== '').length))]
     case 'plan': {
       if (calls.length === 1) return [planModeSpan(calls[0]!.toolName, calls[0]!.arguments)]
-      return [span(`${calls.length} steps completed`, `${calls.length} 步已完成`)]
+      return [stepsCompletedSpan(calls.length)]
     }
     case 'generic': {
       if (calls.length === 1) {
         const call = calls[0]!
         const t = call.toolName
-        // Map known generic tool names to readable labels
-        const label: Record<string, string> = {
-          todo_write: 'Updated todos',
-          todo_read: 'Read todos',
-        }
-        return [{ text: label[t] ?? t }]
+        const known = knownGenericToolSpan(t)
+        if (known) return [known]
+        return [span(contentText(t))]
       }
-      return [span(`${calls.length} steps completed`, `${calls.length} 步已完成`)]
+      return [stepsCompletedSpan(calls.length)]
     }
   }
 }
@@ -397,10 +412,8 @@ function formatWebSearchTitle(prefix: 'Searching for' | 'Searched for', queries:
 function formatWebSearchTitleSpan(tense: 'live' | 'done', queries: ReadonlyArray<string>): TitleSpan | null {
   if (queries.length === 0) return null
   const first = truncate(queries[0]!, 64)
-  const extra = queries.length === 1 ? '' : ` +${queries.length - 1}`
-  const text = `${tense === 'live' ? 'Searching for' : 'Searched for'} ${first}${extra}`
-  const zh = `${tense === 'live' ? '正在搜索' : '已搜索'} ${first}${extra}`
-  return span(text, zh)
+  const extraCount = queries.length === 1 ? undefined : queries.length - 1
+  return span({ kind: 'search', tense, query: first, extraCount })
 }
 
 function webSearchLiveTitle(args: Record<string, unknown>): string {
@@ -408,36 +421,34 @@ function webSearchLiveTitle(args: Record<string, unknown>): string {
 }
 
 function webSearchLiveTitleSpan(args: Record<string, unknown>): TitleSpan {
-  return formatWebSearchTitleSpan('live', webSearchQueriesFromArguments(args) ?? []) ?? span('Searching', '搜索中')
+  return formatWebSearchTitleSpan('live', webSearchQueriesFromArguments(args) ?? []) ?? span({ kind: 'search', tense: 'live' })
 }
 
 function webFetchLiveTitle(args: Record<string, unknown>): string {
+  return renderTimelineText(webFetchLiveText(args), 'en')
+}
+
+function webFetchLiveText(args: Record<string, unknown>): TimelineText {
   const url = typeof args.url === 'string' ? args.url.trim() : ''
-  if (!url) return 'Fetching page'
+  if (!url) return { kind: 'fetching', target: 'page' }
   try {
     const host = new URL(url).hostname.replace(/^www\./, '')
-    return host ? `Fetching ${truncate(host, 48)}` : 'Fetching page'
+    return { kind: 'fetching', target: host ? truncate(host, 48) : 'page' }
   } catch {
-    return 'Fetching page'
+    return { kind: 'fetching', target: 'page' }
   }
 }
 
 function webSearchCompletedTitleSpan(calls: ReadonlyArray<CallItem['call']>): TitleSpan {
   const byQuery = formatWebSearchTitleSpan('done', uniqueWebSearchQueries(calls))
   if (byQuery) return byQuery
-  return calls.length === 1 ? span('Search completed', '搜索已完成') : span(`${calls.length} searches completed`, `${calls.length} 次搜索已完成`)
-}
-
-function webSearchStatsTitle(stats: AggregatedCallStats): string | null {
-  if (stats.webSearchCount <= 0) return null
-  return formatWebSearchTitle('Searched for', stats.webSearchQueries)
-    ?? (stats.webSearchCount === 1 ? 'Search completed' : `${stats.webSearchCount} searches completed`)
+  return span({ kind: 'search_completed', count: calls.length })
 }
 
 function webSearchStatsTitleSpan(stats: AggregatedCallStats): TitleSpan | null {
   if (stats.webSearchCount <= 0) return null
   return formatWebSearchTitleSpan('done', stats.webSearchQueries)
-    ?? (stats.webSearchCount === 1 ? span('Search completed', '搜索已完成') : span(`${stats.webSearchCount} searches completed`, `${stats.webSearchCount} 次搜索已完成`))
+    ?? span({ kind: 'search_completed', count: stats.webSearchCount })
 }
 
 function lspProgressive(args: Record<string, unknown>): string {
@@ -512,16 +523,17 @@ export function runningToolLabel(
 
 function runningToolTitleSpan(call: CallItem['call']): TitleSpan {
   if (isWebSearchToolName(call.toolName)) return withEllipsis(webSearchLiveTitleSpan(call.arguments), false)
+  if (isWebFetchToolName(call.toolName)) return span(webFetchLiveText(call.arguments))
   const text = runningToolLabel(call.toolName, call.arguments, call.displayDescription)
   const normalized = normalizeToolName(call.toolName)
-  if (normalized === IMAGE_GENERATE_TOOL_NAME) return span(text, '正在生成图片')
-  return { text }
+  if (normalized === IMAGE_GENERATE_TOOL_NAME) return span({ kind: 'image_generation', status: 'live' })
+  return span(call.displayDescription ? contentText(text) : presentationForTool(call.toolName, call.arguments).text)
 }
 
 function withEllipsis(value: TitleSpan, append: boolean = true): TitleSpan {
   if (!append) return value
   if ('diffKind' in value) return { ...value, text: `${value.text}...` }
-  return { text: `${value.text}...`, ...(value.zh ? { zh: `${value.zh}...` } : {}) }
+  return { text: { kind: 'with_ellipsis', value: value.text } }
 }
 
 function formatDiffSpans(path: string, diffMap: Map<string, { added: number; removed: number }>): TitleSpan[] {
@@ -552,34 +564,34 @@ export function formatStatsSpans(stats: AggregatedCallStats): TitleSpan[] {
 
   if (stats.writePaths.length === 1) {
     const path = stats.writePaths[0]!
-    const spans: TitleSpan[] = [span(`Wrote ${path}`, `已写入 ${path}`)]
+    const spans: TitleSpan[] = [span({ kind: 'wrote_path', path })]
     spans.push(...formatDiffSpans(stats.writePaths[0]!, stats.writePathDiff))
     groups.push(spans)
   } else if (stats.writePaths.length > 1) {
-    const spans: TitleSpan[] = [span(`Wrote ${stats.writePaths.length} files`, `已写入 ${countZh(stats.writePaths.length, '个文件')}`)]
+    const spans: TitleSpan[] = [span({ kind: 'wrote_files', count: stats.writePaths.length })]
     spans.push(...sumDiffSpans(stats.writePaths, stats.writePathDiff))
     groups.push(spans)
   }
   if (stats.editPaths.length === 1) {
     const path = stats.editPaths[0]!
-    const spans: TitleSpan[] = [span(`Edited ${path}`, `已编辑 ${path}`)]
+    const spans: TitleSpan[] = [span({ kind: 'edited_path', path })]
     spans.push(...formatDiffSpans(path, stats.editPathDiff))
     groups.push(spans)
   } else if (stats.editPaths.length > 1) {
-    const spans: TitleSpan[] = [span(`Edited ${stats.editPaths.length} files`, `已编辑 ${countZh(stats.editPaths.length, '个文件')}`)]
+    const spans: TitleSpan[] = [span({ kind: 'edited_files', count: stats.editPaths.length })]
     spans.push(...sumDiffSpans(stats.editPaths, stats.editPathDiff))
     groups.push(spans)
   }
-  if (stats.readPaths.size > 0) groups.push([span(`Read ${formatCount(stats.readPaths.size, 'file', 'files')}`, `已读取 ${countZh(stats.readPaths.size, '个文件')}`)])
-  if (stats.searchCount > 0) groups.push([span(formatCount(stats.searchCount, 'search', 'searches'), `${stats.searchCount} 次搜索`)])
-  if (stats.globCount > 0) groups.push([span(`Listed ${formatCount(stats.globCount, 'file', 'files')}`, `已列出 ${countZh(stats.globCount, '个文件')}`)])
+  if (stats.readPaths.size > 0) groups.push([span({ kind: 'read_files', count: stats.readPaths.size })])
+  if (stats.searchCount > 0) groups.push([span({ kind: 'search_count', count: stats.searchCount })])
+  if (stats.globCount > 0) groups.push([span({ kind: 'listed_file_count', count: stats.globCount })])
   if (groups.length === 0 && onlyLoadTools) {
     groups.push([formatLoadToolsTitle(stats.loadToolsCount, stats.loadSkillCount, 'done')])
   }
-  if (stats.execCount > 0) groups.push([span(`Ran ${formatCount(stats.execCount, 'command', 'commands')}`, `已运行 ${countZh(stats.execCount, '条命令')}`)])
-  if (stats.agentCount > 0) groups.push([span(formatCount(stats.agentCount, 'agent task', 'agent tasks'), `${stats.agentCount} 个子代理任务`)])
-  if (stats.fetchCount > 0) groups.push([span(formatCount(stats.fetchCount, 'fetch', 'fetches'), `${stats.fetchCount} 次获取`)])
-  if (stats.imageCount > 0) groups.push([{ text: imageGenerateDoneTitle(stats.imageCount, stats.imageFailedCount) }])
+  if (stats.execCount > 0) groups.push([span({ kind: 'ran_commands', count: stats.execCount })])
+  if (stats.agentCount > 0) groups.push([span({ kind: 'agent_tasks', count: stats.agentCount })])
+  if (stats.fetchCount > 0) groups.push([span({ kind: 'fetch_count', count: stats.fetchCount })])
+  if (stats.imageCount > 0) groups.push([span(imageGenerateDoneText(stats.imageCount, stats.imageFailedCount))])
   const webSearchTitle = webSearchStatsTitleSpan(stats)
   if (webSearchTitle) groups.push([webSearchTitle])
 
@@ -587,48 +599,50 @@ export function formatStatsSpans(stats: AggregatedCallStats): TitleSpan[] {
   if (filtered.length === 0) return []
   const result: TitleSpan[] = []
   for (let i = 0; i < filtered.length; i++) {
-    if (i > 0) result.push({ text: ', ' })
+    if (i > 0) result.push({ text: contentText(', ') })
     result.push(...filtered[i]!)
   }
   return result
 }
 
-function formatStatsParts(stats: AggregatedCallStats): string {
-  return titleSpansToText(formatStatsSpans(stats))
-}
-
-function formatSingleCategoryTitle(cat: CopSegmentCategory, stats: AggregatedCallStats, total: number): string {
+function formatSingleCategoryTitleSpans(cat: CopSegmentCategory, stats: AggregatedCallStats, total: number): TitleSpan[] {
   switch (cat) {
     case 'explore': {
-      const parts = formatStatsParts(stats)
-      return parts || 'Explored code'
+      const parts = formatStatsSpans(stats)
+      return parts.length > 0 ? parts : [exploredCodeSpan()]
     }
     case 'exec':
-      return `${formatCount(stats.execCount, 'step', 'steps')} completed`
+      return [stepsCompletedSpan(stats.execCount)]
     case 'edit': {
       if (stats.writePaths.length > 0 && stats.editPaths.length > 0) {
-        return formatStatsParts(stats)
+        return formatStatsSpans(stats)
       }
       if (stats.writePaths.length > 0 && stats.editPaths.length === 0) {
-        if (stats.writePaths.length === 1) return `Wrote ${stats.writePaths[0]}${titleSpansToText(formatDiffSpans(stats.writePaths[0]!, stats.writePathDiff))}`
-        return `Wrote ${stats.writePaths.length} files`
+        if (stats.writePaths.length === 1) {
+          const path = stats.writePaths[0]!
+          return [span({ kind: 'wrote_path', path }), ...formatDiffSpans(path, stats.writePathDiff)]
+        }
+        return [span({ kind: 'wrote_files', count: stats.writePaths.length })]
       }
-      if (stats.editPaths.length === 1) return `Edited ${stats.editPaths[0]}${titleSpansToText(formatDiffSpans(stats.editPaths[0]!, stats.editPathDiff))}`
-      if (stats.editPaths.length > 1) return `Edited ${stats.editPaths.length} files`
-      return 'Edit completed'
+      if (stats.editPaths.length === 1) {
+        const path = stats.editPaths[0]!
+        return [span({ kind: 'edited_path', path }), ...formatDiffSpans(path, stats.editPathDiff)]
+      }
+      if (stats.editPaths.length > 1) return [span({ kind: 'edited_files', count: stats.editPaths.length })]
+      return [editCompletedSpan()]
     }
     case 'agent':
-      return stats.agentCount === 1 ? 'Agent completed' : `${stats.agentCount} agent tasks completed`
+      return [span({ kind: 'agent_completed', count: stats.agentCount })]
     case 'fetch':
-      return stats.fetchCount === 1 ? 'Fetch completed' : `${stats.fetchCount} fetches completed`
+      return [fetchCompletedSpan(stats.fetchCount)]
     case 'search':
-      return webSearchStatsTitle(stats) ?? 'Search completed'
+      return [webSearchStatsTitleSpan(stats) ?? span({ kind: 'search_completed' })]
     case 'image':
-      return imageGenerateDoneTitle(total, stats.imageFailedCount)
+      return [span(imageGenerateDoneText(total, stats.imageFailedCount))]
     case 'plan':
-      return `${formatCount(total, 'step', 'steps')} completed`
+      return [stepsCompletedSpan(total)]
     case 'generic':
-      return `${formatCount(total, 'step', 'steps')} completed`
+      return [stepsCompletedSpan(total)]
   }
 }
 
@@ -658,12 +672,12 @@ function buildLiveMainTitle(segments: ReadonlyArray<CopSubSegment>): TitleSpan[]
     .filter((it): it is CallItem => it.kind === 'call')
     .map((it) => it.call)
   const current = (() => {
-    if (!lastCall) return { text: segmentLiveTitle(openSeg.category).replace(/\.\.\.$/, '') }
+    if (!lastCall) return span(segmentLiveText(openSeg.category))
     if (openCalls.length > 0 && openCalls.every((call) => isLoadTool(call.toolName))) {
       const stats = aggregateCallStats(openCalls)
       return formatLoadToolsTitle(stats.loadToolsCount, stats.loadSkillCount, 'live')
     }
-    if (isLoadTool(lastCall.toolName)) return { text: segmentLiveTitle(openSeg.category).replace(/\.\.\.$/, '') }
+    if (isLoadTool(lastCall.toolName)) return span(segmentLiveText(openSeg.category))
     return runningToolTitleSpan(lastCall)
   })()
   const closedSegs = segments.filter((s) => s !== openSeg && s.status === 'closed')
@@ -673,8 +687,8 @@ function buildLiveMainTitle(segments: ReadonlyArray<CopSubSegment>): TitleSpan[]
   const history = formatStatsSpans(stats)
   if (history.length === 0) return [withEllipsis(current)]
   const currentWithSeparator = withEllipsis(current)
-  if ('diffKind' in currentWithSeparator) return [...history, { text: ' · ' }, currentWithSeparator]
-  return [...history, { text: ` · ${currentWithSeparator.text}`, ...(currentWithSeparator.zh ? { zh: ` · ${currentWithSeparator.zh}` } : {}) }]
+  if ('diffKind' in currentWithSeparator) return [...history, { text: contentText(' · ') }, currentWithSeparator]
+  return [...history, { text: contentText(' · ') }, currentWithSeparator]
 }
 
 function buildCompleteMainTitle(segments: ReadonlyArray<CopSubSegment>): TitleSpan[] {
@@ -682,21 +696,23 @@ function buildCompleteMainTitle(segments: ReadonlyArray<CopSubSegment>): TitleSp
   if (allCalls.length === 1 && PLAN_MODE_TOOL_NAMES.has(allCalls[0]!.toolName)) {
     return [planModeSpan(allCalls[0]!.toolName, allCalls[0]!.arguments)]
   }
+  if (allCalls.length === 1) {
+    const known = knownGenericToolSpan(allCalls[0]!.toolName)
+    if (known) return [known]
+  }
   if (allCalls.length === 0) {
-    // 退化路径：没有真实 call（例如 segments 仅作为 title 占位），沿用旧 segment.title 行为
-    if (segments.length > 1) return [{ text: `${segments.length} steps completed` }]
-    return [{ text: segments[0]!.title || 'Completed' }]
+    return segments.length > 0 ? [stepsCompletedSpan(segments.length)] : [completedSpan()]
   }
   const stats = aggregateCallStats(allCalls)
-  const imageTitle = imageGenerateCallsTitle(allCalls)
-  if (imageTitle) return [{ text: imageTitle }]
+  const imageText = imageGenerateCallsText(allCalls)
+  if (imageText) return [span(imageText)]
   const cats = Array.from(new Set(segments.map((s) => s.category)))
   if (cats.length === 1 && cats[0] === 'search') {
-    return [webSearchStatsTitleSpan(stats) ?? span('Search completed', '搜索已完成')]
+    return [webSearchStatsTitleSpan(stats) ?? span({ kind: 'search_completed' })]
   }
-  if (cats.length === 1) return [{ text: formatSingleCategoryTitle(cats[0]!, stats, allCalls.length) }]
+  if (cats.length === 1) return formatSingleCategoryTitleSpans(cats[0]!, stats, allCalls.length)
   const parts = formatStatsSpans(stats)
-  return parts.length > 0 ? parts : [{ text: `${formatCount(allCalls.length, 'step', 'steps')} completed` }]
+  return parts.length > 0 ? parts : [stepsCompletedSpan(allCalls.length)]
 }
 
 /**
@@ -855,13 +871,15 @@ export function buildFallbackSegments(tools: {
     seq: t.seq ?? 0,
   }))
 
+  const titleSpans = [stepsCompletedSpan(allTools.length)]
   segs.push({
     id: 'fallback-tools',
     category: 'generic',
     status: 'closed',
     items,
     seq: items[0]?.seq ?? 0,
-    title: `${allTools.length} step${allTools.length === 1 ? '' : 's'} completed`,
+    title: titleSpansToText(titleSpans),
+    titleSpans,
   })
   return segs
 }
@@ -869,19 +887,25 @@ export function buildFallbackSegments(tools: {
 export function buildThinkingOnlyFromItems(items: { kind: string; content?: string; seq: number; startedAtMs?: number; endedAtMs?: number }[]): { markdown: string; live?: boolean; durationSec: number; startedAtMs?: number } | null {
   let markdown = ''
   let live = false
-  let startedAtMs: number | undefined
-  let endedAtMs: number | undefined
+  let firstStartedAtMs: number | undefined
+  let liveStartedAtMs: number | undefined
+  let lastEndedAtMs: number | undefined
   for (const item of items) {
     if (item.kind === 'thinking' && item.content) {
       markdown += item.content
-      if (item.endedAtMs == null) live = true
-      if (startedAtMs == null && item.startedAtMs != null) startedAtMs = item.startedAtMs
-      if (item.endedAtMs != null) endedAtMs = item.endedAtMs
+      if (item.startedAtMs != null && firstStartedAtMs == null) firstStartedAtMs = item.startedAtMs
+      if (item.endedAtMs == null) {
+        live = true
+        if (liveStartedAtMs == null) liveStartedAtMs = item.startedAtMs
+      } else {
+        lastEndedAtMs = item.endedAtMs
+      }
     }
   }
   if (!markdown.trim()) return null
-  const durationSec = startedAtMs != null && endedAtMs != null
-    ? Math.max(0, Math.round((endedAtMs - startedAtMs) / 1000))
+  const startedAtMs = liveStartedAtMs ?? firstStartedAtMs
+  const durationSec = firstStartedAtMs != null && lastEndedAtMs != null
+    ? Math.max(0, Math.round((lastEndedAtMs - firstStartedAtMs) / 1000))
     : 0
   return { markdown, live, durationSec, startedAtMs }
 }

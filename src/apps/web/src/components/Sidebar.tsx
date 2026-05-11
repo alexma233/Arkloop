@@ -28,7 +28,7 @@ import { useLocale } from '../contexts/LocaleContext'
 import { ShareModal } from './ShareModal'
 import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
 import { useAuth } from '../contexts/auth'
-import { useThreadList } from '../contexts/thread-list'
+import { useThreadList, useThreadLiveState } from '../contexts/thread-list'
 import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarUI } from '../contexts/app-ui'
 import {
   readGtdInboxThreadIds, writeGtdInboxThreadIds,
@@ -111,8 +111,6 @@ function withSidebarPatch(thread: ThreadResponse, patch: UpdateThreadSidebarRequ
 type SidebarThreadItemProps = {
   thread: ThreadResponse
   section: 'starred' | 'regular'
-  isRunning: boolean
-  isCompletedUnread: boolean
   isMenuOpen: boolean
   isEditing: boolean
   isActive: boolean
@@ -134,8 +132,6 @@ type SidebarThreadItemProps = {
 const SidebarThreadItem = memo(function SidebarThreadItem({
   thread,
   section,
-  isRunning,
-  isCompletedUnread,
   isMenuOpen,
   isEditing,
   isActive,
@@ -153,6 +149,9 @@ const SidebarThreadItem = memo(function SidebarThreadItem({
   navigate,
   openMenu,
 }: SidebarThreadItemProps) {
+  const { runningThreadIds, completedUnreadThreadIds } = useThreadLiveState()
+  const isRunning = runningThreadIds.has(thread.id)
+  const isCompletedUnread = completedUnreadThreadIds.has(thread.id)
   return (
     <div
       key={`${thread.id}-${section}`}
@@ -259,14 +258,13 @@ export function Sidebar({
 }: Props) {
   const { me, accessToken } = useAuth()
   const {
-    runningThreadIds,
-    completedUnreadThreadIds,
     isPrivateMode,
     pendingIncognitoMode,
     updateTitle: onThreadTitleUpdated,
     upsertThread,
     markCompletionRead,
   } = useThreadList()
+  const { runningThreadIds, completedUnreadThreadIds } = useThreadLiveState()
   const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarUI()
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
@@ -511,8 +509,6 @@ export function Sidebar({
         key={thread.id}
         thread={thread}
         section="regular"
-        isRunning={runningThreadIds.has(thread.id)}
-        isCompletedUnread={completedUnreadThreadIds.has(thread.id)}
         isMenuOpen={menuThreadId === thread.id}
         isEditing={editingThreadId === thread.id}
         isActive={thread.id === activeThreadId}
@@ -531,7 +527,7 @@ export function Sidebar({
         openMenu={openMenu}
       />
     )
-  }, [runningThreadIds, completedUnreadThreadIds, menuThreadId, editingThreadId, activeThreadId, starredSet, draggingThreadId, editingTitle, t.untitled, editInputRef, setEditingTitle, setEditingThreadId, commitRename, markCompletionRead, beforeNavigateToThread, navigate, openMenu])
+  }, [menuThreadId, editingThreadId, activeThreadId, starredSet, draggingThreadId, editingTitle, t.untitled, editInputRef, setEditingTitle, setEditingThreadId, commitRename, markCompletionRead, beforeNavigateToThread, navigate, openMenu])
 
   const renderDropRow = (icon: React.ReactNode, label: string, active: boolean) => (
     <div
@@ -1750,9 +1746,6 @@ export function Sidebar({
             <div className="flex min-w-0 flex-1 flex-col gap-[2px] text-left">
               <div className="truncate text-sm font-medium text-[var(--c-text-secondary)]">
                 {me?.username ?? t.loading}
-              </div>
-              <div className="text-xs font-normal text-[var(--c-text-tertiary)]">
-                {t.enterprisePlan}
               </div>
             </div>
           </button>

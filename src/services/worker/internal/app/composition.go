@@ -177,7 +177,7 @@ func ComposeNativeEngine(ctx context.Context, pool *pgxpool.Pool, directPool *pg
 	allLlmSpecs = append(allLlmSpecs, memorytool.MemoryLlmSpecs()...)
 
 	// 全局 MCP pool，用于 env-loaded 工具及 per-run account 工具的连接复用
-	mcpPool := mcp.NewPool()
+	mcpPool := mcp.NewPool(mcp.WithAuthStore(mcp.NewDBAuthStore(pool)))
 	mcpRegistration, err := mcp.DiscoverFromEnv(ctx, mcpPool)
 	if err != nil {
 		return nil, err

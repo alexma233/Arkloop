@@ -183,6 +183,7 @@ export function SearchFetchSettings({ accessToken }: Props) {
     { value: 'none', label: ds.providerNone },
     { value: 'basic', label: ds.searchProviderBasic },
     { value: 'tavily', label: ds.searchProviderTavily },
+    { value: 'exa', label: ds.searchProviderExa },
     { value: 'searxng', label: ds.searchProviderSearxng },
   ]
 

@@ -9,8 +9,9 @@ import type {
   WebSource,
 } from './storage'
 import type { WebSearchPhaseStep } from './components/CopTimeline'
+import type { TimelineText } from './timelineText'
 import { isWebFetchToolName } from './agentEventProcessing'
-import { exploreGroupLabel, isExploreFileOp, presentationForTool, type ExploreGroupRef } from './toolPresentation'
+import { exploreGroupLabel, exploreGroupText, isExploreFileOp, presentationForTool, type ExploreGroupRef } from './toolPresentation'
 import {
   EXEC_TOOL_NAMES,
   TODO_TOOL_NAMES,
@@ -35,6 +36,7 @@ export type GenericToolCallRef = {
   toolName: string
   label: string
   displayDescription?: string
+  displayText?: TimelineText
   output?: string
   emptyLabel?: string
   status: 'running' | 'success' | 'failed'
@@ -188,6 +190,7 @@ function groupConsecutiveExploreFileOps(calls: ReturnType<typeof copSegmentCalls
     groups.push({
       id: `explore:${currentItems.map((item) => item.id).join(':')}`,
       label: exploreGroupLabel(currentItems, status),
+      text: exploreGroupText(currentItems, status),
       status,
       items: currentItems,
       seq: currentItems[0]?.seq,
@@ -426,7 +429,7 @@ function todoWriteFromCall(item: Extract<CopSegment['items'][number], { kind: 'c
   }
 }
 
-type WebSearchStepRef = Pick<MessageSearchStepRef, 'id' | 'kind' | 'label' | 'status' | 'queries' | 'seq' | 'resultSeq' | 'sources'>
+type WebSearchStepRef = Pick<MessageSearchStepRef, 'id' | 'kind' | 'label' | 'status' | 'queries' | 'seq' | 'resultSeq' | 'sources'> & { text?: WebSearchPhaseStep['text'] }
 
 function fallbackWebSearchStepsForSegment(
   segment: CopSegment,
@@ -451,6 +454,7 @@ function fallbackWebSearchStepsForSegment(
       id: call.toolCallId,
       kind: 'searching',
       label: searchStatus === 'done' ? COMPLETED_SEARCHING_LABEL : DEFAULT_SEARCHING_LABEL,
+      text: searchStatus === 'done' ? { kind: 'search_completed' } : { kind: 'search', tense: 'live' },
       status: searchStatus,
       queries: webSearchQueriesFromArguments(call.arguments),
       seq,
@@ -469,6 +473,7 @@ function fallbackWebSearchStepsForSegment(
       id: `${lastSearchStepId}::reviewing`,
       kind: 'reviewing',
       label: 'Reviewing sources',
+      text: { kind: 'reviewing_sources' },
       status: 'done',
       sources: globalSources,
       seq: typeof lastSearchStepSeq === 'number' ? lastSearchStepSeq + 0.5 : undefined,
@@ -537,6 +542,7 @@ export function copTimelinePayloadForSegment(
         id: s.id,
         kind: s.kind,
         label: s.label,
+        text: s.text,
         status: s.status,
         queries: s.queries,
         resultSeq: s.resultSeq,
@@ -569,6 +575,7 @@ export function copTimelinePayloadForSegment(
         id: `${step.id}::reviewing`,
         kind: 'reviewing',
         label: 'Reviewing sources',
+        text: { kind: 'reviewing_sources' },
         status: step.status,
         sources: scopedSources,
         seq: reviewingSeq,
@@ -597,6 +604,7 @@ export function copTimelinePayloadForSegment(
         const status: GenericToolCallRef['status'] = hasError ? 'failed' : call.result === undefined ? 'running' : 'success'
         const isImageGenerate = call.toolName === IMAGE_GENERATE_TOOL_NAME
         const statusLabel = isImageGenerate ? genericImageGenerateLabel(status) : ''
+        const imageTextStatus = status === 'running' ? 'live' : status
         const resultSummary = isImageGenerate && status === 'success'
           ? summarizeImageGenerateResult(call.result)
           : summarizeGenericResult(call.result)
@@ -611,11 +619,15 @@ export function copTimelinePayloadForSegment(
           id: call.toolCallId,
           toolName: call.toolName,
           label: isExitPlanMode ? '' : (isImageGenerate ? genericImageGenerateInput(call.arguments, statusLabel) : genericDisplay || preview),
-          ...(isExitPlanMode ? { displayDescription: genericDisplay } : isImageGenerate ? { displayDescription: statusLabel } : {}),
+          ...(isExitPlanMode
+            ? { displayDescription: genericDisplay, displayText: call.displayDescription ? { kind: 'content' as const, text: call.displayDescription } : presentation.text }
+            : isImageGenerate
+              ? { displayDescription: statusLabel, displayText: { kind: 'image_generation' as const, status: imageTextStatus } }
+              : { displayText: call.displayDescription ? { kind: 'content' as const, text: call.displayDescription } : presentation.text }),
           output: resultSummary.output,
-          emptyLabel: resultSummary.emptyLabel,
+          ...(resultSummary.emptyLabel ? { emptyLabel: resultSummary.emptyLabel } : {}),
           status,
-          errorMessage: hasError ? call.errorMessage ?? call.errorClass : undefined,
+          ...(hasError ? { errorMessage: call.errorMessage ?? call.errorClass } : {}),
           seq: item.seq,
         }
       }),

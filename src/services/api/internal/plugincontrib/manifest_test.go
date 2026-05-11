@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"arkloop/services/api/internal/data"
 	sharedpluginmanifest "arkloop/services/shared/pluginmanifest"
 	"github.com/google/uuid"
 )
@@ -170,6 +171,46 @@ hooks:
 	}
 	if err := validatePluginHooks(manifest, nil, map[string]any{"plugin_data": "/tmp/plugin"}, true); err != nil {
 		t.Fatalf("validate hooks: %v", err)
+	}
+}
+
+func TestParseCUAPermission(t *testing.T) {
+	output := "Accessibility: granted.\nScreen Recording: not granted."
+	if granted, ok := parseCUAPermission(output, "accessibility"); !ok || !granted {
+		t.Fatalf("expected accessibility granted, got granted=%v ok=%v", granted, ok)
+	}
+	if granted, ok := parseCUAPermission(output, "screen recording"); !ok || granted {
+		t.Fatalf("expected screen recording denied, got granted=%v ok=%v", granted, ok)
+	}
+	if _, ok := parseCUAPermission(output, "camera"); ok {
+		t.Fatalf("expected camera permission to be absent")
+	}
+
+	diagnose := "accessibility      (AXIsProcessTrusted):  true\nscreen recording   (SCShareableContent):  true"
+	if granted, ok := parseCUAPermission(diagnose, "screen recording"); !ok || !granted {
+		t.Fatalf("expected diagnose screen recording granted, got granted=%v ok=%v", granted, ok)
+	}
+}
+
+func TestPreserveRuntimeCheckStatusOnlyCopiesPermissionKeys(t *testing.T) {
+	current := &data.PluginRuntimeState{StatusJSON: json.RawMessage(`{
+		"plugin_data": "/old",
+		"cua-driver.status": "installed",
+		"cua-driver.permissions.accessibility": true,
+		"cua-driver.permissions.screen_recording": false
+	}`)}
+	next := map[string]any{
+		"plugin_data":       "/new",
+		"cua-driver.status": "not_installed",
+	}
+	if !preserveRuntimeCheckStatus(next, current) {
+		t.Fatalf("expected permission state to be copied")
+	}
+	if next["plugin_data"] != "/new" || next["cua-driver.status"] != "not_installed" {
+		t.Fatalf("unexpected non-permission overwrite: %#v", next)
+	}
+	if next["cua-driver.permissions.accessibility"] != true || next["cua-driver.permissions.screen_recording"] != false {
+		t.Fatalf("unexpected permission state: %#v", next)
 	}
 }
 

@@ -130,6 +130,20 @@ describe('copSubSegment plan mode titles', () => {
   })
 })
 
+describe('copSubSegment todo titles', () => {
+  it('todo generic titles 使用语义文本', () => {
+    const writeSegments = buildSubSegments([
+      toolCall('todo1', 'todo_write', 1),
+    ])
+    const readSegments = buildSubSegments([
+      toolCall('todo2', 'todo_read', 1),
+    ])
+
+    expect(titleSpansToLocaleText(aggregateMainTitle(writeSegments, false, true), 'zh')).toBe('已更新待办')
+    expect(titleSpansToLocaleText(aggregateMainTitle(readSegments, false, true), 'zh')).toBe('已读取待办')
+  })
+})
+
 describe('copSubSegment load tool titles', () => {
   it('load_tools 完成态标题不退化为代码探索', () => {
     const segments = buildSubSegments([

@@ -10,6 +10,7 @@ import { COP_TIMELINE_CONTENT_PADDING_LEFT_PX, TypewriterText } from './utils'
 import { CopTimelineUnifiedRow } from './CopUnifiedRow'
 import { localizeTimelineLabel } from './labels'
 import { markerForFileOp } from './markers'
+import { renderTimelineText } from '../../timelineText'
 
 const MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'
 const EXPLORE_VIEWPORT_BOTTOM_PAD = 12
@@ -165,7 +166,7 @@ function FileOpDiffSuffix({ added, removed }: { added: number; removed: number }
 
 export function FileOpToolCard({ op }: { op: FileOpRef }) {
   const { locale } = useLocale()
-  const title = localizeTimelineLabel(op.displayDescription || op.label || op.toolName, locale)
+  const title = op.displayText ? renderTimelineText(op.displayText, locale) : localizeTimelineLabel(op.displayDescription || op.label || op.toolName, locale)
   const filePath = op.filePath || op.displayDetail || ''
   const lines = previewLines(op.output || op.errorMessage)
   const cardTitle = op.pattern || op.displaySubject || (filePath ? basename(filePath) : title)
@@ -225,7 +226,7 @@ export const FileOpToolRow = memo(function FileOpToolRow({ op, live, expandedOff
   const [hovered, setHovered] = useState(false)
   const stabilizeLocalExpansionScroll = useLocalExpansionScrollStabilizer()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const title = localizeTimelineLabel(op.displayDescription || op.label || op.toolName, locale)
+  const title = op.displayText ? renderTimelineText(op.displayText, locale) : localizeTimelineLabel(op.displayDescription || op.label || op.toolName, locale)
   const filePath = op.filePath || op.displayDetail || ''
   const lines = useMemo(() => previewLines(op.output || op.errorMessage), [op.output, op.errorMessage])
   const cardTitle = op.pattern || op.displaySubject || (filePath ? basename(filePath) : title)
@@ -428,10 +429,10 @@ export function ExploreTimelineRow({ group, live, segmentLive, headerVariant = '
               lineHeight: 'var(--c-cop-row-line-height)',
             }}
           >
-            <TypewriterText text={localizeTimelineLabel(group.label, locale)} live={live && group.status === 'running'} className={live && group.status === 'running' ? 'thinking-shimmer-dim' : undefined} />
+            <TypewriterText text={group.text ? renderTimelineText(group.text, locale) : localizeTimelineLabel(group.label, locale)} live={live && group.status === 'running'} className={live && group.status === 'running' ? 'thinking-shimmer-dim' : undefined} />
           </span>
         ) : (
-          <ToolTitle title={localizeTimelineLabel(group.label, locale)} live={live && group.status === 'running'} status={group.status} />
+          <ToolTitle title={group.text ? renderTimelineText(group.text, locale) : localizeTimelineLabel(group.label, locale)} live={live && group.status === 'running'} status={group.status} />
         )}
         {hasItems && (expanded ? <ChevronDown size={headerVariant === 'segment' ? 13 : 12} style={{ flexShrink: 0, color: 'currentColor' }} /> : <ChevronRight size={headerVariant === 'segment' ? 13 : 12} style={{ flexShrink: 0, color: 'currentColor' }} />)}
       </button>
@@ -508,4 +509,3 @@ export function ExploreTimelineRow({ group, live, segmentLive, headerVariant = '
     </div>
   )
 }
-

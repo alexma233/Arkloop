@@ -23,6 +23,7 @@ import (
 	"arkloop/services/worker/internal/security"
 	"arkloop/services/worker/internal/stablejson"
 	"arkloop/services/worker/internal/subagentctl"
+	"arkloop/services/worker/internal/tooldiagnostics"
 	"arkloop/services/worker/internal/tools"
 	"arkloop/services/worker/internal/tools/builtin/askuser"
 	"github.com/google/uuid"
@@ -67,10 +68,12 @@ type RunContext struct {
 	MaxCostMicros                    *int64
 	MaxTotalOutputTokens             *int64
 	ToolExecutor                     *tools.DispatchingExecutor
+	ToolExecutionTracker             *tooldiagnostics.Tracker
 	ToolSpecs                        []llm.ToolSpec
 	PendingMemoryWrites              *memory.PendingWriteBuffer
 	Runtime                          *sharedtoolruntime.RuntimeSnapshot
 	CancelSignal                     func() bool
+	RunIdleTimeout                   time.Duration
 	RunDeadline                      time.Duration
 	PausedInputTimeout               time.Duration
 	IdleHeartbeatInterval            time.Duration
@@ -151,8 +154,9 @@ func (l *Loop) Run(
 	emitter events.Emitter,
 	yield func(events.RunEvent) error,
 ) error {
-	ctx, cancelDeadline := withRunDeadline(ctx, runCtx.RunDeadline)
-	defer cancelDeadline()
+	governor := NewLoopGovernor(runCtx)
+	ctx, stopRunTimeouts := governor.WithRunTimeouts(ctx)
+	defer stopRunTimeouts()
 	if runCtx.ReasoningIterations < 0 {
 		if runCtx.RolloutRecorder != nil {
 			appendRolloutSync(ctx, runCtx.RolloutRecorder, MakeRunEnd("failed"))
@@ -165,7 +169,6 @@ func (l *Loop) Run(
 	seenToolResultKeys := map[string]toolResultDedupInfo{}
 	completionTotals := newCompletionTotals()
 	reasoningTurnsUsed := 0
-	governor := NewLoopGovernor(runCtx)
 	toolResultReplacements := &toolResultReplacementState{ByToolCallID: map[string]string{}}
 	var promptCacheState *promptCacheTurnState
 	if promptCacheEnabled(runCtx) {
@@ -184,11 +187,14 @@ func (l *Loop) Run(
 	}
 
 	for turnIndex := 1; ; turnIndex++ {
-		if terminated, err := governor.Check(ctx, emitter, yield); err != nil {
+		if termination, err := governor.Check(ctx, emitter, yield); err != nil {
 			return err
-		} else if terminated {
+		} else if termination == LoopTerminationDeadline {
 			recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
 			return yieldRunDeadlineExceeded(emitter, yield, runCtx)
+		} else if termination == LoopTerminationIdle {
+			recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
+			return yieldRunIdleTimeout(emitter, yield, runCtx, governor)
 		}
 		if cancelled(runCtx) {
 			return yield(emitter.Emit("run.cancelled", completionTotals.Apply(map[string]any{"reason": "cancel_signal"}), nil, nil))
@@ -299,10 +305,18 @@ func (l *Loop) Run(
 			traceAgentLoopStage(runCtx, "before_model_call_hooks", stageStart, nil)
 		}
 		stageStart = time.Now()
-		turn, err := l.runTurnWithRetry(ctx, runCtx, turnRequest, emitter, yield, turnIndex)
+		turn, err := l.runTurnWithRetry(ctx, runCtx, turnRequest, emitter, yield, turnIndex, governor)
 		traceAgentLoopStage(runCtx, "run_turn_with_retry", stageStart, nil)
 		if err != nil {
 			return err
+		}
+		if runIdleTimeoutExceeded(ctx) {
+			recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
+			return yieldRunIdleTimeout(emitter, yield, runCtx, governor)
+		}
+		if runDeadlineExceeded(ctx) {
+			recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
+			return yieldRunDeadlineExceeded(emitter, yield, runCtx)
 		}
 		if runCtx.PipelineRC != nil && runCtx.PipelineRC.HookRuntime != nil && runCtx.PipelineRC.HookRegistry != nil {
 			runCtx.PipelineRC.HookRuntime.AfterModelResponse(ctx, runCtx.PipelineRC, pipeline.ModelResponse{
@@ -333,6 +347,9 @@ func (l *Loop) Run(
 		hasToolCalls := len(turn.ToolCalls) > 0
 		for _, event := range turn.Events {
 			governor.Touch()
+			if isRunProgressEvent(event) {
+				governor.TouchProgress()
+			}
 			if event.Type == "message.delta" && !runCtx.StreamThinking {
 				if ch, _ := event.DataJSON["channel"].(string); ch == "thinking" {
 					continue
@@ -486,9 +503,18 @@ func (l *Loop) Run(
 				if err := yield(startEvent); err != nil {
 					return err
 				}
+				governor.TouchProgress()
 				preparedPending = append(preparedPending, call)
 			}
 			executedCalls := l.executePendingToolCalls(ctx, runCtx, preparedPending, emitter, yield, &continuationState)
+			if runIdleTimeoutExceeded(ctx) {
+				recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
+				return yieldRunIdleTimeout(emitter, yield, runCtx, governor)
+			}
+			if runDeadlineExceeded(ctx) {
+				recordRunEnd(ctx, runCtx.RolloutRecorder, "failed")
+				return yieldRunDeadlineExceeded(emitter, yield, runCtx)
+			}
 			for _, executed := range executedCalls {
 				governor.Touch()
 				call := executed.Call
@@ -565,6 +591,7 @@ func (l *Loop) Run(
 						return err
 					}
 				}
+				governor.TouchProgress()
 				if runCtx.PipelineRC != nil && runCtx.PipelineRC.HookRuntime != nil && runCtx.PipelineRC.HookRegistry != nil {
 					runCtx.PipelineRC.HookRuntime.AfterToolCall(ctx, runCtx.PipelineRC, call, result)
 				}
@@ -974,6 +1001,11 @@ func (l *Loop) executeToolCall(
 	yield func(events.RunEvent) error,
 ) tools.ExecutionResult {
 	call = llm.CanonicalToolCall(call)
+	if runCtx.ToolExecutionTracker != nil {
+		runCtx.ToolExecutionTracker.Start(runCtx.RunID, call.ToolCallID, call.ToolName)
+		defer runCtx.ToolExecutionTracker.Finish(runCtx.RunID, call.ToolCallID)
+		runCtx.ToolExecutionTracker.UpdatePhase(runCtx.RunID, call.ToolCallID, "rollout")
+	}
 	// Rollout: 写入 ToolCall
 	if runCtx.RolloutRecorder != nil {
 		inputJSON, _ := json.Marshal(call.ArgumentsJSON)
@@ -1026,6 +1058,7 @@ func (l *Loop) executeToolCall(
 		Channel:                          runCtx.Channel,
 		PipelineRC:                       runCtx.PipelineRC,
 		StreamEvent:                      streamEvent,
+		ToolTracker:                      runCtx.ToolExecutionTracker,
 	}
 	result := runCtx.ToolExecutor.Execute(ctx, call.ToolName, copyMap(call.ArgumentsJSON), execCtx, call.ToolCallID)
 	if runCtx.PipelineRC != nil && runCtx.PipelineRC.PluginHookRunner != nil {
@@ -1411,6 +1444,7 @@ func (l *Loop) runTurnWithRetry(
 	emitter events.Emitter,
 	yield func(events.RunEvent) error,
 	turnIndex int,
+	governor *LoopGovernor,
 ) (turnResult, error) {
 	maxAttempts := runCtx.LlmRetryMaxAttempts
 	if maxAttempts <= 0 {
@@ -1487,7 +1521,7 @@ func (l *Loop) runTurnWithRetry(
 			}
 		}
 
-		turn, err := l.runSingleTurn(ctx, runCtx, currentRequest, emitter, yield, turnIndex)
+		turn, err := l.runSingleTurn(ctx, runCtx, currentRequest, emitter, yield, turnIndex, governor)
 		if err != nil {
 			return turnResult{}, err
 		}
@@ -1552,6 +1586,9 @@ func (l *Loop) runTurnWithRetry(
 			turn = markTurnInterrupted(turn)
 		}
 
+		if runIdleTimeoutExceeded(ctx) || runDeadlineExceeded(ctx) {
+			return turnResult{Cancelled: true}, nil
+		}
 		// 非终态、或已用完重试次数，直接返回
 		if !turn.Terminal || attempt >= maxAttempts || !isRetryableTurn(turn) {
 			return turn, nil
@@ -1861,6 +1898,7 @@ func (l *Loop) runSingleTurn(
 	emitter events.Emitter,
 	yield func(events.RunEvent) error,
 	turnIndex int,
+	governor *LoopGovernor,
 ) (turnResult, error) {
 	eventsOut := []events.RunEvent{}
 	toolCalls := []llm.ToolCall{}
@@ -1966,6 +2004,7 @@ func (l *Loop) runSingleTurn(
 			if typed.Channel != nil && *typed.Channel == "thinking" && !runCtx.StreamThinking {
 				return nil
 			}
+			governor.TouchProgress()
 			// heartbeat Phase 1: outcome 未确定前，累积 context 但不 stream 给客户端
 			suppressHeartbeatStream := runCtx.PipelineRC != nil &&
 				pipeline.IsHeartbeatRunContext(runCtx.PipelineRC) &&
@@ -1998,14 +2037,19 @@ func (l *Loop) runSingleTurn(
 			return yieldOrStop(emitter.Emit("run.quirk_learned", typed.ToDataJSON(), nil, nil))
 		case llm.ToolCallArgumentDelta:
 			typed.ToolName = llm.CanonicalToolName(typed.ToolName)
+			if typed.ArgumentsDelta != "" {
+				governor.TouchProgress()
+			}
 			return yieldOrStop(emitter.Emit("tool.call.delta", typed.ToDataJSON(), nil, nil))
 		case llm.ToolCall:
 			typed = llm.CanonicalToolCall(typed)
 			toolCalls = append(toolCalls, typed)
+			governor.TouchProgress()
 			return nil
 		case llm.StreamToolResult:
 			typed.ToolName = llm.CanonicalToolName(typed.ToolName)
 			toolResults = append(toolResults, typed)
+			governor.TouchProgress()
 			var errorClass *string
 			if typed.Error != nil {
 				errorClass = stringPtr(typed.Error.ErrorClass)
@@ -2032,6 +2076,9 @@ func (l *Loop) runSingleTurn(
 		}
 	})
 	if err != nil && err != stopErr {
+		if runIdleTimeoutExceeded(ctx) || runDeadlineExceeded(ctx) {
+			return turnResult{Cancelled: true}, nil
+		}
 		return turnResult{}, err
 	}
 
@@ -3534,25 +3581,47 @@ func cancelled(runCtx RunContext) bool {
 	return runCtx.CancelSignal()
 }
 
-func withRunDeadline(ctx context.Context, deadline time.Duration) (context.Context, context.CancelFunc) {
-	if deadline <= 0 {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, deadline)
+func runDeadlineExceeded(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+		errors.Is(context.Cause(ctx), context.DeadlineExceeded)
 }
 
-func runDeadlineExceeded(ctx context.Context) bool {
-	return errors.Is(ctx.Err(), context.DeadlineExceeded)
+func runIdleTimeoutExceeded(ctx context.Context) bool {
+	return errors.Is(context.Cause(ctx), errRunIdleTimeout)
+}
+
+func isRunProgressEvent(event events.RunEvent) bool {
+	switch event.Type {
+	case "message.delta", "tool.call", "tool.result", EventTypeRunResumed:
+		return true
+	default:
+		return false
+	}
 }
 
 func yieldRunDeadlineExceeded(emitter events.Emitter, yield func(events.RunEvent) error, runCtx RunContext) error {
 	return yield(emitter.Emit("run.failed", map[string]any{
 		"error_class": ErrorClassRunDeadlineExceeded,
-		"message":     "run exceeded wall clock deadline",
+		"message":     "run exceeded max wall clock deadline",
 		"details": map[string]any{
 			"timeout_ms": runCtx.RunDeadline.Milliseconds(),
 		},
 	}, nil, stringPtr(ErrorClassRunDeadlineExceeded)))
+}
+
+func yieldRunIdleTimeout(emitter events.Emitter, yield func(events.RunEvent) error, runCtx RunContext, governor *LoopGovernor) error {
+	idleMs := int64(0)
+	if governor != nil {
+		idleMs = governor.IdleDuration().Milliseconds()
+	}
+	return yield(emitter.Emit("run.failed", map[string]any{
+		"error_class": ErrorClassRunIdleTimeout,
+		"message":     "run exceeded idle timeout",
+		"details": map[string]any{
+			"idle_ms":    idleMs,
+			"timeout_ms": runCtx.RunIdleTimeout.Milliseconds(),
+		},
+	}, nil, stringPtr(ErrorClassRunIdleTimeout)))
 }
 
 func copyMap(value map[string]any) map[string]any {

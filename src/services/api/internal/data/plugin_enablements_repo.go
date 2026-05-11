@@ -302,6 +302,39 @@ func (r *PluginRuntimeStateRepository) Get(ctx context.Context, accountID, packa
 	return &item, nil
 }
 
+func (r *PluginRuntimeStateRepository) ListByPlugin(ctx context.Context, accountID uuid.UUID, pluginID string) ([]PluginRuntimeState, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	if accountID == uuid.Nil || pluginID == "" {
+		return nil, fmt.Errorf("account_id and plugin_id must not be empty")
+	}
+	rows, err := r.db.Query(
+		ctx,
+		`SELECT account_id, package_id, plugin_id, plugin_version, profile_ref,
+		        workspace_ref, status, status_json, updated_at
+		   FROM plugin_runtime_state
+		  WHERE account_id = $1 AND plugin_id = $2
+		  ORDER BY updated_at DESC`,
+		accountID,
+		pluginID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PluginRuntimeState
+	for rows.Next() {
+		var item PluginRuntimeState
+		if err := rows.Scan(&item.AccountID, &item.PackageID, &item.PluginID, &item.PluginVersion, &item.ProfileRef, &item.WorkspaceRef, &item.Status, &item.StatusJSON, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *PluginRuntimeStateRepository) DeleteOtherPackagesForPlugin(ctx context.Context, accountID uuid.UUID, pluginID string, keepPackageID uuid.UUID) error {
 	if ctx == nil {
 		ctx = context.Background()

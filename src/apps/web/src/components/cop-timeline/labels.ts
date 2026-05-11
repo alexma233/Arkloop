@@ -1,12 +1,13 @@
 import type { Locale } from '../../locales'
 import type { TitleSpan } from '../../copSubSegment'
+import { contentText, renderTimelineText } from '../../timelineText'
 
 export function localizeTimelineTitleSpan(span: TitleSpan, locale: Locale): TitleSpan {
   if ('diffKind' in span) return span
-  if (locale === 'zh' && span.zh) return { text: span.zh }
-  return { text: localizeTimelineLabel(span.text, locale) }
+  return { text: contentText(renderTimelineText(span.text, locale)) }
 }
 
+// Legacy boundary for already-materialized historical strings. New timeline paths should use TimelineText.
 export function localizeTimelineLabel(label: string, locale: Locale): string {
   if (locale !== 'zh') return label
   const text = label.trim()

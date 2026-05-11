@@ -29,11 +29,13 @@ type DetectOptions struct {
 }
 
 type DetectResult struct {
-	Status        DetectStatus
-	Path          string
-	HelperAppPath string
-	Version       string
-	Error         string
+	Status            DetectStatus
+	Path              string
+	HelperAppPath     string
+	HelperAppName     string
+	HelperAppBundleID string
+	Version           string
+	Error             string
 }
 
 func DetectRuntime(ctx context.Context, runtime pluginmanifest.RuntimeConfig, opts DetectOptions) DetectResult {
@@ -56,11 +58,12 @@ func detectRuntimePath(ctx context.Context, runtimeID string, detect pluginmanif
 	}
 	resolvedPath = resolveInstallPath(opts.InstallRoot, resolvedPath)
 	helperAppPath := detectHelperAppPath(resolvedPath)
+	helperAppName, helperAppBundleID := detectHelperAppInfo(ctx, helperAppPath)
 	if _, err := os.Stat(resolvedPath); err != nil {
 		if os.IsNotExist(err) {
-			return DetectResult{Status: StatusMissing, Path: resolvedPath, HelperAppPath: helperAppPath}
+			return DetectResult{Status: StatusMissing, Path: resolvedPath, HelperAppPath: helperAppPath, HelperAppName: helperAppName, HelperAppBundleID: helperAppBundleID}
 		}
-		return DetectResult{Status: StatusError, Path: resolvedPath, HelperAppPath: helperAppPath, Error: err.Error()}
+		return DetectResult{Status: StatusError, Path: resolvedPath, HelperAppPath: helperAppPath, HelperAppName: helperAppName, HelperAppBundleID: helperAppBundleID, Error: err.Error()}
 	}
 	version := ""
 	if len(detect.VersionCommand) > 0 {
@@ -75,14 +78,14 @@ func detectRuntimePath(ctx context.Context, runtimeID string, detect pluginmanif
 		}
 		version, err = runVersionCommand(ctx, args)
 		if err != nil {
-			return DetectResult{Status: StatusError, Path: resolvedPath, HelperAppPath: helperAppPath, Error: err.Error()}
+			return DetectResult{Status: StatusError, Path: resolvedPath, HelperAppPath: helperAppPath, HelperAppName: helperAppName, HelperAppBundleID: helperAppBundleID, Error: err.Error()}
 		}
 	}
 	if detect.VersionMin != "" && compareVersion(version, detect.VersionMin) < 0 {
-		return DetectResult{Status: StatusOutdated, Path: resolvedPath, HelperAppPath: helperAppPath, Version: version}
+		return DetectResult{Status: StatusOutdated, Path: resolvedPath, HelperAppPath: helperAppPath, HelperAppName: helperAppName, HelperAppBundleID: helperAppBundleID, Version: version}
 	}
 	_ = runtimeID
-	return DetectResult{Status: StatusInstalled, Path: resolvedPath, HelperAppPath: helperAppPath, Version: version}
+	return DetectResult{Status: StatusInstalled, Path: resolvedPath, HelperAppPath: helperAppPath, HelperAppName: helperAppName, HelperAppBundleID: helperAppBundleID, Version: version}
 }
 
 func runVersionCommand(ctx context.Context, args []string) (string, error) {

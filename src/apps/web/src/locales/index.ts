@@ -19,7 +19,6 @@ export interface LocaleStrings {
   loading: string;
   connectionFailed: string;
   retryConnection: string;
-  enterprisePlan: string;
   // sidebar grouping
   sidebarGrouping: string;
   sidebarGroupingDesc: string;
@@ -1028,6 +1027,7 @@ export interface LocaleStrings {
       emptyMarketplace: string;
       loadFailed: string;
       runtimeInstallFailed: string;
+      runtimeCheckFailed: string;
       enableFailed: string;
       disableFailed: string;
       installRuntime: string;
@@ -1046,13 +1046,26 @@ export interface LocaleStrings {
       custom: string;
       version: string;
       capabilities: string;
-      pluginId: string;
       source: string;
       runtimeStatus: string;
+      permissionApp: string;
+      bundleId: string;
       notRequired: string;
       status: string;
       overview: string;
       contributions: string;
+      settingsSection: string;
+      settingSaveFailed: string;
+      permissionsSection: string;
+      accessibilityPermission: string;
+      screenRecordingPermission: string;
+      permissionCheckedAt: string;
+      permissionError: string;
+      checkPermissions: string;
+      checking: string;
+      unchecked: string;
+      granted: string;
+      notGranted: string;
     };
     extensionsTitle: string;
     extensionsDesc: string;
@@ -1197,9 +1210,11 @@ export interface LocaleStrings {
     fetchProviderFirecrawl: string;
     searchProviderBasic: string;
     searchProviderTavily: string;
+    searchProviderExa: string;
     searchProviderSearxng: string;
     searchProviderBasicDesc: string;
     searchProviderTavilyDesc: string;
+    searchProviderExaDesc: string;
     searchProviderSearxngDesc: string;
     fetchProviderJinaDesc: string;
     fetchProviderBasicDesc: string;

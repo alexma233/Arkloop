@@ -1,7 +1,7 @@
 schemaVersion: 1
 id: arkloop.plugins.cua
 name: CUA Computer Use
-version: 0.1.1
+version: 0.1.5
 publisher: arkloop
 description: Drive local macOS apps through CUA Driver.
 host_requirement: desktop_local
@@ -13,11 +13,11 @@ runtime:
     - "${PLUGIN_DATA}/runtime/CuaDriver.app/Contents/MacOS/cua-driver"
     - "/Applications/CuaDriver.app/Contents/MacOS/cua-driver"
   version_command: ["--version"]
-  version_min: "0.1.1"
+  version_min: "0.1.5"
   binary:
     - platform: darwin-arm64
-      url: https://github.com/trycua/cua/releases/download/cua-driver-v0.1.1/cua-driver-0.1.1-darwin-arm64.tar.gz
-      sha256: 0f1e6cece61aa2ea3048395204900fb869787ce06a99f50e2f8c7f57300fa131
+      url: https://github.com/trycua/cua/releases/download/cua-driver-v0.1.5/cua-driver-0.1.5-darwin-arm64.tar.gz
+      sha256: 665f4eac42294c3690cf8200e2bd88d6044d6763826997d39dc0a418cd4b4a07
 
 mcp_servers:
   - install_key: cua-driver
@@ -27,14 +27,14 @@ mcp_servers:
     env:
       CUA_DRIVER_MCP_MODE: "1"
       CUA_DRIVER_TELEMETRY_ENABLED: "${settings.telemetry_enabled}"
-      CUA_DRIVER_AUTO_UPDATE_ENABLED: "${settings.auto_update_enabled}"
+      CUA_DRIVER_AUTO_UPDATE_ENABLED: "0"
       ARKLOOP_CUA_HELPER_APP_PATH: "${runtime.cua-driver.helper_app_path}"
       ARKLOOP_CUA_BINARY_PATH: "${runtime.cua-driver.command}"
 
 skills:
   - skill_key: cua-driver
     bundle: skills/cua-driver
-    version: "0.1.1"
+    version: "0.1.5"
 
 context: context.md
 
@@ -42,10 +42,5 @@ settings:
   - key: telemetry_enabled
     type: select
     label: Telemetry
-    options: ["0", "1"]
-    default: "0"
-  - key: auto_update_enabled
-    type: select
-    label: Auto update
     options: ["0", "1"]
     default: "0"

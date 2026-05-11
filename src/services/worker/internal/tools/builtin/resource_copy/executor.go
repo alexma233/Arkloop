@@ -157,7 +157,7 @@ func parseSourceURI(value string) (string, string, error) {
 		}
 		return "attachment", key, nil
 	default:
-		return "", "", fmt.Errorf("source_uri must start with artifact: or attachment:")
+		return "", "", fmt.Errorf("source_uri must start with artifact: or attachment")
 	}
 }
 

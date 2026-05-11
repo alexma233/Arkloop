@@ -150,7 +150,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 		return data.PluginPackage{}, err
 	}
 	defer cleanup()
-	manifest, normalizedPayload, err := decodeManifest(payload)
+	manifest, _, err := decodeManifest(payload)
 	if err != nil {
 		return data.PluginPackage{}, err
 	}
@@ -163,7 +163,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 	if err := persistPluginAssets(ctx, i.pluginStore, manifest, pluginRoot); err != nil {
 		return data.PluginPackage{}, err
 	}
-	normalizedPayload, err = sharedpluginmanifest.ToManifestJSON(manifest)
+	normalizedPayload, err := sharedpluginmanifest.ToManifestJSON(manifest)
 	if err != nil {
 		return data.PluginPackage{}, err
 	}
@@ -195,7 +195,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 		Version:            manifest.Version,
 		DisplayName:        manifest.Name,
 		Description:        optionalString(manifest.Description),
-		ManifestJSON:       normalizedPayload,
+		ManifestJSON:       json.RawMessage(normalizedPayload),
 		SettingsSchemaJSON: settingsSchemaPayload,
 		SourceKind:         firstNonEmpty(req.SourceKind, "manifest"),
 		SourceURI:          optionalString(firstNonEmpty(req.SourceURI, sourceURI)),
@@ -204,17 +204,25 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 		return data.PluginPackage{}, err
 	}
 	txEnablements := i.enablementsRepo.WithTx(tx)
+	txRuntime := i.runtimeRepo.WithTx(tx)
 	priorEnablements, err := txEnablements.ListByPlugin(ctx, req.AccountID, manifest.ID)
+	if err != nil {
+		return data.PluginPackage{}, err
+	}
+	priorRuntimeStates, err := txRuntime.ListByPlugin(ctx, req.AccountID, manifest.ID)
 	if err != nil {
 		return data.PluginPackage{}, err
 	}
 	if err := migratePluginEnablements(ctx, txEnablements, req.AccountID, pkg, priorEnablements); err != nil {
 		return data.PluginPackage{}, err
 	}
+	if err := migratePluginRuntimeStates(ctx, txRuntime, i.pluginStore, req.AccountID, pkg, priorRuntimeStates); err != nil {
+		return data.PluginPackage{}, err
+	}
 	if err := txEnablements.DeleteOtherPackagesForPlugin(ctx, req.AccountID, manifest.ID, pkg.ID); err != nil {
 		return data.PluginPackage{}, err
 	}
-	if err := i.runtimeRepo.WithTx(tx).DeleteOtherPackagesForPlugin(ctx, req.AccountID, manifest.ID, pkg.ID); err != nil {
+	if err := txRuntime.DeleteOtherPackagesForPlugin(ctx, req.AccountID, manifest.ID, pkg.ID); err != nil {
 		return data.PluginPackage{}, err
 	}
 	if err := txPackages.DeactivateOtherVersions(ctx, req.AccountID, manifest.ID, pkg.ID); err != nil {
@@ -351,6 +359,47 @@ func migratePluginEnablements(ctx context.Context, repo *data.PluginEnablementsR
 	return nil
 }
 
+func migratePluginRuntimeStates(ctx context.Context, repo *data.PluginRuntimeStateRepository, store PluginStore, accountID uuid.UUID, pkg data.PluginPackage, prior []data.PluginRuntimeState) error {
+	seenScopes := make(map[string]struct{})
+	for _, item := range prior {
+		if item.PackageID == pkg.ID {
+			continue
+		}
+		scopeKey := item.ProfileRef + "\x00" + item.WorkspaceRef
+		if _, ok := seenScopes[scopeKey]; ok {
+			continue
+		}
+		seenScopes[scopeKey] = struct{}{}
+		state, err := pluginDataRuntimeState(store, pkg.PluginID, pkg.Version)
+		if err != nil {
+			return err
+		}
+		if !preserveRuntimeCheckStatus(state, &item) {
+			continue
+		}
+		existing, err := repo.Get(ctx, accountID, pkg.ID, item.ProfileRef, item.WorkspaceRef)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			continue
+		}
+		if _, err := repo.Upsert(ctx, data.PluginRuntimeState{
+			AccountID:     accountID,
+			PackageID:     pkg.ID,
+			PluginID:      pkg.PluginID,
+			PluginVersion: pkg.Version,
+			ProfileRef:    item.ProfileRef,
+			WorkspaceRef:  item.WorkspaceRef,
+			Status:        "not_installed",
+			StatusJSON:    runtimeStateJSON(state),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (e *Enabler) SetEnabled(ctx context.Context, req EnableRequest) (data.PluginEnablement, error) {
 	return e.apply(ctx, req, true)
 }
@@ -384,10 +433,15 @@ func (e *Enabler) RuntimeStatus(ctx context.Context, accountID, userID uuid.UUID
 		return nil, err
 	}
 	if len(manifest.Runtime) > 0 {
+		current, err := e.runtimeRepo.Get(ctx, accountID, pkg.ID, resolvedProfileRef, resolvedWorkspaceRef)
+		if err != nil {
+			return nil, err
+		}
 		statusMap, overall, detectErr := e.detectRuntimeState(ctx, pkg, manifest)
 		if detectErr != nil {
 			return nil, detectErr
 		}
+		preserveRuntimeCheckStatus(statusMap, current)
 		state, err := e.runtimeRepo.Upsert(ctx, data.PluginRuntimeState{
 			AccountID:     accountID,
 			PackageID:     pkg.ID,
@@ -443,6 +497,7 @@ func (e *Enabler) apply(ctx context.Context, req EnableRequest, toggle bool) (da
 	for key, value := range req.Settings {
 		mergedSettings[key] = value
 	}
+	mergedSettings = normalizeRuntimeSettings(manifest, mergedSettings)
 	settingsPayload, settings, err := normalizeSettings(mergedSettings, manifest)
 	if err != nil {
 		return data.PluginEnablement{}, err
@@ -569,6 +624,7 @@ func (e *Enabler) resolveScope(ctx context.Context, req EnableRequest) (data.Plu
 }
 
 func (e *Enabler) syncDerivedResources(ctx context.Context, tx pgx.Tx, req EnableRequest, manifest Manifest, profileRef, workspaceRef string, settings map[string]any, runtimeState map[string]any, toggle bool) error {
+	settings = normalizeRuntimeSettings(manifest, settings)
 	if err := validatePluginHooks(manifest, settings, runtimeState, req.Enabled); err != nil {
 		return err
 	}
@@ -611,6 +667,20 @@ func (e *Enabler) syncDerivedResources(ctx context.Context, tx pgx.Tx, req Enabl
 		}
 	}
 	return nil
+}
+
+func normalizeRuntimeSettings(manifest Manifest, settings map[string]any) map[string]any {
+	if strings.TrimSpace(manifest.ID) != cuaPluginID {
+		return settings
+	}
+	out := make(map[string]any, len(settings))
+	for key, value := range settings {
+		if strings.TrimSpace(key) == "auto_update_enabled" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func (e *Enabler) workspaceHasEnabledPluginReference(ctx context.Context, tx pgx.Tx, accountID uuid.UUID, pluginID, workspaceRef string) (bool, error) {
@@ -1121,7 +1191,7 @@ func fetchPluginManifestURL(ctx context.Context, source string) ([]byte, error) 
 	if err != nil {
 		return nil, fmt.Errorf("fetch plugin manifest: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("fetch plugin manifest http %d", resp.StatusCode)
 	}
@@ -1159,7 +1229,7 @@ func extractRegistryBundle(bundle []byte) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("open plugin bundle: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	reader := tar.NewReader(gz)
 	var manifestData []byte
 	for {
@@ -1179,7 +1249,7 @@ func extractRegistryBundle(bundle []byte) ([]byte, string, error) {
 			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(name)), 0o755); err != nil {
 				return nil, "", err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			data, err := io.ReadAll(reader)
 			if err != nil {
 				return nil, "", fmt.Errorf("read plugin bundle file %q: %w", name, err)

@@ -342,9 +342,74 @@ describe('ChatInput persona selector', () => {
     expect(mockedMeasureTextareaHeight).toHaveBeenCalled()
     expect(mockedMeasureTextareaHeight.mock.calls.some(([args]) => args.value.length > 15)).toBe(true)
     const expandedTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null
-    expect(expandedTextarea).not.toBe(compactTextarea)
+    expect(expandedTextarea).toBe(compactTextarea)
     expect(document.activeElement).toBe(expandedTextarea)
     expect(expandedTextarea?.selectionStart).toBe(compactTextarea.value.length)
+    expect(expandedTextarea?.selectionEnd).toBe(compactTextarea.value.length)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('Work 普通输入从 compact 展开时不重建 textarea', async () => {
+    const mockedMeasureTextareaHeight = vi.mocked(measureTextareaHeight)
+    mockedMeasureTextareaHeight.mockImplementation(({ value }) => (
+      value.length > 15 ? 40 : 20
+    ))
+    const originalGetComputedStyle = window.getComputedStyle
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
+      const style = originalGetComputedStyle.call(window, element)
+      Object.defineProperty(style, 'lineHeight', { value: '20px', configurable: true })
+      Object.defineProperty(style, 'fontSize', { value: '16px', configurable: true })
+      Object.defineProperty(style, 'font', { value: '16px sans-serif', configurable: true })
+      return style
+    })
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'clientWidth', { configurable: true, value: 120 })
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'offsetWidth', { configurable: true, value: 120 })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <ChatInput
+            onSubmit={(event) => event.preventDefault()}
+            accessToken="token"
+            variant="chat"
+            appMode="work"
+            hasMessages={false}
+            messagesLoading={false}
+          />
+        </LocaleProvider>,
+      )
+    })
+    await act(async () => {
+      await flushMicrotasks()
+    })
+
+    const compactTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(compactTextarea).not.toBeNull()
+    if (!compactTextarea) return
+
+    await act(async () => {
+      compactTextarea.focus()
+      const value = 'plain input that should wrap into expanded layout'
+      setTextareaValue(compactTextarea, value)
+      compactTextarea.setSelectionRange(6, 11, 'forward')
+      readTextareaReactProps(compactTextarea).onChange({ currentTarget: compactTextarea })
+      await flushMicrotasks()
+    })
+
+    expect(mockedMeasureTextareaHeight).toHaveBeenCalled()
+    const expandedTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(expandedTextarea).toBe(compactTextarea)
+    expect(document.activeElement).toBe(compactTextarea)
+    expect(compactTextarea.selectionStart).toBe(6)
+    expect(compactTextarea.selectionEnd).toBe(11)
 
     act(() => {
       root.unmount()

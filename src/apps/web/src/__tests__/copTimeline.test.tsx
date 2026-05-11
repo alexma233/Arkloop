@@ -262,7 +262,7 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'some thinking', durationSec: 5, live: false },
         isComplete: true,
       })
-      expect(html).toContain('Thought for 5s')
+      expect(html).toContain('已思考 5s')
     })
 
     it('complete thinkingOnly with durationSec=0 shows "Thought"', () => {
@@ -272,7 +272,7 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'think', durationSec: 0, live: false },
         isComplete: true,
       })
-      expect(html).toContain('Thought')
+      expect(html).toContain('已思考')
     })
 
     it('live thinkingOnly shows thinking-live phase key', async () => {
@@ -410,7 +410,8 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('Read 9 files, 10 searches, Listed 3 files')
+      expect(html).toContain('1 步已完成')
+      expect(html).not.toContain('Read 9 files, 10 searches, Listed 3 files')
       expect(html).not.toContain('正在搜索 for')
     })
 
@@ -445,7 +446,7 @@ describe('CopTimeline', () => {
         isComplete: false,
         live: true,
       })
-      expect(html).toContain('Exploring code...')
+      expect(html).toContain('正在查看代码...')
     })
 
     it('segment with status=closed shows its completed title', () => {
@@ -484,7 +485,7 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('Wrote hello.py')
+      expect(html).toContain('已写入 hello.py')
       expect(html).not.toContain('Edited hello.py')
     })
   })
@@ -531,7 +532,7 @@ describe('CopTimeline', () => {
         isComplete: false,
         live: true,
       })
-      expect(html).toContain('Running...')
+      expect(html).toContain('编辑中...')
     })
 
     it('thinkingOnly + live -> data-phase="thinking-live"', () => {
@@ -567,7 +568,7 @@ describe('CopTimeline', () => {
       expect(html).toContain('Planning next steps...')
     })
 
-    it('complete with N segments -> header shows step count', () => {
+    it('complete with N segments -> header shows localized step count', () => {
       const seg1 = makeSeg({ id: 's1', status: 'closed', title: 'Step 1', seq: 0 })
       const seg2 = makeSeg({ id: 's2', status: 'closed', title: 'Step 2', seq: 1, category: 'edit' })
       const html = renderTimeline({
@@ -575,18 +576,36 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('2 steps completed')
+      expect(html).toContain('2 步已完成')
+      expect(html).not.toContain('2 steps completed')
     })
 
-    it('complete with 1 segment uses segment title', () => {
+    it('complete with 1 empty segment uses localized fallback title', () => {
       const seg = makeSeg({ id: 's1', status: 'closed', title: 'Step 1', seq: 0 })
       const html = renderTimeline({
         segments: [seg],
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('Step 1')
+      expect(html).toContain('1 步已完成')
+      expect(html).not.toContain('Step 1')
       expect(html).not.toContain('1 step completed')
+    })
+
+    it('single segment body uses the scrollable card shell', () => {
+      const seg = makeSeg({ id: 's1', status: 'open', title: 'Reading files', items: [
+        { kind: 'call', call: { toolCallId: 'c1', toolName: 'read_file', arguments: {} }, seq: 0 },
+        { kind: 'call', call: { toolCallId: 'c2', toolName: 'read_file', arguments: {} }, seq: 1 },
+      ]})
+      const html = renderTimeline({
+        segments: [seg],
+        pool: EMPTY_POOL,
+        isComplete: false,
+        live: true,
+      })
+      expect(html).toContain('class="cop-timeline-items-card"')
+      expect(html).toContain('class="cop-timeline-items-card__scroll"')
+      expect(html).toContain('padding-top:1px')
     })
   })
 
@@ -665,6 +684,99 @@ describe('CopTimeline', () => {
         cleanup()
       }
     })
+
+    it('scrollable card starts pinned to bottom and updates edge shadows', async () => {
+      const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 320 : 160
+      })
+      const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function getClientHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 120 : 160
+      })
+      const seg = makeSeg({ id: 's1', status: 'closed', title: 'Read files', items: [
+        { kind: 'call', call: { toolCallId: 'c1', toolName: 'read_file', arguments: {} }, seq: 0 },
+        { kind: 'call', call: { toolCallId: 'c2', toolName: 'read_file', arguments: {} }, seq: 1 },
+      ]})
+      try {
+        const { container, cleanup } = await renderTimelineDom({
+          segments: [seg],
+          pool: EMPTY_POOL,
+          isComplete: true,
+          live: false,
+        })
+        try {
+          const card = container.querySelector('.cop-timeline-items-card') as HTMLElement | null
+          const scroll = container.querySelector('.cop-timeline-items-card__scroll') as HTMLElement | null
+          expect(card).not.toBeNull()
+          expect(scroll).not.toBeNull()
+          expect(scroll?.scrollTop).toBe(320)
+          expect(card?.dataset.topShadow).toBe('true')
+          expect(card?.dataset.bottomShadow).toBe('false')
+
+          await act(async () => {
+            scroll!.scrollTop = 0
+            scroll!.dispatchEvent(new Event('scroll', { bubbles: true }))
+          })
+          expect(card?.dataset.topShadow).toBe('false')
+          expect(card?.dataset.bottomShadow).toBe('true')
+        } finally {
+          cleanup()
+        }
+      } finally {
+        scrollHeightSpy.mockRestore()
+        clientHeightSpy.mockRestore()
+      }
+    })
+
+    it('live scrollable card stops following bottom after user scrolls up', async () => {
+      const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 320 : 160
+      })
+      const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function getClientHeight(this: HTMLElement) {
+        return (this as HTMLElement).classList.contains('cop-timeline-items-card__scroll') ? 120 : 160
+      })
+      const seg = makeSeg({ id: 's1', status: 'open', title: 'Reading files', items: [
+        { kind: 'call', call: { toolCallId: 'c1', toolName: 'read_file', arguments: {} }, seq: 0 },
+        { kind: 'call', call: { toolCallId: 'c2', toolName: 'read_file', arguments: {} }, seq: 1 },
+      ]})
+      try {
+        const { container, rerender, cleanup } = await renderTimelineDom({
+          segments: [seg],
+          pool: EMPTY_POOL,
+          isComplete: false,
+          live: true,
+        })
+        try {
+          const scroll = container.querySelector('.cop-timeline-items-card__scroll') as HTMLElement | null
+          expect(scroll).not.toBeNull()
+          expect(scroll?.scrollTop).toBe(320)
+
+          await act(async () => {
+            scroll!.scrollTop = 0
+            scroll!.dispatchEvent(new Event('scroll', { bubbles: true }))
+          })
+
+          await rerender({
+            segments: [{
+              ...seg,
+              items: [
+                ...seg.items,
+                { kind: 'call', call: { toolCallId: 'c3', toolName: 'read_file', arguments: {} }, seq: 2 },
+              ],
+            }],
+            pool: EMPTY_POOL,
+            isComplete: false,
+            live: true,
+          })
+
+          expect(scroll?.scrollTop).toBe(0)
+        } finally {
+          cleanup()
+        }
+      } finally {
+        scrollHeightSpy.mockRestore()
+        clientHeightSpy.mockRestore()
+      }
+    })
   })
 
   describe('mixed thinking + segments', () => {
@@ -676,7 +788,8 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'Thought about it', durationSec: 4, live: false },
         isComplete: true,
       })
-      expect(html).toContain('1 step completed')
+      expect(html).toContain('1 步已完成')
+      expect(html).not.toContain('1 step completed')
       expect(html).toContain('data-phase="thought"')
     })
 
@@ -702,7 +815,8 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'thought', durationSec: 2, live: false },
         isComplete: true,
       })
-      expect(html).toContain('3 steps completed')
+      expect(html).toContain('3 步已完成')
+      expect(html).not.toContain('3 steps completed')
     })
   })
 
@@ -749,7 +863,7 @@ describe('CopTimelineHeaderLabel', () => {
     })
 
     expect(incrementalTypewriterMock).toHaveBeenCalledWith(
-      'Planning next moves for 0s',
+      'Planning next moves 0s',
       true,
       'Planning next moves...',
     )

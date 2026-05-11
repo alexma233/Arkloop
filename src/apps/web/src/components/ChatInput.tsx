@@ -1346,59 +1346,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           padding: formPadding,
         }}
       >
-        {!isWorkCompactInput && (
-          <div
-            onMouseEnter={() => setSetupTextHovered(true)}
-            onMouseLeave={() => setSetupTextHovered(false)}
-            style={{
-              position: 'relative',
-              marginBottom: textareaWrapperMarginBottom,
-              ...(isWorkExpandedInput
-                ? { marginLeft: '3.5px', padding: '10px 0 0' }
-                : {}),
-            }}
-          >
-            {shouldHighlightSetupCommand && (
-              <div aria-hidden="true" style={setupHighlightStyle}>
-                {renderSetupHighlightedText()}
-              </div>
-            )}
-            <AutoResizeTextarea
-              ref={textareaRef}
-              rows={1}
-              className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
-              value={draft}
-              onChange={(e) => handleDraftChange(e.currentTarget)}
-              onKeyDown={handleKeyDown}
-              onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
-              onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
-              onCompositionStart={handleCompositionStart}
-              onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
-              onPaste={handleTextareaPaste}
-              onFocus={handleTextareaFocus}
-              onBlur={handleTextareaBlur}
-              placeholder={resolvedPlaceholder}
-              disabled={disabled}
-              minRows={1}
-              maxHeight={300}
-              style={{
-                fontFamily: 'inherit',
-                fontSize: '16px',
-                fontWeight: 310,
-                ...(variant === 'chat' ? { lineHeight: 1.45 as const } : {}),
-                color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
-                caretColor: 'var(--c-text-primary)',
-                marginTop: '0px',
-                marginBottom: '0px',
-                position: 'relative',
-                zIndex: 2,
-                ...(isWorkExpandedInput ? { display: 'block', padding: 0, border: 'none' } : {}),
-                letterSpacing: '-0.16px',
-              }}
-            />
-          </div>
-        )}
-
         <div
           className="flex items-center"
           style={{
@@ -1406,6 +1353,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             minHeight: isWorkChat ? '34.5px' : '32px',
             width: '100%',
             minWidth: 0,
+            flexWrap: isWorkCompactInput ? 'nowrap' : 'wrap',
           }}
         >
           <PersonaModelBar
@@ -1480,75 +1428,83 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           )}
 
-          {isWorkCompactInput && (
-            <>
-              <div
-                onMouseEnter={() => setSetupTextHovered(true)}
-                onMouseLeave={() => setSetupTextHovered(false)}
-                style={{
-                  flex: '1 1 auto',
-                  minWidth: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  position: 'relative',
-                  padding: '0 8px 0 4px',
-                }}
-              >
-                {shouldHighlightSetupCommand && (
-                  <div aria-hidden="true" style={setupHighlightStyle}>
-                    {renderSetupHighlightedText()}
-                  </div>
-                )}
-                <AutoResizeTextarea
-                  ref={textareaRef}
-                  rows={1}
-                  className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
-                  value={draft}
-                  onChange={(e) => handleDraftChange(e.currentTarget)}
-                  onKeyDown={handleKeyDown}
-                  onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
-                  onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
-                  onPaste={handleTextareaPaste}
-                  onFocus={handleTextareaFocus}
-                  onBlur={handleTextareaBlur}
-                  placeholder={resolvedPlaceholder}
-                  disabled={disabled}
-                  minRows={1}
-                  maxHeight={300}
-                  style={{
-                    display: 'block',
-                    fontFamily: 'inherit',
-                    fontSize: '16px',
-                    fontWeight: 310,
-                    lineHeight: 1.45 as const,
-                    color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
-                    caretColor: 'var(--c-text-primary)',
-                    marginTop: '0px',
-                    marginBottom: '0px',
-                    padding: 0,
-                    border: 'none',
+          <div
+            onMouseEnter={() => setSetupTextHovered(true)}
+            onMouseLeave={() => setSetupTextHovered(false)}
+            style={{
+              position: 'relative',
+              minWidth: 0,
+              ...(isWorkCompactInput
+                ? {
                     flex: '1 1 auto',
-                    minWidth: 0,
-                    position: 'relative',
-                    zIndex: 2,
-                    letterSpacing: '-0.16px',
-                  }}
-                />
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 8px 0 4px',
+                  }
+                : {
+                    order: -1,
+                    flex: '0 0 100%',
+                    width: '100%',
+                    marginBottom: textareaWrapperMarginBottom,
+                    ...(isWorkExpandedInput
+                      ? { marginLeft: '3.5px', padding: '10px 0 0' }
+                      : {}),
+                  }),
+            }}
+          >
+            {shouldHighlightSetupCommand && (
+              <div aria-hidden="true" style={setupHighlightStyle}>
+                {renderSetupHighlightedText()}
               </div>
-              <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
-                <ModelPicker
-                  accessToken={accessToken}
-                  value={selectedModel}
-                  onChange={handleModelChange}
-                  onAddModel={() => onOpenSettings?.('models')}
-                  variant={variant}
-                  thinkingEnabled={reasoningMode}
-                  onThinkingChange={handleReasoningModeChange}
-                />
-              </div>
-            </>
+            )}
+            <AutoResizeTextarea
+              ref={textareaRef}
+              rows={1}
+              className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
+              value={draft}
+              onChange={(e) => handleDraftChange(e.currentTarget)}
+              onKeyDown={handleKeyDown}
+              onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onCompositionStart={handleCompositionStart}
+              onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
+              onPaste={handleTextareaPaste}
+              onFocus={handleTextareaFocus}
+              onBlur={handleTextareaBlur}
+              placeholder={resolvedPlaceholder}
+              disabled={disabled}
+              minRows={1}
+              maxHeight={300}
+              style={{
+                fontFamily: 'inherit',
+                fontSize: '16px',
+                fontWeight: 310,
+                ...(variant === 'chat' ? { lineHeight: 1.45 as const } : {}),
+                color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
+                caretColor: 'var(--c-text-primary)',
+                marginTop: '0px',
+                marginBottom: '0px',
+                position: 'relative',
+                zIndex: 2,
+                ...(isWorkChat ? { display: 'block', padding: 0, border: 'none' } : {}),
+                ...(isWorkCompactInput ? { flex: '1 1 auto', minWidth: 0 } : {}),
+                letterSpacing: '-0.16px',
+              }}
+            />
+          </div>
+
+          {isWorkCompactInput && (
+            <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+              <ModelPicker
+                accessToken={accessToken}
+                value={selectedModel}
+                onChange={handleModelChange}
+                onAddModel={() => onOpenSettings?.('models')}
+                variant={variant}
+                thinkingEnabled={reasoningMode}
+                onThinkingChange={handleReasoningModeChange}
+              />
+            </div>
           )}
 
           {/* mic + send 共用同一位置，disabled 时显示 spinner */}

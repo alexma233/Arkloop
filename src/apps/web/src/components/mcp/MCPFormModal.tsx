@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { AutoResizeTextarea, Modal } from '@arkloop/shared'
 import { SettingsLabel } from '../settings/_SettingsLabel'
-import { SettingsInput, settingsInputCls } from '../settings/_SettingsInput'
+import { SettingsInput } from '../settings/_SettingsInput'
 import { SettingsSelect } from '../settings/_SettingsSelect'
 import { SettingsButton } from '../settings/_SettingsButton'
 import {
@@ -49,7 +49,8 @@ export function MCPFormModal({
   copy,
 }: Props) {
   const title = editing ? copy.formTitleEdit : copy.formTitleCreate
-  const textareaCls = settingsInputCls('sm')
+  const textareaCls =
+    'w-full resize-none rounded-[6.5px] border-[0.65px] [border-color:color-mix(in_srgb,var(--c-border)_64%,var(--c-bg-input)_36%)] bg-[var(--c-bg-input)] px-3 py-2 text-sm font-[450] leading-5 text-[var(--c-text-primary)] outline-none placeholder:font-[350] placeholder:text-[var(--c-text-muted)] transition-colors duration-[180ms] hover:[border-color:color-mix(in_srgb,var(--c-border)_72%,var(--c-text-primary)_28%)] focus:[border-color:color-mix(in_srgb,var(--c-border)_72%,var(--c-text-primary)_28%)]'
 
   return (
     <Modal open={open} onClose={onClose} title={title} width="520px">
@@ -153,7 +154,6 @@ export function MCPFormModal({
           />
         </div>
 
-        {/* Bearer Token + Timeout */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <SettingsLabel>{copy.fieldToken}</SettingsLabel>

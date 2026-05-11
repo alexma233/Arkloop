@@ -6,6 +6,7 @@ import { useTypewriter } from '../hooks/useTypewriter'
 import { presentationForTool } from '../toolPresentation'
 import { CopyIconButton } from './CopyIconButton'
 import { localizeTimelineLabel } from './cop-timeline/labels'
+import { renderTimelineText, type TimelineText } from '../timelineText'
 
 type Status = 'running' | 'success' | 'failed' | 'completed'
 
@@ -14,6 +15,7 @@ type Props = {
   toolName?: string
   label?: string
   displayDescription?: string
+  displayText?: TimelineText
   code?: string
   output?: string
   emptyLabel?: string
@@ -130,7 +132,7 @@ function StatusBadge({ status }: { status: Status }) {
   )
 }
 
-export function ExecutionCard({ variant, toolName, label, displayDescription, code, output, emptyLabel, errorMessage, status, smooth = false, expandedOffsetLeft = 0 }: Props) {
+export function ExecutionCard({ variant, toolName, label, displayDescription, displayText, code, output, emptyLabel, errorMessage, status, smooth = false, expandedOffsetLeft = 0 }: Props) {
   const { t, locale } = useLocale()
   const [expanded, setExpanded] = useState(false)
   const [cmdHovered, setCmdHovered] = useState(false)
@@ -143,13 +145,13 @@ export function ExecutionCard({ variant, toolName, label, displayDescription, co
     ? (displayDescription || extractCommandPreview(code) || t.shellRan)
     : (displayDescription || label || '')
   const preview = variant === 'fileop'
-    ? localizeTimelineLabel(rawPreview, locale)
+    ? displayText ? renderTimelineText(displayText, locale) : localizeTimelineLabel(rawPreview, locale)
     : rawPreview
   const rawKindLabel = variant === 'shell'
     ? 'shell'
     : (displayDescription || toolKindLabel(toolName || ''))
   const kindLabel = variant === 'fileop'
-    ? localizeTimelineLabel(rawKindLabel, locale)
+    ? displayText ? renderTimelineText(displayText, locale) : localizeTimelineLabel(rawKindLabel, locale)
     : rawKindLabel
   // 只在有 displayDescription 时追加命令缩写，避免与 extractCommandPreview 重复
   const commandHeads = variant === 'shell' && displayDescription ? abbreviateCommandHeads(code) : ''

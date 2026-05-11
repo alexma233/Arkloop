@@ -1354,7 +1354,7 @@ CREATE TABLE tool_description_overrides (
 
 CREATE TABLE tool_provider_configs (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-    account_id      TEXT NOT NULL DEFAULT '00000000-0000-4000-8000-000000000002' REFERENCES accounts(id) ON DELETE CASCADE,
+    account_id      TEXT REFERENCES accounts(id) ON DELETE CASCADE,
     owner_kind      TEXT NOT NULL DEFAULT 'platform' CHECK (owner_kind IN ('platform', 'user')),
     owner_user_id   TEXT REFERENCES users(id) ON DELETE CASCADE,
     group_name      TEXT NOT NULL,

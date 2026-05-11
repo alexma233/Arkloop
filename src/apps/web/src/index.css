@@ -779,6 +779,7 @@ button:not(:disabled) {
   --c-cop-row-weight: var(--c-fw-400);
   --c-cop-row-font-size: 14px;
   --c-cop-row-line-height: 20px;
+  --c-cop-card-max-height: min(380px, 46vh);
   --c-cop-think-label-size: var(--c-cop-row-font-size);
   --c-cop-think-label-lh: var(--c-cop-row-line-height);
   --c-cop-think-card-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -812,6 +813,45 @@ button:not(:disabled) {
 }
 .cop-timeline-root .shell-exec-trigger svg {
   color: var(--c-cop-row-subtle-fg);
+}
+.cop-timeline-root .cop-timeline-items-card {
+  position: relative;
+  overflow: hidden;
+  border: 0.5px solid var(--c-border-subtle);
+  border-radius: 8px;
+  background: var(--c-attachment-bg);
+}
+.cop-timeline-root .cop-timeline-items-card::before,
+.cop-timeline-root .cop-timeline-items-card::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 30px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  content: '';
+}
+.cop-timeline-root .cop-timeline-items-card::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--c-attachment-bg), transparent);
+}
+.cop-timeline-root .cop-timeline-items-card::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--c-attachment-bg), transparent);
+}
+.cop-timeline-root .cop-timeline-items-card[data-top-shadow='true']::before,
+.cop-timeline-root .cop-timeline-items-card[data-bottom-shadow='true']::after {
+  opacity: 1;
+}
+.cop-timeline-root .cop-timeline-items-card__scroll {
+  max-height: var(--c-cop-card-max-height);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 10px;
+  scrollbar-gutter: stable;
 }
 .cop-timeline-root .cop-thinking-preview-placeholder {
   font-size: var(--c-cop-think-label-size);

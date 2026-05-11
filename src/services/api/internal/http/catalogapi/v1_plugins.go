@@ -170,6 +170,8 @@ func pluginEntry(
 			handlePluginRuntimeStatus(w, r, traceID, actor, enabler, pluginID)
 		case "runtime/install":
 			handlePluginRuntimeInstall(w, r, traceID, actor, enabler, pool, pluginID)
+		case "runtime/check":
+			handlePluginRuntimeCheck(w, r, traceID, actor, enabler, pluginID)
 		default:
 			httpkit.WriteNotFound(w, r)
 		}
@@ -338,6 +340,35 @@ func handlePluginRuntimeStatus(w nethttp.ResponseWriter, r *nethttp.Request, tra
 		return
 	}
 	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, toPluginRuntimeStateResponse(status))
+}
+
+func handlePluginRuntimeCheck(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, enabler *plugincontrib.Enabler, pluginID string) {
+	if r.Method != nethttp.MethodPost {
+		writeMethodNotAllowedJSON(w, traceID)
+		return
+	}
+	if !httpkit.RequirePerm(actor, auth.PermDataPersonasRead, w, traceID) {
+		return
+	}
+	var req pluginSettingsRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpkit.WriteError(w, nethttp.StatusBadRequest, "plugins.invalid_request", "invalid JSON body", traceID, nil)
+			return
+		}
+	}
+	state, err := enabler.CheckRuntime(r.Context(), plugincontrib.EnableRequest{
+		AccountID:    actor.AccountID,
+		UserID:       actor.UserID,
+		PluginID:     pluginID,
+		ProfileRef:   sharedenvironmentref.BuildProfileRef(actor.AccountID, &actor.UserID),
+		WorkspaceRef: req.WorkspaceRef,
+	})
+	if err != nil {
+		httpkit.WriteError(w, nethttp.StatusBadRequest, "plugins.runtime_check_failed", err.Error(), traceID, nil)
+		return
+	}
+	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, toPluginRuntimeStateResponse(&state))
 }
 
 func parsePluginPath(path string) (string, string) {

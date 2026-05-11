@@ -324,7 +324,7 @@ SSE 约定：
 
 | 类型 | 说明 |
 |------|------|
-| `llm.request` | 上游请求元数据和大小统计 |
+| `llm.request` | 上游请求 payload（不含 secret） |
 | `llm.response.chunk` | 上游流式原始 chunk |
 
 ### 4.3 关联约束

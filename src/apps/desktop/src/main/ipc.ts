@@ -772,6 +772,8 @@ function providerNameToSearch(providerName: string): ConnectorsConfig['search'][
       return 'basic'
     case 'web_search.searxng':
       return 'searxng'
+    case 'web_search.exa':
+      return 'exa'
     case 'web_search.tavily':
       return 'tavily'
     default:
@@ -799,6 +801,7 @@ async function migrateLegacyConnectorsIfNeeded(config: AppConfig): Promise<void>
 function hasLegacySearchConfig(connectors: ConnectorsConfig): boolean {
   return connectors.search.provider === 'basic'
     || (connectors.search.provider === 'tavily' && Boolean(connectors.search.tavilyApiKey))
+    || connectors.search.provider === 'exa'
     || (connectors.search.provider === 'searxng' && Boolean(connectors.search.searxngBaseUrl))
 }
 
@@ -826,6 +829,10 @@ async function applySearchConnector(search: ConnectorsConfig['search']): Promise
         api_key: search.tavilyApiKey ?? '',
       })
     }
+    return
+  }
+  if (search.provider === 'exa') {
+    await activateToolProvider('web_search', 'web_search.exa')
     return
   }
   if (search.provider === 'searxng') {
@@ -881,7 +888,7 @@ async function activateToolProvider(groupName: string, providerName: string): Pr
 async function upsertToolProviderCredential(
   groupName: string,
   providerName: string,
-  payload: Record<string, string>,
+  payload: Record<string, string | null>,
 ): Promise<void> {
   const body = JSON.stringify(payload)
   await requestToolProvider(`/v1/tool-providers/${groupName}/${providerName}/credential`, 'PUT', body)
@@ -1024,18 +1031,6 @@ function getDesktopIconDataUrl(): string | null {
   return null
 }
 
-function readReleaseLabel(): string {
-  const fs = require('fs') as typeof import('fs')
-  const path = require('path') as typeof import('path')
-  try {
-    const metaPath = path.join(__dirname, '..', 'release-meta.json')
-    const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as { releaseLabel?: string }
-    return raw.releaseLabel?.trim() || ''
-  } catch {
-    return ''
-  }
-}
-
 async function buildAdvancedOverview(): Promise<{
   appName: string
   appVersion: string
@@ -1059,11 +1054,9 @@ async function buildAdvancedOverview(): Promise<{
   } catch {
     updater = null
   }
-  const releaseLabel = readReleaseLabel()
-  const versionDisplay = releaseLabel ? `${app.getVersion()} ${releaseLabel}` : app.getVersion()
   return {
     appName: 'Arkloop',
-    appVersion: versionDisplay,
+    appVersion: app.getVersion(),
     githubUrl: DESKTOP_GITHUB_URL,
     telegramUrl: null,
     iconDataUrl: getDesktopIconDataUrl(),

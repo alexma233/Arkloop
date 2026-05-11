@@ -19,7 +19,6 @@
 .local-files-panel__tool {
   width: 28px;
   height: 28px;
-  color: var(--c-text-secondary);
 }
 
 .local-files-panel__tool--active {
@@ -28,7 +27,7 @@
 }
 
 .local-files-panel__tool:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 

@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { LocaleProvider } from '../../contexts/LocaleContext'
 import { LocalFilesPanel } from './LocalFilesPanel'
 
 function flushMicrotasks(): Promise<void> {
@@ -136,7 +137,7 @@ describe('LocalFilesPanel', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<LocalFilesPanel rootPath="/repo" accessToken="" />)
+      root.render(<LocaleProvider><LocalFilesPanel rootPath="/repo" accessToken="" /></LocaleProvider>)
       await flushMicrotasks()
     })
 
@@ -148,7 +149,7 @@ describe('LocalFilesPanel', () => {
 
     expect(container.textContent).toContain('README.md')
 
-    const closeButton = container.querySelector<HTMLButtonElement>('[aria-label="Close preview"]')
+    const closeButton = container.querySelector<HTMLButtonElement>('[aria-label="关闭"]')
     expect(closeButton).not.toBeNull()
 
     await act(async () => {

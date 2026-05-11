@@ -8,6 +8,7 @@ import {
 } from './agent-ui/event-data'
 import type { ArtifactRef, BrowserActionRef, CodeExecutionRef, FileOpRef, MessageThinkingRef, SubAgentRef, WebFetchRef, WidgetRef } from './storage'
 import { basename, presentationForTool, truncate } from './toolPresentation'
+import { contentText } from './timelineText'
 import { FILE_OP_TOOL_NAMES } from './copSubSegment'
 
 const CODE_EXECUTION_CALL_TOOL_NAMES = new Set(['python_execute', 'exec_command'])
@@ -1441,6 +1442,7 @@ export function applyFileOpToolCall(
     operation: typeof args.operation === 'string' ? args.operation : undefined,
     displayKind: presentation.kind,
     displayDescription: overrideLabel ?? presentation.description,
+    displayText: overrideLabel ? contentText(overrideLabel) : presentation.text,
     displaySubject: presentation.subject,
     displayDetail: presentation.detail,
     ...(inputPreview ? { output: inputPreview } : {}),

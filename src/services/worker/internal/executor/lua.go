@@ -1539,6 +1539,7 @@ func (rt *luaRuntime) runAgentLoop(
 		MaxTotalOutputTokens:   rt.rc.MaxTotalOutputTokens,
 		PendingMemoryWrites:    rt.rc.PendingMemoryWrites,
 		Runtime:                rt.rc.Runtime,
+		ToolExecutionTracker:   rt.rc.ToolExecutionTracker,
 		LlmRetryMaxAttempts:    rt.rc.LlmRetryMaxAttempts,
 		LlmRetryBaseDelayMs:    rt.rc.LlmRetryBaseDelayMs,
 		WaitForInput:           rt.rc.WaitForInput,
@@ -1549,6 +1550,7 @@ func (rt *luaRuntime) runAgentLoop(
 		CancelSignal: func() bool {
 			return rt.ctx.Err() != nil
 		},
+		RunIdleTimeout:        rt.rc.RunIdleTimeout,
 		RunDeadline:           rt.rc.RunWallClockTimeout,
 		PausedInputTimeout:    rt.rc.PausedInputTimeout,
 		IdleHeartbeatInterval: rt.rc.IdleHeartbeatInterval,

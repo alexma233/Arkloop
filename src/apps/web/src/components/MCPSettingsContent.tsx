@@ -5,9 +5,11 @@ import {
   checkMCPInstall,
   createMCPInstall,
   deleteMCPInstall,
+  getMCPOAuthStatus,
   isApiError,
   listMCPInstalls,
   setWorkspaceMCPEnablement,
+  startMCPOAuth,
   updateMCPInstall,
   type MCPInstall,
 } from '../api'
@@ -26,6 +28,57 @@ import { SettingsButton } from './settings/_SettingsButton'
 
 type Props = {
   accessToken: string
+}
+
+const oauthPollIntervalMs = 2000
+const oauthFlowTimeoutMs = 10 * 60 * 1000
+const oauthPendingStorageKey = 'arkloop:web:mcp-oauth-pending'
+
+type PendingMCPOAuth = {
+  installID: string
+  state: string
+  expiresAt: string
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function readPendingMCPOAuth(): PendingMCPOAuth | null {
+  try {
+    const raw = window.localStorage.getItem(oauthPendingStorageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<PendingMCPOAuth>
+    if (!parsed.installID || !parsed.state || !parsed.expiresAt) return null
+    return {
+      installID: parsed.installID,
+      state: parsed.state,
+      expiresAt: parsed.expiresAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writePendingMCPOAuth(value: PendingMCPOAuth): void {
+  window.localStorage.setItem(oauthPendingStorageKey, JSON.stringify(value))
+}
+
+function clearPendingMCPOAuth(): void {
+  window.localStorage.removeItem(oauthPendingStorageKey)
+}
+
+function needsOAuthAuthorization(install: MCPInstall): boolean {
+  if (install.transport === 'stdio') return false
+  const status = install.discovery_status.trim()
+  const code = (install.last_error_code ?? '').toLowerCase()
+  const message = (install.last_error_message ?? '').toLowerCase()
+  return status === 'auth_invalid'
+    || code === 'auth_invalid'
+    || code === 'auth_required'
+    || message.includes('www-authenticate')
+    || message.includes('resource_metadata')
+    || message.includes('oauth')
 }
 
 export function MCPSettingsContent({ accessToken }: Props) {
@@ -80,6 +133,8 @@ export function MCPSettingsContent({ accessToken }: Props) {
         toastDeleteFailed: '删除 MCP 服务器失败。',
         toastCheckFailed: '检查 MCP 服务器失败。',
         toastToggleFailed: '切换工作区启用状态失败。',
+        toastOAuthFailed: 'OAuth 授权启动失败。',
+        toastOAuthTimeout: 'OAuth 授权未完成。',
         toastScanFailed: '扫描 MCP 文件失败。',
         toastImportFailed: '导入 MCP 服务器失败。',
         toastSaved: '已保存。',
@@ -143,6 +198,8 @@ export function MCPSettingsContent({ accessToken }: Props) {
       toastDeleteFailed: 'Failed to delete MCP server.',
       toastCheckFailed: 'Failed to check MCP server.',
       toastToggleFailed: 'Failed to update workspace enablement.',
+      toastOAuthFailed: 'Failed to start OAuth authorization.',
+      toastOAuthTimeout: 'OAuth authorization was not completed.',
       toastScanFailed: 'Failed to scan MCP files.',
       toastImportFailed: 'Failed to import MCP server.',
       toastSaved: 'Saved.',
@@ -277,21 +334,97 @@ export function MCPSettingsContent({ accessToken }: Props) {
     }
   }, [accessToken, copy.toastDeleteFailed, copy.toastDeleted, deleteTarget, loadInstalls])
 
+  const waitForOAuthAndEnable = useCallback(async (
+    installID: string,
+    state: string,
+    expiresAt: string,
+  ): Promise<'enabled' | 'expired' | 'check_failed'> => {
+    const parsedExpiry = Date.parse(expiresAt)
+    const deadline = Number.isFinite(parsedExpiry) ? parsedExpiry : Date.now() + oauthFlowTimeoutMs
+    while (Date.now() < deadline) {
+      await sleep(oauthPollIntervalMs)
+      let status
+      try {
+        status = await getMCPOAuthStatus(accessToken, installID, state)
+      } catch {
+        continue
+      }
+      if (status.expired) return 'expired'
+      if (!status.completed) continue
+
+      let checked
+      try {
+        checked = await checkMCPInstall(accessToken, installID)
+      } catch {
+        await loadInstalls()
+        return 'check_failed'
+      }
+      if (checked.discovery_status !== 'ready') {
+        await loadInstalls()
+        return 'check_failed'
+      }
+      await setWorkspaceMCPEnablement(accessToken, {
+        install_id: installID,
+        enabled: true,
+      })
+      await loadInstalls()
+      return 'enabled'
+    }
+    return 'expired'
+  }, [accessToken, loadInstalls])
+
+  useEffect(() => {
+    const pending = readPendingMCPOAuth()
+    if (!pending) return
+    setBusyID(pending.installID)
+    void (async () => {
+      const result = await waitForOAuthAndEnable(pending.installID, pending.state, pending.expiresAt)
+      clearPendingMCPOAuth()
+      if (result === 'expired') setNotice(copy.toastOAuthTimeout)
+      if (result === 'check_failed') setNotice(copy.toastCheckFailed)
+      setBusyID(null)
+    })()
+  }, [copy.toastCheckFailed, copy.toastOAuthTimeout, waitForOAuthAndEnable])
+
   const handleToggle = useCallback(async (install: MCPInstall) => {
     setBusyID(install.id)
     try {
+      const enabling = !install.workspace_state?.enabled
+      if (enabling) {
+        const checked = await checkMCPInstall(accessToken, install.id)
+        if (needsOAuthAuthorization(checked)) {
+          let oauth: Awaited<ReturnType<typeof startMCPOAuth>>
+          try {
+            oauth = await startMCPOAuth(accessToken, install.id)
+          } catch {
+            setNotice(copy.toastOAuthFailed)
+            return
+          }
+          writePendingMCPOAuth({
+            installID: install.id,
+            state: oauth.state,
+            expiresAt: oauth.expires_at,
+          })
+          window.open(oauth.authorization_url, '_blank', 'noopener,noreferrer')
+          await loadInstalls()
+          const result = await waitForOAuthAndEnable(install.id, oauth.state, oauth.expires_at)
+          clearPendingMCPOAuth()
+          if (result === 'expired') setNotice(copy.toastOAuthTimeout)
+          if (result === 'check_failed') setNotice(copy.toastCheckFailed)
+          return
+        }
+      }
       await setWorkspaceMCPEnablement(accessToken, {
         install_id: install.id,
-        enabled: !install.workspace_state?.enabled,
+        enabled: enabling,
       })
       await loadInstalls()
-      setNotice(null)
     } catch {
       setNotice(copy.toastToggleFailed)
     } finally {
       setBusyID(null)
     }
-  }, [accessToken, copy.toastToggleFailed, loadInstalls])
+  }, [accessToken, copy.toastCheckFailed, copy.toastOAuthFailed, copy.toastOAuthTimeout, copy.toastToggleFailed, loadInstalls, waitForOAuthAndEnable])
 
   const handleCheck = useCallback(async (install: MCPInstall) => {
     setBusyID(install.id)

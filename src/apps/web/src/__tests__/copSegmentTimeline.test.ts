@@ -246,6 +246,7 @@ describe('copTimelinePayloadForSegment', () => {
         id: 'ws1',
         kind: 'searching',
         label: 'Search completed',
+        text: { kind: 'search_completed' },
         status: 'done',
         queries: ['Claude Desktop 更新'],
         seq: 3,
@@ -255,6 +256,7 @@ describe('copTimelinePayloadForSegment', () => {
         id: 'ws1::reviewing',
         kind: 'reviewing',
         label: 'Reviewing sources',
+        text: { kind: 'reviewing_sources' },
         status: 'done',
         sources: [{ title: 'u', url: 'https://u.test', snippet: undefined }],
         seq: 3.5,
@@ -411,6 +413,7 @@ describe('copTimelinePayloadForSegment', () => {
         id: 'tool_1',
         toolName: 'fetch_url',
         label: 'fetch_url',
+        displayText: { kind: 'content', text: 'fetch_url' },
         output: 'returned object · 2 keys',
         status: 'success',
         seq: 1,
@@ -551,8 +554,8 @@ describe('copTimelinePayloadForSegment', () => {
       ['grep_2'],
     ])
     expect(r.exploreGroups?.map((group) => group.label)).toEqual([
-      'Searched code, Listed files, Read a file',
-      'Read files',
+      'Searched code, Listed files, Read 1 file',
+      'Read 2 files',
       'Searched code',
     ])
     expect(r.codeExecutions?.map((item) => item.id)).toEqual(['cmd_1', 'cmd_2'])

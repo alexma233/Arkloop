@@ -219,6 +219,8 @@ export type MCPCopy = {
   toastDeleteFailed: string
   toastCheckFailed: string
   toastToggleFailed: string
+  toastOAuthFailed: string
+  toastOAuthTimeout: string
   toastScanFailed: string
   toastImportFailed: string
   toastSaved: string

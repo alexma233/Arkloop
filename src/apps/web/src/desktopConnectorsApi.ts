@@ -43,6 +43,8 @@ function providerNameToSearch(providerName: string): ConnectorsConfig['search'][
     return 'basic'
   case 'web_search.searxng':
     return 'searxng'
+  case 'web_search.exa':
+    return 'exa'
   case 'web_search.tavily':
     return 'tavily'
   default:
@@ -103,6 +105,10 @@ async function applySearchConnector(accessToken: string, search: ConnectorsConfi
         api_key: search.tavilyApiKey ?? '',
       })
     }
+    return
+  }
+  if (search.provider === 'exa') {
+    await activateToolProvider(accessToken, 'web_search', 'web_search.exa')
     return
   }
   if (search.provider === 'searxng') {

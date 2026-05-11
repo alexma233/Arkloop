@@ -49,6 +49,7 @@ import (
 	"arkloop/services/worker/internal/runtime"
 	"arkloop/services/worker/internal/securitycap"
 	"arkloop/services/worker/internal/subagentctl"
+	"arkloop/services/worker/internal/tooldiagnostics"
 	"arkloop/services/worker/internal/toolprovider"
 	"arkloop/services/worker/internal/tools"
 	"arkloop/services/worker/internal/tools/builtin"
@@ -453,7 +454,7 @@ func ComposeDesktopEngine(ctx context.Context, db data.DesktopDB, bus eventbus.E
 	// 尝试从 personas 目录加载
 	personaGetter := loadPersonaRegistryFromFS()
 
-	mcpPool := mcp.NewPool()
+	mcpPool := mcp.NewPool(mcp.WithAuthStore(mcp.NewDBAuthStore(db)))
 	mcpCacheTTL, err := loadDesktopMCPCacheTTL()
 	if err != nil {
 		return nil, err
@@ -631,23 +632,25 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	runRuntime.DesktopExecutionMode = strings.TrimSpace(desktop.GetExecutionMode())
 
 	llmRetryMaxAttempts, llmRetryBaseDelayMs := resolveDesktopLLMRetry(ctx, e.db)
+	runIdleTimeout, runWallClockTimeout := resolveDesktopRunTimeouts(ctx, e.db)
 
 	rc := &pipeline.RunContext{
-		Run:                 run,
-		DB:                  e.db,
-		RunStatusDB:         runsRepo,
-		Pool:                nil,
-		MemoryServiceDB:     e.db,
-		MemorySnapshotStore: pipeline.NewDesktopMemorySnapshotStore(e.db),
-		EventBus:            e.bus,
-		TraceID:             traceID,
-		Tracer:              tracer,
-		Emitter:             emitter,
-		Router:              e.auxRouter,
-		Runtime:             &runRuntime,
-		HookRuntime:         e.hookRuntime,
-		HookRegistry:        e.hookRegistry,
-		PluginHookRunner:    pipeline.NewDefaultPluginHookRunner(),
+		Run:                  run,
+		DB:                   e.db,
+		RunStatusDB:          runsRepo,
+		Pool:                 nil,
+		MemoryServiceDB:      e.db,
+		MemorySnapshotStore:  pipeline.NewDesktopMemorySnapshotStore(e.db),
+		EventBus:             e.bus,
+		TraceID:              traceID,
+		Tracer:               tracer,
+		Emitter:              emitter,
+		Router:               e.auxRouter,
+		Runtime:              &runRuntime,
+		HookRuntime:          e.hookRuntime,
+		HookRegistry:         e.hookRegistry,
+		PluginHookRunner:     pipeline.NewDefaultPluginHookRunner(),
+		ToolExecutionTracker: tooldiagnostics.DefaultTracker,
 
 		ExecutorBuilder:     e.executorRegistry,
 		ToolBudget:          map[string]any{},
@@ -663,7 +666,8 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 		AgentReasoningIterationsLimit: 0,
 		ToolContinuationBudgetLimit:   32,
 		MaxParallelTasks:              4,
-		RunWallClockTimeout:           15 * time.Minute,
+		RunIdleTimeout:                runIdleTimeout,
+		RunWallClockTimeout:           runWallClockTimeout,
 		PausedInputTimeout:            5 * time.Minute,
 		IdleHeartbeatInterval:         15 * time.Second,
 		CreditPerUSD:                  1000,

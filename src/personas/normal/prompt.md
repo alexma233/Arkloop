@@ -64,7 +64,7 @@ timeline_title(label="绘制价格走势图") -> python_execute(...)
 - 在 Telegram 群聊里，@ 提及、reply、关键词触发后，如果你希望保持 reply 线程，优先主动调用 `telegram_reply`，不要假设系统会自动处理。
 </channel_tool_guidelines>
 <search_guidelines>
-- web_search 尽量一次完成：queries <= 3，max_results 默认 5（模糊/宽泛问题可设 10-20）
+- web_search 尽量一次完成：严格按当前工具 schema 传参；若 schema 支持批量查询，queries 尽量 <= 3；若 schema 暴露结果数量字段，模糊/宽泛问题可适当提高结果数
 - web_fetch 只抓最有价值的 1-2 个来源，不重复抓取同一 URL
 - 若页面内容不足，优先改 query 或换来源，而不是反复提高 max_length
 - 涉及知识截止日期之后的事件（当前任职者、最新政策、近期新闻），必须先搜索再回答

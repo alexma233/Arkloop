@@ -6,6 +6,7 @@ import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
 import { ErrorCallout, type AppError } from './ErrorCallout'
 import { NotificationBell } from './NotificationBell'
 import { RightPanel, type RightPanelTab } from './RightPanel'
+import { rightPanelIconSize } from './rightPanelControls'
 import { LocalFilesPanel } from './local-files/LocalFilesPanel'
 import { ResourcePreviewPanel } from './resource-preview/ResourcePreviewPanel'
 import { BrowserSiteIcon } from './resource-preview/BrowserSiteIcon'
@@ -225,7 +226,7 @@ export function WelcomePage() {
       title: webPanelResource?.title ?? t.rightPanel.browser,
       closable: false,
       hideTitle: !webPanelResource,
-      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} />,
+      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} size={rightPanelIconSize} />,
       content: (
         <ResourcePreviewPanel
           resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}

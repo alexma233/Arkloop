@@ -324,7 +324,7 @@ When the persona for the run has `stream_thinking` set to false, the Worker does
 
 | Type | Description |
 |------|------|
-| `llm.request` | Upstream request metadata and size statistics |
+| `llm.request` | Upstream request payload (excludes secrets) |
 | `llm.response.chunk` | Upstream raw streaming chunk |
 
 ### 4.3 Association Constraints

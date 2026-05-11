@@ -6,6 +6,7 @@ import type { UploadedThreadAttachment } from './api'
 import type { FontFamily, CodeFontFamily, FontSize, ThemePreset, ThemeDefinition, ThemeBackgroundImage } from './themes/types'
 import type { AssistantTurnSegment, AssistantTurnUi, CopBlockItem, TurnToolCallRef } from './assistantTurnSegments'
 import type { AgentUIEvent } from './agent-ui/contract'
+import { isTimelineText, type TimelineText } from './timelineText'
 import type { ArtifactResourceRef, BrowserResourceRef, LocalFileResourceRef, ResourceRef, WorkspaceFileResourceRef } from './components/resource-preview/types'
 import { browserFaviconUrl, browserTitleFromUrl, normalizeBrowserUrl } from './components/resource-preview/browserIdentity'
 import {
@@ -750,6 +751,7 @@ export type CodeExecutionRef = {
   mode?: 'buffered' | 'follow' | 'stdin' | 'pty'
   code?: string
   displayDescription?: string
+  displayText?: TimelineText
   output?: string
   emptyLabel?: string
   exitCode?: number
@@ -776,6 +778,7 @@ function isCodeExecutionRef(value: unknown): value is CodeExecutionRef {
   if (!isCodeExecutionStatus(item.status)) return false
   if (item.code != null && typeof item.code !== 'string') return false
   if (item.output != null && typeof item.output !== 'string') return false
+  if (item.displayText != null && !isTimelineText(item.displayText)) return false
   if (item.emptyLabel != null && typeof item.emptyLabel !== 'string') return false
   if (item.exitCode != null && typeof item.exitCode !== 'number') return false
   if (item.processRef != null && typeof item.processRef !== 'string') return false
@@ -829,6 +832,7 @@ export type ThinkingSegmentRef = {
   kind: string
   mode: string
   label: string
+  text?: TimelineText
   content: string
 }
 
@@ -878,6 +882,7 @@ export type MessageSearchStepRef = {
   id: string
   kind: 'planning' | 'searching' | 'reviewing' | 'finished'
   label: string
+  text?: TimelineText
   status: 'active' | 'done'
   queries?: string[]
   seq?: number
@@ -902,6 +907,7 @@ export function readMessageSearchSteps(messageId: string): MessageSearchStepRef[
         const id = typeof item.id === 'string' ? item.id : ''
         const kind = item.kind
         const label = typeof item.label === 'string' ? item.label : ''
+        const text = isTimelineText(item.text) ? item.text : undefined
         const status = item.status
         const seq = typeof item.seq === 'number' ? item.seq : undefined
         const resultSeq = typeof item.resultSeq === 'number' ? item.resultSeq : undefined
@@ -923,7 +929,7 @@ export function readMessageSearchSteps(messageId: string): MessageSearchStepRef[
         if (!id) return null
         if (kind !== 'planning' && kind !== 'searching' && kind !== 'reviewing' && kind !== 'finished') return null
         if (status !== 'active' && status !== 'done') return null
-        return { id, kind, label, status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}), ...(sources && sources.length > 0 ? { sources } : {}) }
+        return { id, kind, label, ...(text ? { text } : {}), status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}), ...(sources && sources.length > 0 ? { sources } : {}) }
       })
       .filter((step): step is MessageSearchStepRef => step != null)
     return steps.length > 0 ? steps : null
@@ -1035,6 +1041,7 @@ function parseStepRef(s: Record<string, unknown>): MessageSearchStepRef | null {
   const id = typeof s.id === 'string' ? s.id : ''
   const kind = s.kind
   const label = typeof s.label === 'string' ? s.label : ''
+  const text = isTimelineText(s.text) ? s.text : undefined
   const status = s.status
   const seq = typeof s.seq === 'number' ? s.seq : undefined
   const resultSeq = typeof s.resultSeq === 'number' ? s.resultSeq : undefined
@@ -1044,7 +1051,7 @@ function parseStepRef(s: Record<string, unknown>): MessageSearchStepRef | null {
   if (!id) return null
   if (kind !== 'planning' && kind !== 'searching' && kind !== 'reviewing' && kind !== 'finished') return null
   if (status !== 'active' && status !== 'done') return null
-  return { id, kind, label, status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}) }
+  return { id, kind, label, ...(text ? { text } : {}), status, queries, seq, ...(resultSeq != null ? { resultSeq } : {}) }
 }
 
 export function readMessageCopBlocks(messageId: string): MessageCopBlocksRef | null {
@@ -1269,6 +1276,7 @@ export type FileOpRef = {
   operation?: string
   displayKind?: string
   displayDescription?: string
+  displayText?: TimelineText
   displaySubject?: string
   displayDetail?: string
   diffAdded?: number
@@ -1283,6 +1291,7 @@ function isFileOpRef(v: unknown): v is FileOpRef {
   if (typeof o.label !== 'string') return false
   const s = o.status
   if (s !== 'running' && s !== 'success' && s !== 'failed') return false
+  if (o.displayText != null && !isTimelineText(o.displayText)) return false
   return true
 }
 

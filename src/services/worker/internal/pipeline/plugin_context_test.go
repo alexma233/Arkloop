@@ -55,7 +55,7 @@ func TestPluginContextInjectsBeforeMemory(t *testing.T) {
 	if personaIndex < 0 || pluginIndex < 0 || memoryIndex < 0 {
 		t.Fatalf("expected all prompt segments, got %q", prompt)
 	}
-	if !(personaIndex < pluginIndex && pluginIndex < memoryIndex) {
+	if personaIndex >= pluginIndex || pluginIndex >= memoryIndex {
 		t.Fatalf("unexpected prompt order: %q", prompt)
 	}
 	if len(rc.PluginContext) != 1 {

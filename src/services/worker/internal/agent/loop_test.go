@@ -1513,6 +1513,7 @@ func TestAgentLoopPreflightOversizeRewritesBeforeFirstProviderRequest(t *testing
 			return nil
 		},
 		1,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("runTurnWithRetry failed: %v", err)
@@ -4054,6 +4055,33 @@ func (g *scriptedTurnsGateway) Stream(ctx context.Context, request llm.Request, 
 	return nil
 }
 
+type delayedStreamingGateway struct {
+	delay time.Duration
+	count int
+}
+
+func (g *delayedStreamingGateway) Stream(ctx context.Context, request llm.Request, yield func(llm.StreamEvent) error) error {
+	_ = request
+	for i := 0; i < g.count; i++ {
+		if err := sleep(ctx, g.delay); err != nil {
+			return err
+		}
+		if err := yield(llm.StreamMessageDelta{ContentDelta: "x", Role: "assistant"}); err != nil {
+			return err
+		}
+	}
+	return yield(llm.StreamRunCompleted{})
+}
+
+type silentBlockingGateway struct{}
+
+func (g *silentBlockingGateway) Stream(ctx context.Context, request llm.Request, yield func(llm.StreamEvent) error) error {
+	_ = request
+	_ = yield
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 type continuationExecutor struct {
 	writeRunning []bool
 	writeCalls   int32
@@ -4403,6 +4431,7 @@ func TestAgentLoopRunDeadlineStopsBlockingTool(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
+	defer close(blocking.release)
 	if err := dispatcher.Bind("echo", blocking); err != nil {
 		t.Fatalf("bind echo failed: %v", err)
 	}
@@ -4441,6 +4470,172 @@ func TestAgentLoopRunDeadlineStopsBlockingTool(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected run.failed with %s, got %#v", ErrorClassRunDeadlineExceeded, got)
+	}
+}
+
+func TestAgentLoopIdleTimeoutStopsBlockingTool(t *testing.T) {
+	registry := tools.NewRegistry()
+	if err := registry.Register(builtin.EchoAgentSpec); err != nil {
+		t.Fatalf("register echo failed: %v", err)
+	}
+	allowlist := tools.AllowlistFromNames([]string{"echo"})
+	dispatcher := tools.NewDispatchingExecutor(registry, tools.NewPolicyEnforcer(registry, allowlist))
+	blocking := &blockingToolExecutor{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	defer close(blocking.release)
+	if err := dispatcher.Bind("echo", blocking); err != nil {
+		t.Fatalf("bind echo failed: %v", err)
+	}
+
+	gateway := &scriptedTurnsGateway{turns: [][]llm.StreamEvent{
+		{
+			llm.ToolCall{ToolCallID: "call_1", ToolName: "echo", ArgumentsJSON: map[string]any{"text": "hi"}},
+			llm.StreamRunCompleted{},
+		},
+	}}
+
+	loop := NewLoop(gateway, dispatcher)
+	emitter := events.NewEmitter("trace")
+	var got []events.RunEvent
+	err := loop.Run(context.Background(), RunContext{
+		RunID:               uuid.New(),
+		TraceID:             "trace",
+		InputJSON:           map[string]any{},
+		ReasoningIterations: 3,
+		ToolExecutor:        dispatcher,
+		RunIdleTimeout:      30 * time.Millisecond,
+		RunDeadline:         time.Hour,
+		CancelSignal:        func() bool { return false },
+	}, llm.Request{Model: "stub"}, emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("loop.Run failed: %v", err)
+	}
+
+	found := false
+	for _, ev := range got {
+		if ev.Type == "run.failed" && ev.ErrorClass != nil && *ev.ErrorClass == ErrorClassRunIdleTimeout {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected run.failed with %s, got %#v", ErrorClassRunIdleTimeout, got)
+	}
+}
+
+func TestAgentLoopIdleTimeoutStopsSilentModelCall(t *testing.T) {
+	loop := NewLoop(&silentBlockingGateway{}, nil)
+	emitter := events.NewEmitter("trace")
+
+	var got []events.RunEvent
+	err := loop.Run(context.Background(), RunContext{
+		RunID:               uuid.New(),
+		TraceID:             "trace",
+		InputJSON:           map[string]any{},
+		ReasoningIterations: 1,
+		RunIdleTimeout:      30 * time.Millisecond,
+		RunDeadline:         time.Hour,
+		CancelSignal:        func() bool { return false },
+	}, llm.Request{Model: "stub"}, emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("loop.Run failed: %v", err)
+	}
+
+	found := false
+	for _, ev := range got {
+		if ev.Type == "run.failed" && ev.ErrorClass != nil && *ev.ErrorClass == ErrorClassRunIdleTimeout {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected run.failed with %s, got %#v", ErrorClassRunIdleTimeout, got)
+	}
+}
+
+func TestAgentLoopStreamingProgressPreventsIdleTimeout(t *testing.T) {
+	loop := NewLoop(&delayedStreamingGateway{
+		delay: 10 * time.Millisecond,
+		count: 4,
+	}, nil)
+	emitter := events.NewEmitter("trace")
+
+	var got []events.RunEvent
+	err := loop.Run(context.Background(), RunContext{
+		RunID:               uuid.New(),
+		TraceID:             "trace",
+		InputJSON:           map[string]any{},
+		ReasoningIterations: 1,
+		RunIdleTimeout:      25 * time.Millisecond,
+		RunDeadline:         time.Hour,
+		CancelSignal:        func() bool { return false },
+	}, llm.Request{Model: "stub"}, emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("loop.Run failed: %v", err)
+	}
+	assertHasEvent(t, got, "run.completed")
+	for _, ev := range got {
+		if ev.Type == "run.failed" && ev.ErrorClass != nil && *ev.ErrorClass == ErrorClassRunIdleTimeout {
+			t.Fatalf("streaming progress should prevent idle timeout, got %#v", got)
+		}
+	}
+}
+
+func TestLoopGovernorIdleTimeoutUsesProgress(t *testing.T) {
+	governor := NewLoopGovernor(RunContext{
+		RunIdleTimeout:        20 * time.Millisecond,
+		IdleHeartbeatInterval: time.Millisecond,
+	})
+	emitter := events.NewEmitter("trace")
+	var got []events.RunEvent
+
+	governor.lastActivityAt = time.Now().Add(-time.Second)
+	governor.lastProgressAt = time.Now().Add(-10 * time.Millisecond)
+	termination, err := governor.Check(context.Background(), emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("governor check failed: %v", err)
+	}
+	if termination != LoopTerminationNone {
+		t.Fatalf("expected no termination while progress is fresh, got %q", termination)
+	}
+	if len(got) != 1 || got[0].Type != "run.idle_heartbeat" {
+		t.Fatalf("expected idle heartbeat without idle timeout, got %#v", got)
+	}
+
+	governor.lastProgressAt = time.Now().Add(-30 * time.Millisecond)
+	termination, err = governor.Check(context.Background(), emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("governor check failed: %v", err)
+	}
+	if termination != LoopTerminationIdle {
+		t.Fatalf("expected idle termination, got %q", termination)
+	}
+
+	governor.TouchProgress()
+	termination, err = governor.Check(context.Background(), emitter, func(ev events.RunEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("governor check failed: %v", err)
+	}
+	if termination != LoopTerminationNone {
+		t.Fatalf("expected progress touch to clear idle termination, got %q", termination)
 	}
 }
 

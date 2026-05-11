@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowLeft, ArrowRight, List, Search } from 'lucide-react'
-import { iconButtonSmCls } from '../buttonStyles'
+import { rightPanelIconButtonCls, rightPanelIconSize } from '../rightPanelControls'
 import { ResourcePreviewPanel } from '../resource-preview/ResourcePreviewPanel'
 import type { LocalFileResourceRef } from '../resource-preview/types'
 import { LocalFileSearchPanel } from './LocalFileSearchPanel'
@@ -88,24 +88,24 @@ export function LocalFilesPanel({ rootPath, accessToken, previewResource, onPrev
           title="Browse Files"
           aria-pressed={browserOpen && !searchOpen}
           onClick={handleToggleBrowser}
-          className={`${iconButtonSmCls} local-files-panel__tool${browserOpen && !searchOpen ? ' local-files-panel__tool--active' : ''}`}
+          className={`${rightPanelIconButtonCls} local-files-panel__tool${browserOpen && !searchOpen ? ' local-files-panel__tool--active' : ''}`}
         >
-          <List size={14} />
+          <List size={rightPanelIconSize} />
         </button>
         <button
           type="button"
           title="Search"
           aria-pressed={searchOpen}
           onClick={handleToggleSearch}
-          className={`${iconButtonSmCls} local-files-panel__tool${searchOpen ? ' local-files-panel__tool--active' : ''}`}
+          className={`${rightPanelIconButtonCls} local-files-panel__tool${searchOpen ? ' local-files-panel__tool--active' : ''}`}
         >
-          <Search size={14} />
+          <Search size={rightPanelIconSize} />
         </button>
-        <button type="button" title="Back" disabled className={`${iconButtonSmCls} local-files-panel__tool`}>
-          <ArrowLeft size={14} />
+        <button type="button" title="Back" disabled className={`${rightPanelIconButtonCls} local-files-panel__tool`}>
+          <ArrowLeft size={rightPanelIconSize} />
         </button>
-        <button type="button" title="Forward" disabled className={`${iconButtonSmCls} local-files-panel__tool`}>
-          <ArrowRight size={14} />
+        <button type="button" title="Forward" disabled className={`${rightPanelIconButtonCls} local-files-panel__tool`}>
+          <ArrowRight size={rightPanelIconSize} />
         </button>
       </div>
       <div ref={contentRef} className="local-files-panel__content">
@@ -116,7 +116,7 @@ export function LocalFilesPanel({ rootPath, accessToken, previewResource, onPrev
           {searchOpen ? (
             <div className="local-files-panel__search-view">
               <div className="local-files-panel__search">
-                <Search size={14} aria-hidden="true" />
+                <Search size={rightPanelIconSize} aria-hidden="true" />
                 <input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}

@@ -42,7 +42,8 @@
 | limit.max_input_content_bytes | int | both | 32768 | false | Run input 提交内容最大字节数 |
 | limit.max_parallel_tasks | int | platform | 32 | false | Lua 并行任务/并行工具调用上限 |
 | limit.paused_input_timeout_ms | int | platform | 300000 | false | run 进入等待用户输入后的超时时间（毫秒） |
-| limit.run_wall_clock_timeout_ms | int | platform | 900000 | false | 单个 run 的 wall clock 硬截止时间（毫秒） |
+| limit.run_idle_timeout_ms | int | platform | 900000 | false | 单个 run 无有效进展的超时时间（毫秒） |
+| limit.run_wall_clock_timeout_ms | int | platform | 14400000 | false | 单个 run 的最大 wall clock 硬截止时间（毫秒） |
 | limit.subagent_max_active_per_thread | int | both | 20 | false | 单 thread 下最大活跃 sub-agent 数量 |
 | limit.subagent_max_depth | int | both | 5 | false | Sub-Agent 最大嵌套深度 |
 | limit.subagent_max_descendants_per_thread | int | both | 50 | false | 单 thread 下 sub-agent 总数上限 |

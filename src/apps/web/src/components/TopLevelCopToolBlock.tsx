@@ -151,6 +151,7 @@ export function TopLevelCopToolBlock({
           toolName={item.toolName}
           label={item.label}
           displayDescription={item.displayDescription}
+          displayText={item.displayText}
           output={item.status === 'running' ? undefined : item.output}
           emptyLabel={item.emptyLabel}
           status={item.status}
@@ -171,6 +172,7 @@ export function TopLevelCopToolBlock({
           <ExecutionCard
             variant="shell"
             displayDescription={ce.displayDescription}
+            displayText={ce.displayText}
             code={ce.code}
             output={ce.output}
             status={ce.status}

@@ -8,7 +8,7 @@ import { ArtifactStreamBlock, extractPartialArtifactFields, extractPartialWidget
 import { WidgetBlock } from '../components/WidgetBlock'
 import { LocaleProvider } from '../contexts/LocaleContext'
 import { AuthContextBridge, type AuthContextValue } from '../contexts/auth'
-import { ThreadListContextBridge, type ThreadListContextValue } from '../contexts/thread-list'
+import { ThreadListContextBridge, ThreadLiveStateBridge, type ThreadListContextValue } from '../contexts/thread-list'
 import { AppUIContextBridge, type AppUIContextValue } from '../contexts/app-ui'
 import { CreditsContextBridge, type CreditsContextValue } from '../contexts/credits'
 import { useLatest } from '../hooks/useLatest'
@@ -787,8 +787,6 @@ function OutletShell({ context }: { context: LegacyOutletContext }) {
 
   const threadListValue: ThreadListContextValue = {
     threads: context.threads,
-    runningThreadIds: new Set(),
-    completedUnreadThreadIds: new Set(),
     privateThreadIds: context.privateThreadIds,
     isPrivateMode: context.isPrivateMode,
     pendingIncognitoMode: false,
@@ -850,11 +848,13 @@ function OutletShell({ context }: { context: LegacyOutletContext }) {
   return (
     <AuthContextBridge value={authValue}>
       <ThreadListContextBridge value={threadListValue}>
-        <AppUIContextBridge value={appUIValue}>
-          <CreditsContextBridge value={creditsValue}>
-            <Outlet />
-          </CreditsContextBridge>
-        </AppUIContextBridge>
+        <ThreadLiveStateBridge value={{ runningThreadIds: new Set(), completedUnreadThreadIds: new Set() }}>
+          <AppUIContextBridge value={appUIValue}>
+            <CreditsContextBridge value={creditsValue}>
+              <Outlet />
+            </CreditsContextBridge>
+          </AppUIContextBridge>
+        </ThreadLiveStateBridge>
       </ThreadListContextBridge>
     </AuthContextBridge>
   )
@@ -1719,7 +1719,7 @@ describe('ChatPage loading state', () => {
       await flushMicrotasks()
     })
 
-    expect(container.textContent ?? '').toContain('Finding the right words')
+    expect(container.textContent ?? '').toContain('整理措辞')
     expect(container.textContent ?? '').toContain('streaming')
 
     act(() => {
@@ -3151,7 +3151,7 @@ describe('ChatPage loading state', () => {
     expect(outletContext.onThreadCreated).toHaveBeenCalledTimes(threadCreatedCallsBeforeRetry)
     expect(outletContext.onRunStarted).toHaveBeenCalledWith('thread-1')
     expect(container.textContent).not.toContain('answer')
-    expect(container.textContent).toContain('Finding the right words')
+    expect(container.textContent).toContain('整理措辞')
 
     act(() => {
       root.unmount()

@@ -25,6 +25,7 @@ import { SourcesPanel } from './SourcesPanel'
 import { CodeExecutionPanel } from './CodeExecutionPanel'
 import { AgentPanel } from './AgentPanel'
 import { RightPanel, type RightPanelTab } from './RightPanel'
+import { rightPanelIconSize } from './rightPanelControls'
 import { LocalFilesPanel } from './local-files/LocalFilesPanel'
 import { resolveLocalFileIconUrl } from './local-files/fileIconResolver'
 import { ResourcePreviewPanel } from './resource-preview/ResourcePreviewPanel'
@@ -65,7 +66,7 @@ import { buildResolvedPool, EMPTY_POOL, buildFallbackSegments } from '../copSubS
 import { applyAgentEventToWebSearchSteps } from '../webSearchTimelineFromAgentEvent'
 import { useLocale } from '../contexts/LocaleContext'
 import { useAuth } from '../contexts/auth'
-import { useThreadList } from '../contexts/thread-list'
+import { useThreadList, useThreadLiveState } from '../contexts/thread-list'
 import { useAppModeUI, useRightPanelActions, useSettingsUI, useTitleBarRightPanelUI } from '../contexts/app-ui'
 import { useChatSession } from '../contexts/chat-session'
 import { useMessageStore } from '../contexts/message-store'
@@ -206,7 +207,7 @@ function localFileTabIcon(resource: LocalFileResourceRef | null) {
     type: 'file',
     size: resource.size,
   })
-  return iconUrl ? <img src={iconUrl} alt="" aria-hidden="true" draggable={false} style={{ width: 15, height: 15, flexShrink: 0 }} /> : undefined
+  return iconUrl ? <img src={iconUrl} alt="" aria-hidden="true" draggable={false} style={{ width: rightPanelIconSize, height: rightPanelIconSize, flexShrink: 0 }} /> : undefined
 }
 
 function clampRightPanelWidth(width: number, containerWidth: number): number {
@@ -839,9 +840,9 @@ export const ChatView = memo(function ChatView() {
     threads, addThread: onThreadCreated,
     upsertThread: onThreadUpserted,
     markRunning: onRunStarted, markIdle: onRunEnded,
-    completedUnreadThreadIds,
     markCompletionRead,
   } = useThreadList()
+  const { completedUnreadThreadIds } = useThreadLiveState()
   const { appMode } = useAppModeUI()
   const { setRightPanelOpen } = useRightPanelActions()
   const { setTitleBarRightPanelClick } = useTitleBarRightPanelUI()
@@ -2552,7 +2553,7 @@ export const ChatView = memo(function ChatView() {
       icon: tab.resource.kind === 'local-file'
         ? localFileTabIcon(tab.resource)
         : tab.resource.kind === 'browser'
-          ? <BrowserSiteIcon url={tab.resource.url} faviconUrl={tab.resource.faviconUrl} />
+          ? <BrowserSiteIcon url={tab.resource.url} faviconUrl={tab.resource.faviconUrl} size={rightPanelIconSize} />
           : undefined,
       content: (
         <ResourcePreviewPanel
@@ -2574,7 +2575,7 @@ export const ChatView = memo(function ChatView() {
       title: webPanelResource ? resourceTitle(webPanelResource) : t.rightPanel.browser,
       closable: !!webPanelResource,
       hideTitle: !webPanelResource,
-      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} />,
+      icon: <BrowserSiteIcon url={webPanelResource?.url} faviconUrl={webPanelResource?.faviconUrl} size={rightPanelIconSize} />,
       content: (
         <ResourcePreviewPanel
           resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
@@ -2592,7 +2593,7 @@ export const ChatView = memo(function ChatView() {
         title: browserTab.resource ? resourceTitle(browserTab.resource) : t.rightPanel.browser,
         closable: true,
         hideTitle: !browserTab.resource,
-        icon: <BrowserSiteIcon url={browserTab.resource?.url} faviconUrl={browserTab.resource?.faviconUrl} />,
+        icon: <BrowserSiteIcon url={browserTab.resource?.url} faviconUrl={browserTab.resource?.faviconUrl} size={rightPanelIconSize} />,
         content: (
           <ResourcePreviewPanel
             resource={browserTab.resource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}

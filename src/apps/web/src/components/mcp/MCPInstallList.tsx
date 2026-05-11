@@ -82,10 +82,11 @@ export function MCPInstallList({
                   {install.display_name}
                 </span>
                 <span
-                  className="shrink-0 rounded px-1.5 py-px text-[10px] font-medium leading-tight"
-                  style={statusBadgeStyle(install.discovery_status)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium leading-tight"
+                  style={busy ? statusBadgeStyle('needs_check') : statusBadgeStyle(install.discovery_status)}
                 >
-                  {statusLabel(install.discovery_status, copy.status)}
+                  {busy && <Loader2 size={10} className="animate-spin" />}
+                  {busy ? copy.loading : statusLabel(install.discovery_status, copy.status)}
                 </span>
               </div>
               {install.last_error_message && (

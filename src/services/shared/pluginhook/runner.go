@@ -90,7 +90,7 @@ func (r *HTTPHookRunner) Run(ctx context.Context, input HookInput) (HookOutput, 
 		}
 		return HookOutput{}, fmt.Errorf("post plugin http hook: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return HookOutput{}, fmt.Errorf("plugin http hook status: %d", resp.StatusCode)
 	}

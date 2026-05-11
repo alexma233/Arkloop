@@ -24,6 +24,7 @@ import (
 	"arkloop/services/worker/internal/executor"
 	"arkloop/services/worker/internal/pipeline"
 	"arkloop/services/worker/internal/queue"
+	"arkloop/services/worker/internal/tooldiagnostics"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -52,6 +53,7 @@ func RunDesktop(ctx context.Context) error {
 	}
 
 	logger := slog.Default()
+	tooldiagnostics.StartWatchdog(ctx.Done(), logger)
 
 	bus, ok := desktop.GetEventBus().(eventbus.EventBus)
 	if !ok || bus == nil {

@@ -11,15 +11,13 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 44px;
-  padding: 6px 10px;
+  gap: 4px;
+  min-height: 42px;
+  padding: 0 10px;
   border-bottom: 0.5px solid var(--c-border-subtle);
 }
 
 .browser-panel__tool {
-  width: 30px;
-  height: 30px;
   flex: 0 0 auto;
 }
 
@@ -29,7 +27,7 @@
 }
 
 .browser-panel__tool:disabled {
-  opacity: 0.38;
+  opacity: 0.4;
   cursor: default;
 }
 
