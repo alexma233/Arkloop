@@ -1,3 +1,5 @@
+import { beforeAll } from 'vitest'
+
 // jsdom 未实现 Blob URL；ArtifactIframe 等依赖此方法。
 if (typeof URL.createObjectURL !== 'function') {
   Object.defineProperty(URL, 'createObjectURL', {

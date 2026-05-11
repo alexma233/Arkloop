@@ -45,7 +45,7 @@ func RegisterClient(ctx context.Context, httpClient HTTPDoer, discovery Discover
 	if err != nil {
 		return ClientInformation{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if !respOK(resp.StatusCode) {
 		return ClientInformation{}, tokenEndpointError(resp)
 	}
@@ -191,7 +191,7 @@ func executeTokenRequest(ctx context.Context, httpClient HTTPDoer, discovery Dis
 	if err != nil {
 		return Tokens{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if !respOK(resp.StatusCode) {
 		return Tokens{}, tokenEndpointError(resp)
 	}

@@ -43,7 +43,7 @@ func DownloadAndExtract(ctx context.Context, client *http.Client, store ArchiveS
 	if err != nil {
 		return fmt.Errorf("download plugin binary: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("download plugin binary status: %d", resp.StatusCode)
 	}
