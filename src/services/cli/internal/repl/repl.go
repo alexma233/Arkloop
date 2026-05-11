@@ -128,7 +128,7 @@ func (r *REPL) handleCommand(ctx context.Context, input string) (bool, error) {
 	case input == "/quit" || input == "/exit":
 		return true, io.EOF
 	case input == "/help":
-		_, err := fmt.Fprintln(r.stderr, "/help\n/status\n/model <name>\n/persona <key>\n/thread\n/new\n/incognito\n/quit\n/exit")
+		_, err := fmt.Fprintln(r.stderr, "/help\n/status\n/model <name>\n/persona <key>\n/thread\n/new\n/quit\n/exit")
 		return true, err
 	case input == "/status":
 		return true, r.printStatus()
@@ -138,14 +138,6 @@ func (r *REPL) handleCommand(ctx context.Context, input string) (bool, error) {
 	case input == "/new":
 		r.threadID = ""
 		_, err := fmt.Fprintln(r.stderr, "new session")
-		return true, err
-	case input == "/incognito":
-		r.incognito = !r.incognito
-		status := "off"
-		if r.incognito {
-			status = "on"
-		}
-		_, err := fmt.Fprintf(r.stderr, "incognito: %s\n", status)
 		return true, err
 	case strings.HasPrefix(input, "/model "):
 		model := strings.TrimSpace(strings.TrimPrefix(input, "/model "))
@@ -182,7 +174,6 @@ func (r *REPL) printStatus() error {
 		Persona:   r.params.PersonaID,
 		WorkDir:   r.params.WorkDir,
 		Timeout:   timeoutDisplay(r.timeout),
-		Incognito: r.incognito,
 	})
 }
 
