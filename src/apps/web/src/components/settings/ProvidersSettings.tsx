@@ -40,6 +40,7 @@ import { SettingsSelect } from './_SettingsSelect'
 import { SettingsSegmentedControl } from './_SettingsSegmentedControl'
 import { SettingsSwitch } from './_SettingsSwitch'
 import { SettingsSummaryCard, SettingsSummaryCardBadge, SettingsSummaryCardLine } from './_SettingsSummaryCard'
+import { SETTINGS_TWO_COLUMN_GRID_CLASS } from './_SettingsLayout'
 import {
   AdvancedOptionsDisclosure,
   HeadersEditor,
@@ -340,7 +341,7 @@ export function ProvidersSettings({ accessToken }: Props) {
       </div>
 
       {filteredProviders.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={SETTINGS_TWO_COLUMN_GRID_CLASS}>
           {filteredProviders.map((provider) => (
             <ProviderSummaryCard
               key={provider.id}

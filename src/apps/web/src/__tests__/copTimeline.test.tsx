@@ -324,7 +324,7 @@ describe('CopTimeline', () => {
         isComplete: true,
       })
       expect(html).not.toBe('')
-      expect(html).toContain('1 步已完成')
+      expect(html).toContain('完成 1 步')
     })
 
     it('exec segment renders outside header collapse, not as nested segment', () => {
@@ -410,7 +410,7 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('1 步已完成')
+      expect(html).toContain('完成 1 步')
       expect(html).not.toContain('Read 9 files, 10 searches, Listed 3 files')
       expect(html).not.toContain('正在搜索 for')
     })
@@ -485,7 +485,7 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('已写入 hello.py')
+      expect(html).toContain('写入 hello.py')
       expect(html).not.toContain('Edited hello.py')
     })
   })
@@ -576,7 +576,7 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('2 步已完成')
+      expect(html).toContain('完成 2 步')
       expect(html).not.toContain('2 steps completed')
     })
 
@@ -587,7 +587,7 @@ describe('CopTimeline', () => {
         pool: EMPTY_POOL,
         isComplete: true,
       })
-      expect(html).toContain('1 步已完成')
+      expect(html).toContain('完成 1 步')
       expect(html).not.toContain('Step 1')
       expect(html).not.toContain('1 step completed')
     })
@@ -788,7 +788,7 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'Thought about it', durationSec: 4, live: false },
         isComplete: true,
       })
-      expect(html).toContain('1 步已完成')
+      expect(html).toContain('完成 1 步')
       expect(html).not.toContain('1 step completed')
       expect(html).toContain('data-phase="thought"')
     })
@@ -815,7 +815,7 @@ describe('CopTimeline', () => {
         thinkingOnly: { markdown: 'thought', durationSec: 2, live: false },
         isComplete: true,
       })
-      expect(html).toContain('3 步已完成')
+      expect(html).toContain('完成 3 步')
       expect(html).not.toContain('3 steps completed')
     })
   })

@@ -240,65 +240,65 @@ function renderZh(value: CoreTimelineText): string {
     case 'working': return '处理中'
     case 'running': return '运行中'
     case 'editing': return '编辑中'
-    case 'steps_completed': return `${value.count} 步已完成`
-    case 'edit_completed': return '编辑已完成'
-    case 'fetch_completed': return (value.count ?? 1) === 1 ? '获取已完成' : `${value.count} 次获取已完成`
+    case 'steps_completed': return `完成 ${value.count} 步`
+    case 'edit_completed': return '编辑完成'
+    case 'fetch_completed': return (value.count ?? 1) === 1 ? '获取完成' : `${value.count} 次获取完成`
     case 'exploring_code': return '正在查看代码'
-    case 'explored_code': return '已查看代码'
+    case 'explored_code': return '查看代码'
     case 'searching_code': return '正在搜索代码'
-    case 'searched_code': return '已搜索代码'
+    case 'searched_code': return '搜索代码'
     case 'listing_files': return '正在列出文件'
-    case 'listed_files': return '已列出文件'
+    case 'listed_files': return '列出文件'
     case 'reading_file': return '正在读取文件'
-    case 'read_file': return '已读取文件'
+    case 'read_file': return '读取文件'
     case 'writing_file': return '正在写入文件'
-    case 'wrote_file': return '已写入文件'
+    case 'wrote_file': return '写入文件'
     case 'editing_file': return '正在编辑文件'
-    case 'edited_file': return '已编辑文件'
+    case 'edited_file': return '编辑文件'
     case 'running_command': return '正在运行命令'
     case 'run_command': return '运行命令'
     case 'agent_running': return '子代理运行中'
-    case 'agent_completed': return value.count && value.count > 1 ? `${value.count} 个子代理任务已完成` : '子代理已完成'
+    case 'agent_completed': return value.count && value.count > 1 ? `${value.count} 个子代理任务完成` : '子代理完成'
     case 'plan_mode': return value.action === 'enter' ? '进入计划模式' : '退出计划模式'
     case 'image_generation': {
       if (value.status === 'live') return '正在生成图片'
       if (value.status === 'failed') return value.count && value.count > 1 ? `${value.count} 次图片生成失败` : '图片生成失败'
-      return value.count && value.count > 1 ? `已生成 ${value.count} 张图片` : '已生成图片'
+      return value.count && value.count > 1 ? `生成 ${value.count} 张图片` : '生成图片'
     }
-    case 'updated_todos': return '已更新待办'
-    case 'read_todos': return '已读取待办'
+    case 'updated_todos': return '更新待办'
+    case 'read_todos': return '读取待办'
     case 'reviewing_sources': return '正在检查来源'
     case 'search': {
-      if (!value.query) return value.tense === 'live' ? '搜索中' : '搜索已完成'
+      if (!value.query) return value.tense === 'live' ? '搜索中' : '搜索完成'
       const extra = value.extraCount && value.extraCount > 0 ? ` +${value.extraCount}` : ''
-      return `${value.tense === 'live' ? '正在搜索' : '已搜索'} ${value.query}${extra}`
+      return `${value.tense === 'live' ? '正在搜索' : '搜索'} ${value.query}${extra}`
     }
-    case 'search_completed': return (value.count ?? 1) === 1 ? '搜索已完成' : `${value.count} 次搜索已完成`
+    case 'search_completed': return (value.count ?? 1) === 1 ? '搜索完成' : `${value.count} 次搜索完成`
     case 'fetching': return value.target ? `正在获取 ${value.target}` : '正在获取'
     case 'loaded_resources': {
-      const verb = value.tense === 'live' ? '正在加载' : '已加载'
+      const verb = value.tense === 'live' ? '正在加载' : '加载'
       const parts: string[] = []
       if (value.tools > 0) parts.push(zhCount(value.tools, '个工具'))
       if (value.skills > 0) parts.push(zhCount(value.skills, '个技能'))
       return parts.length > 0 ? `${verb} ${parts.join(', ')}` : `${verb} 0 个工具`
     }
-    case 'read_files': return `已读取 ${zhCount(value.count, '个文件')}`
-    case 'listed_file_count': return `已列出 ${zhCount(value.count, '个文件')}`
+    case 'read_files': return `读取 ${zhCount(value.count, '个文件')}`
+    case 'listed_file_count': return `列出 ${zhCount(value.count, '个文件')}`
     case 'search_count': return `${value.count} 次搜索`
-    case 'ran_commands': return `已运行 ${zhCount(value.count, '条命令')}`
+    case 'ran_commands': return `运行 ${zhCount(value.count, '条命令')}`
     case 'agent_tasks': return `${value.count} 个子代理任务`
     case 'fetch_count': return `${value.count} 次获取`
-    case 'wrote_path': return `已写入 ${value.path}`
-    case 'edited_path': return `已编辑 ${value.path}`
-    case 'wrote_files': return `已写入 ${zhCount(value.count, '个文件')}`
-    case 'edited_files': return `已编辑 ${zhCount(value.count, '个文件')}`
+    case 'wrote_path': return `写入 ${value.path}`
+    case 'edited_path': return `编辑 ${value.path}`
+    case 'wrote_files': return `写入 ${zhCount(value.count, '个文件')}`
+    case 'edited_files': return `编辑 ${zhCount(value.count, '个文件')}`
     case 'tool_subject': {
       const verbs = {
-        read: '已读取',
-        searched: '已搜索',
-        listed: '已列出',
-        wrote: '已写入',
-        edited: '已编辑',
+        read: '读取',
+        searched: '搜索',
+        listed: '列出',
+        wrote: '写入',
+        edited: '编辑',
         reading: '正在读取',
         searching: '正在搜索',
         listing: '正在列出',
