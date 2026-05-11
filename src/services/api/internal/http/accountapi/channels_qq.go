@@ -472,6 +472,39 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 				}
 				c.sendQQReply(ctx, cfg, "group", platformChatID, replyText)
 				return nil
+
+			case cmd == "/model" || strings.HasPrefix(cmd, "/think"):
+				threadID := uuid.Nil
+				threadProjectID := derefUUID(persona.ProjectID)
+				if threadProjectID == uuid.Nil {
+					ownerUserID := uuid.Nil
+					if ch.OwnerUserID != nil {
+						ownerUserID = *ch.OwnerUserID
+					}
+					if ownerUserID != uuid.Nil {
+						if pid, err := c.personasRepo.GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, ownerUserID); err == nil {
+							threadProjectID = pid
+						}
+					}
+				}
+				if threadProjectID != uuid.Nil {
+					resolvedThreadID, err := c.resolveQQThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, false, platformChatID, "")
+					if err != nil {
+						return err
+					}
+					threadID = resolvedThreadID
+				}
+				replyText, _, err := handleTelegramPreferenceCommand(
+					ctx, tx, ch.AccountID, threadID, cmdText, nil,
+				)
+				if err != nil {
+					return err
+				}
+				if err := commitTx(); err != nil {
+					return err
+				}
+				c.sendQQReply(ctx, cfg, "group", platformChatID, replyText)
+				return nil
 			}
 		}
 	}
