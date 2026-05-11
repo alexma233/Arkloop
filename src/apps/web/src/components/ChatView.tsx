@@ -876,7 +876,6 @@ export const ChatView = memo(function ChatView() {
   const planModeRequestSeqRef = useRef(0)
   const learningModeUpdateRef = useRef<Promise<void> | null>(null)
   const learningModeRequestSeqRef = useRef(0)
-  const [learningModeUpdating, setLearningModeUpdating] = useState(false)
   const [rightPanelVisible, setRightPanelVisible] = useState(false)
   const chatViewRootRef = useRef<HTMLDivElement>(null)
   const rightPanelRatioRef = useRef(0)
@@ -3036,7 +3035,6 @@ export const ChatView = memo(function ChatView() {
   const handleToggleLearningMode = useCallback(async (currentMode: boolean) => {
     if (!threadId || learningModeUpdateRef.current) return
     const requestSeq = ++learningModeRequestSeqRef.current
-    setLearningModeUpdating(true)
     const updatePromise: Promise<void> = updateThreadLearningMode(accessToken, threadId, !currentMode).then((thread) => {
       if (learningModeRequestSeqRef.current === requestSeq) {
         onThreadUpserted(thread)
@@ -3049,7 +3047,6 @@ export const ChatView = memo(function ChatView() {
     }).finally(() => {
       if (learningModeUpdateRef.current === updatePromise) {
         learningModeUpdateRef.current = null
-        setLearningModeUpdating(false)
       }
     })
     learningModeUpdateRef.current = updatePromise
@@ -3092,10 +3089,9 @@ export const ChatView = memo(function ChatView() {
       planMode={currentThread?.collaboration_mode === 'plan'}
       onTogglePlanMode={handleTogglePlanMode}
       learningModeEnabled={!!currentThread?.learning_mode_enabled}
-      learningModeUpdating={learningModeUpdating}
       onToggleLearningMode={handleToggleLearningMode}
     />
-  ), [attachments, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, learningModeUpdating, handleTogglePlanMode, handleToggleLearningMode])
+  ), [attachments, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, handleTogglePlanMode, handleToggleLearningMode])
 
   const renderLiveCopItems = useCallback((
     seg: Extract<AssistantTurnSegment, { type: 'cop' }>,

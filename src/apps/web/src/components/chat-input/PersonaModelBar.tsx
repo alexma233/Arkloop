@@ -1,13 +1,11 @@
 import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Paperclip, BookOpen, Search, Folder, FolderOpen, X, Check, ListTodo } from 'lucide-react'
-import type { SelectablePersona } from '../../api'
+import { Plus, Paperclip, BookOpen, Folder, FolderOpen, X, Check, ListTodo } from 'lucide-react'
 import { updateThreadSidebarState } from '../../api'
 import { ModelPicker } from '../ModelPicker'
 import type { SettingsTab } from '../SettingsModal'
 import { getDesktopApi, isDesktop } from '@arkloop/shared/desktop'
 import {
-  SEARCH_PERSONA_KEY,
   readWorkFolder,
   writeWorkFolder,
   clearWorkFolder,
@@ -21,13 +19,7 @@ import { useLocale } from '../../contexts/LocaleContext'
 import { useThreadList } from '../../contexts/thread-list'
 
 type Props = {
-  personas: SelectablePersona[]
-  selectedPersonaKey: string
   selectedModel: string | null
-  isNonDefaultMode: boolean
-  selectedPersona: SelectablePersona | null
-  onModeSelect: (personaKey: string) => void
-  onDeactivateMode: () => void
   onModelChange: (model: string | null) => void
   thinkingEnabled: string
   onThinkingChange: (mode: string) => void
@@ -45,7 +37,6 @@ type Props = {
   planMode?: boolean
   onTogglePlanMode?: (currentMode: boolean) => Promise<void>
   learningModeEnabled?: boolean
-  learningModeUpdating?: boolean
   onToggleLearningMode?: (currentMode: boolean) => Promise<void>
 }
 
@@ -62,13 +53,7 @@ function readActiveWorkFolder(threadId?: string): string | null {
 }
 
 export function PersonaModelBar({
-  personas,
-  selectedPersonaKey,
   selectedModel,
-  isNonDefaultMode,
-  selectedPersona,
-  onModeSelect,
-  onDeactivateMode,
   onModelChange,
   thinkingEnabled,
   onThinkingChange,
@@ -86,7 +71,6 @@ export function PersonaModelBar({
   planMode = false,
   onTogglePlanMode,
   learningModeEnabled = false,
-  learningModeUpdating = false,
   onToggleLearningMode,
 }: Props) {
   const { t } = useLocale()
@@ -108,7 +92,7 @@ export function PersonaModelBar({
   const showLearningMode = learningModeEnabled || Boolean(onToggleLearningMode)
   const showPlanModeMenuItem = isWorkMode && Boolean(onTogglePlanMode)
   const showPlanMode = showPlanModeMenuItem && planMode
-  const learningModeDisabled = learningModeUpdating || !onToggleLearningMode
+  const learningModeDisabled = !onToggleLearningMode
   const togglePlanMode = useCallback(() => {
     if (!onTogglePlanMode) return
     void onTogglePlanMode(planMode)
@@ -351,8 +335,7 @@ export function PersonaModelBar({
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className={[
-            'flex items-center justify-center rounded-lg text-[var(--c-text-secondary)] transition-[background] duration-[60ms] hover:bg-[var(--c-bg-deep)]',
-            isWorkMode ? 'h-[33.5px] w-[33.5px]' : 'h-8 w-8',
+            'flex items-center justify-center rounded-lg text-[var(--c-text-secondary)] transition-[background] duration-[60ms] hover:bg-[var(--c-bg-deep)] h-[33.5px] w-[33.5px]',
           ].join(' ')}
         >
           <Plus size={20} strokeWidth={1.5} />
@@ -441,35 +424,10 @@ export function PersonaModelBar({
                     <Paperclip size={14} style={{ color: 'var(--c-text-secondary)', flexShrink: 0 }} />
                     {t.addFromLocal}
                   </button>
-                  <div style={{ height: '1px', background: 'var(--c-border-subtle)', margin: '2px 4px' }} />
-                  {personas.map((persona) => {
-                    const isActive = selectedPersonaKey === persona.persona_key
-                    const icon = persona.persona_key === SEARCH_PERSONA_KEY
-                      ? <Search size={14} style={{ flexShrink: 0 }} />
-                      : null
-                    return (
-                      <button
-                        key={persona.persona_key}
-                        type="button"
-                        onClick={() => { onModeSelect(persona.persona_key); setMenuOpen(false) }}
-                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[var(--c-bg-deep)]"
-                        style={{
-                          color: isActive ? 'var(--c-text-primary)' : 'var(--c-text-secondary)',
-                          fontWeight: isActive ? 500 : 400,
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {icon}
-                          {persona.selector_name}
-                        </span>
-                        {isActive && (
-                          <Check size={13} style={{ color: '#4691F6', flexShrink: 0 }} />
-                        )}
-                      </button>
-                    )
-                  })}
                   {showLearningMode && (
-                    <button
+                    <>
+                      <div style={{ height: '1px', background: 'var(--c-border-subtle)', margin: '2px 4px' }} />
+                      <button
                       type="button"
                       onClick={toggleLearningMode}
                       disabled={learningModeDisabled}
@@ -488,6 +446,7 @@ export function PersonaModelBar({
                         <Check size={13} style={{ color: '#4691F6', flexShrink: 0 }} />
                       )}
                     </button>
+                    </>
                   )}
                 </>
               )}
@@ -544,6 +503,7 @@ export function PersonaModelBar({
           type="button"
           onClick={toggleLearningMode}
           disabled={learningModeDisabled}
+          className="learning-mode-chip"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -551,59 +511,34 @@ export function PersonaModelBar({
             height: '33.5px',
             padding: '0 8px 0 9px',
             borderRadius: '8px',
-            background: 'var(--c-chip-active-bg)',
-            border: '0.5px solid var(--c-border-subtle)',
+            background: 'transparent',
+            border: 'none',
             flexShrink: 0,
-            marginLeft: '4px',
-            cursor: learningModeDisabled ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             opacity: learningModeDisabled ? 0.55 : undefined,
           }}
         >
-          <BookOpen size={12} style={{ color: 'var(--c-chip-active-text)', flexShrink: 0 }} />
+          <span
+            style={{
+              width: '14px',
+              height: '14px',
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <BookOpen className="learning-mode-icon learning-mode-icon-default" size={14} style={{ color: 'var(--c-learning-icon)' }} />
+            <X className="learning-mode-icon learning-mode-icon-close" size={14} style={{ color: 'var(--c-learning-icon)' }} />
+          </span>
           <span style={{
             fontSize: '13px',
-            color: 'var(--c-chip-active-text)',
+            color: 'var(--c-learning-text)',
             fontWeight: 450,
             whiteSpace: 'nowrap',
             margin: '0 4px',
           }}>
             {t.learningMode}
           </span>
-          <X size={9} style={{ color: 'var(--c-chip-active-text)', opacity: 0.5, flexShrink: 0 }} />
-        </button>
-      )}
-
-      {isNonDefaultMode && (
-        <button
-          type="button"
-          onClick={onDeactivateMode}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '2px',
-            height: '33.5px',
-            padding: '0 8px 0 9px',
-            borderRadius: '8px',
-            background: 'var(--c-chip-active-bg)',
-            border: '0.5px solid var(--c-border-subtle)',
-            flexShrink: 0,
-            marginLeft: '4px',
-            cursor: 'pointer',
-          }}
-        >
-          {selectedPersonaKey === SEARCH_PERSONA_KEY && (
-            <Search size={12} style={{ color: '#4691F6', flexShrink: 0 }} />
-          )}
-          <span style={{
-            fontSize: '13px',
-            color: selectedPersonaKey === SEARCH_PERSONA_KEY ? '#4691F6' : 'var(--c-chip-active-text)',
-            fontWeight: 450,
-            whiteSpace: 'nowrap',
-            margin: '0 4px',
-          }}>
-            {selectedPersona?.selector_name ?? selectedPersonaKey}
-          </span>
-          <X size={9} style={{ color: 'var(--c-chip-active-text)', opacity: 0.5, flexShrink: 0 }} />
         </button>
       )}
 
@@ -616,9 +551,9 @@ export function PersonaModelBar({
             onChange={onModelChange}
             onAddModel={() => onOpenSettings?.('models')}
             variant={variant}
-            controlHeight={isWorkMode ? 'default' : 'legacyChat'}
             thinkingEnabled={thinkingEnabled}
             onThinkingChange={onThinkingChange}
+            onOpenChange={onMenuOpenChange}
           />
         </div>
       )}

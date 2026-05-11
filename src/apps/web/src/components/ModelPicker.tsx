@@ -42,9 +42,9 @@ type Props = {
   onChange: (model: string | null) => void
   onAddModel: () => void
   variant?: 'welcome' | 'chat'
-  controlHeight?: 'default' | 'legacyChat'
   thinkingEnabled: string
   onThinkingChange: (mode: string) => void
+  onOpenChange?: (open: boolean) => void
 }
 
 type MenuPosition = {
@@ -55,12 +55,16 @@ type MenuPosition = {
   placement: 'up' | 'down'
 }
 
-export function ModelPicker({ accessToken, value, onChange, onAddModel, controlHeight = 'default', thinkingEnabled, onThinkingChange }: Props) {
+export function ModelPicker({ accessToken, value, onChange, onAddModel, thinkingEnabled, onThinkingChange, onOpenChange }: Props) {
   const { t } = useLocale()
   const mp = t.modelPicker
   const desktopShell = isDesktop()
   const [open, setOpen] = useState(false)
   const cached = accessToken ? (providersCache.get(accessToken) ?? null) : null
+
+  useEffect(() => {
+    onOpenChange?.(open)
+  }, [open, onOpenChange])
   const [providers, setProviders] = useState<LlmProvider[]>(cached ?? [])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -243,7 +247,7 @@ export function ModelPicker({ accessToken, value, onChange, onAddModel, controlH
         onMouseLeave={() => setHovered(false)}
         className={[
           'relative flex items-center gap-1 rounded-lg',
-          controlHeight === 'legacyChat' ? 'h-[31.5px]' : 'h-[33px]',
+          'h-[33.5px]',
         ].join(' ')}
         style={{
           padding: '0 8px 0 10px',

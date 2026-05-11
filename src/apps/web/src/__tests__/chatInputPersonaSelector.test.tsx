@@ -427,13 +427,7 @@ describe('ChatInput persona selector', () => {
         root.render(
           <LocaleProvider>
             <PersonaModelBar
-              personas={[]}
-              selectedPersonaKey="normal"
               selectedModel={null}
-              isNonDefaultMode={false}
-              selectedPersona={null}
-              onModeSelect={() => undefined}
-              onDeactivateMode={() => undefined}
               onModelChange={() => undefined}
               thinkingEnabled="off"
               onThinkingChange={() => undefined}
@@ -475,13 +469,7 @@ describe('ChatInput persona selector', () => {
       root.render(
         <LocaleProvider>
           <PersonaModelBar
-            personas={[]}
-            selectedPersonaKey="normal"
             selectedModel={null}
-            isNonDefaultMode={false}
-            selectedPersona={null}
-            onModeSelect={() => undefined}
-            onDeactivateMode={() => undefined}
             onModelChange={() => undefined}
             thinkingEnabled="off"
             onThinkingChange={() => undefined}

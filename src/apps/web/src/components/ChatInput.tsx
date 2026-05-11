@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, useState, forwardRef, useImperativeHandle, useLayoutEffect } from 'react'
 import { ArrowUp, Mic, X, Check, Loader2, Pencil } from 'lucide-react'
 import type { FormEvent, KeyboardEvent, ClipboardEvent as ReactClipboardEvent, ReactNode } from 'react'
-import { listSelectablePersonas, type SelectablePersona, type UploadedThreadAttachment } from '../api'
+import { type UploadedThreadAttachment } from '../api'
 import { useLocale } from '../contexts/LocaleContext'
 import { PastedContentModal } from './PastedContentModal'
 import type { SettingsTab } from './SettingsModal'
@@ -85,7 +85,6 @@ type Props = {
   planMode?: boolean
   onTogglePlanMode?: (currentMode: boolean) => Promise<void>
   learningModeEnabled?: boolean
-  learningModeUpdating?: boolean
   onToggleLearningMode?: (currentMode: boolean) => Promise<void>
 }
 
@@ -159,17 +158,6 @@ function nearestInlineTokenBoundary(value: string, cursor: number): number | nul
   if (!range || cursor === range.start || cursor === range.end) return null
   return cursor - range.start < range.end - cursor ? range.start : range.end
 }
-
-function buildFallbackSelectablePersonas(_selectedPersonaKey: string): SelectablePersona[] {
-  return []
-}
-
-function pickPreferredPersonaKey(personas: SelectablePersona[], preferred?: string): string {
-  if (preferred && personas.some((persona) => persona.persona_key === preferred)) return preferred
-  if (personas.some((persona) => persona.persona_key === DEFAULT_PERSONA_KEY)) return DEFAULT_PERSONA_KEY
-  return DEFAULT_PERSONA_KEY
-}
-
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -293,7 +281,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   planMode = false,
   onTogglePlanMode,
   learningModeEnabled = false,
-  learningModeUpdating = false,
   onToggleLearningMode,
 }, ref) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -334,12 +321,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const { t } = useLocale()
 
-  const [selectablePersonas, setSelectablePersonas] = useState<SelectablePersona[]>([])
   const [selectedPersonaKey, setSelectedPersonaKey] = useState(readSelectedPersonaKeyFromStorage)
   const [focused, setFocused] = useState(false)
+  const [childMenuOpen, setChildMenuOpen] = useState(false)
   const [collapsingGrid, setCollapsingGrid] = useState(false)
   const [pastedModalAttachment, setPastedModalAttachment] = useState<Attachment | null>(null)
-  const [chipExiting, setChipExiting] = useState(false)
   const [typewriterText, setTypewriterText] = useState('')
   const [workCompactInputWraps, setWorkCompactInputWraps] = useState(false)
   const [textareaFocusRestoreTick, setTextareaFocusRestoreTick] = useState(0)
@@ -392,47 +378,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     onPersonaChange?.(personaKey)
   }, [onPersonaChange])
 
-  useEffect(() => {
-    let cancelled = false
-
-    if (!accessToken) {
-      const clearId = requestAnimationFrame(() => setSelectablePersonas([]))
-      return () => {
-        cancelled = true
-        cancelAnimationFrame(clearId)
-      }
-    }
-
-    void listSelectablePersonas(accessToken)
-      .then((personas) => {
-        if (cancelled) return
-        setSelectablePersonas(personas)
-        if (personas.length === 0) return
-
-        const preferredKey = readSelectedPersonaKeyFromStorage()
-        const nextKey = pickPreferredPersonaKey(personas, preferredKey)
-        if (nextKey !== preferredKey) persistSelectedPersona(nextKey)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setSelectablePersonas([])
-      })
-
-    return () => { cancelled = true }
-  }, [accessToken, persistSelectedPersona])
-
-  const personas = useMemo(
-    () => selectablePersonas.length > 0
-      ? selectablePersonas
-      : buildFallbackSelectablePersonas(selectedPersonaKey),
-    [selectablePersonas, selectedPersonaKey],
-  )
-
-  const selectedPersona = useMemo(
-    () => personas.find((persona) => persona.persona_key === selectedPersonaKey) ?? null,
-    [personas, selectedPersonaKey],
-  )
-
   const handleModelChange = useCallback((model: string | null) => {
     setSelectedModel(model)
     writeSelectedModelToStorage(model)
@@ -454,16 +399,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [workThreadId])
 
   const handleMenuOpenChange = useCallback((open: boolean) => {
+    setChildMenuOpen(open)
     const el = textareaRef.current
     if (!el) return
     if (open) {
       el.blur()
-    } else {
-      el.focus()
     }
   }, [])
 
-  const isNonDefaultMode = selectedPersonaKey !== DEFAULT_PERSONA_KEY && selectedPersonaKey !== WORK_PERSONA_KEY
   const showSendButton = draft.trim().length > 0 || attachments.length > 0
   const resolvedPlaceholder = typewriterText
   const isWelcomeInput = variant === 'welcome'
@@ -800,22 +743,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
     setSlashSelectedIndex((index) => Math.min(index, slashVisibleItems.length - 1))
   }, [slashOpen, slashVisibleItems.length])
-
-  const deactivateMode = useCallback(() => {
-    setChipExiting(true)
-    setTimeout(() => {
-      persistSelectedPersona(DEFAULT_PERSONA_KEY)
-      setChipExiting(false)
-    }, 120)
-  }, [persistSelectedPersona])
-
-  const handleModeSelect = useCallback((personaKey: string) => {
-    if (selectedPersonaKey === personaKey && !chipExiting) {
-      deactivateMode()
-    } else {
-      persistSelectedPersona(personaKey)
-    }
-  }, [selectedPersonaKey, chipExiting, persistSelectedPersona, deactivateMode])
 
   const formatRecordingTime = (secs: number) => {
     const m = Math.floor(secs / 60)
@@ -1258,16 +1185,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       <div
         className={[
           'bg-[var(--c-bg-input)] chat-input-box',
-          focused && 'is-focused',
+          (focused || childMenuOpen) && 'is-focused',
         ].filter(Boolean).join(' ')}
         style={{
           borderWidth: '0.5px',
           borderStyle: 'solid',
-          borderColor: focused
+          borderColor: (focused || childMenuOpen)
             ? 'var(--c-input-border-color-focus)'
             : 'var(--c-input-border-color)',
           borderRadius: isWorkChat ? (isWorkCompactInput ? '12px' : '16px') : '20px',
-          boxShadow: focused
+          boxShadow: (focused || childMenuOpen)
             ? 'var(--c-input-shadow-focus)'
             : 'var(--c-input-shadow)',
           transition: isWorkChat
@@ -1357,13 +1284,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           }}
         >
           <PersonaModelBar
-            personas={personas}
-            selectedPersonaKey={selectedPersonaKey}
             selectedModel={selectedModel}
-            isNonDefaultMode={isNonDefaultMode}
-            selectedPersona={selectedPersona}
-            onModeSelect={handleModeSelect}
-            onDeactivateMode={deactivateMode}
             onModelChange={handleModelChange}
             thinkingEnabled={reasoningMode}
             onThinkingChange={handleReasoningModeChange}
@@ -1381,7 +1302,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             planMode={planMode}
             onTogglePlanMode={onTogglePlanMode}
             learningModeEnabled={learningModeEnabled}
-            learningModeUpdating={learningModeUpdating}
             onToggleLearningMode={onToggleLearningMode}
           />
 
@@ -1503,6 +1423,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 variant={variant}
                 thinkingEnabled={reasoningMode}
                 onThinkingChange={handleReasoningModeChange}
+                onOpenChange={handleMenuOpenChange}
               />
             </div>
           )}

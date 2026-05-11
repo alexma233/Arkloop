@@ -34,6 +34,26 @@ button:not(:disabled) {
   display: block;
 }
 
+.learning-mode-chip:hover {
+  background: var(--c-learning-bg) !important;
+}
+
+.learning-mode-icon {
+  grid-area: 1 / 1;
+}
+
+.learning-mode-icon-close {
+  display: none;
+}
+
+.learning-mode-chip:hover .learning-mode-icon-default {
+  display: none;
+}
+
+.learning-mode-chip:hover .learning-mode-icon-close {
+  display: block;
+}
+
 :root {
   color-scheme: dark;
   /* Font variables — overridden by AppearanceContext */
@@ -107,6 +127,9 @@ button:not(:disabled) {
   --c-plan-bg: rgba(220, 185, 92, 0.20);
   --c-plan-text: #F0C64A;
   --c-plan-icon: #F0C64A;
+  --c-learning-bg: rgba(91, 185, 160, 0.20);
+  --c-learning-text: #5BB9A0;
+  --c-learning-icon: #5BB9A0;
   --c-text-body: var(--c-text-primary);
   --c-text-body-weight: 325;
   --c-accent: #FAF9F6;
@@ -255,6 +278,9 @@ button:not(:disabled) {
     --c-plan-bg: rgba(220, 185, 92, 0.20);
     --c-plan-text: #C78B00;
     --c-plan-icon: #C78B00;
+    --c-learning-bg: rgba(61, 142, 112, 0.18);
+    --c-learning-text: #3D8E70;
+    --c-learning-icon: #3D8E70;
     --c-text-body: var(--c-text-primary);
     --c-text-body-weight: 365;
     --c-token-cache-read: #0969da;
@@ -384,6 +410,9 @@ button:not(:disabled) {
   --c-plan-bg: rgba(220, 185, 92, 0.20);
   --c-plan-text: #C78B00;
   --c-plan-icon: #C78B00;
+  --c-learning-bg: rgba(61, 142, 112, 0.18);
+  --c-learning-text: #3D8E70;
+  --c-learning-icon: #3D8E70;
   --c-text-body: var(--c-text-primary);
   --c-text-body-weight: 365;
   --c-token-cache-read: #0969da;
