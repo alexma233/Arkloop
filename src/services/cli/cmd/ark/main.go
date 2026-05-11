@@ -396,7 +396,6 @@ func cmdRun(ctx context.Context, args []string) error {
 		"thread":        {},
 		"output-format": {},
 		"prompt-file":   {},
-		"incognito":     {},
 	}
 	requestedFormat := requestedRunOutputFormat(args)
 	flagArgs, positionals, err := splitFlagAndPositionalArgs(args, valueFlags)
