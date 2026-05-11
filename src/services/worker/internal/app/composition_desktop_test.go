@@ -80,6 +80,52 @@ func TestDesktopSubAgentSchemaAvailable(t *testing.T) {
 	}
 }
 
+func TestDesktopPersonaResolutionPreservesMCPToolsAcrossAllowlist(t *testing.T) {
+	registry := personas.NewRegistry()
+	registry.Set(personas.Definition{
+		ID:             "test-persona",
+		Version:        "1",
+		Title:          "Test Persona",
+		PromptMD:       "# test",
+		ToolAllowlist:  []string{"memory_search"},
+		ExecutorType:   "agent.simple",
+		ExecutorConfig: map[string]any{},
+		StreamThinking: true,
+	})
+
+	mw := desktopPersonaResolution(
+		nil,
+		func() *personas.Registry { return registry },
+		data.DesktopRunsRepository{},
+		data.DesktopRunEventsRepository{},
+	)
+	rc := &pipeline.RunContext{
+		Run:       dataRunForDesktopTest(),
+		Emitter:   events.NewEmitter("test"),
+		InputJSON: map[string]any{"persona_id": "test-persona"},
+		AllowlistSet: map[string]struct{}{
+			"memory_search":                     {},
+			"mcp__context7__resolve_library_id": {},
+		},
+		MCPToolNames: map[string]struct{}{
+			"mcp__context7__resolve_library_id": {},
+		},
+	}
+
+	h := pipeline.Build([]pipeline.RunMiddleware{mw}, func(_ context.Context, rc *pipeline.RunContext) error {
+		if _, ok := rc.AllowlistSet["memory_search"]; !ok {
+			t.Fatal("expected builtin memory_search to remain allowed")
+		}
+		if _, ok := rc.AllowlistSet["mcp__context7__resolve_library_id"]; !ok {
+			t.Fatal("expected discovered context7 MCP tool to remain allowed")
+		}
+		return nil
+	})
+	if err := h(context.Background(), rc); err != nil {
+		t.Fatalf("desktop persona resolution failed: %v", err)
+	}
+}
+
 type desktopNoopSubAgentControl struct{}
 
 func (desktopNoopSubAgentControl) Spawn(context.Context, subagentctl.SpawnRequest) (subagentctl.StatusSnapshot, error) {

@@ -3013,13 +3013,7 @@ func desktopPersonaResolution(
 			rc.StreamThinking = def.StreamThinking
 			rc.ToolDenylist = append([]string(nil), def.ToolDenylist...)
 			if len(def.ToolAllowlist) > 0 {
-				narrowed := make(map[string]struct{}, len(def.ToolAllowlist))
-				for _, name := range def.ToolAllowlist {
-					if pipeline.ToolAllowed(rc.AllowlistSet, rc.ToolRegistry, name) {
-						narrowed[name] = struct{}{}
-					}
-				}
-				rc.AllowlistSet = narrowed
+				rc.AllowlistSet = pipeline.NarrowAllowlistPreservingMCP(rc.AllowlistSet, rc.ToolRegistry, def.ToolAllowlist, rc.MCPToolNames)
 			}
 			for _, name := range def.ToolDenylist {
 				pipeline.RemoveToolOrGroup(rc.AllowlistSet, rc.ToolRegistry, name)

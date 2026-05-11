@@ -171,7 +171,7 @@ func NewPersonaResolutionMiddleware(
 			def := resolution.Definition
 			rc.ToolDenylist = append([]string(nil), def.ToolDenylist...)
 			if len(def.ToolAllowlist) > 0 {
-				rc.AllowlistSet = narrowAllowlistForPersona(rc.AllowlistSet, rc.ToolRegistry, def.ToolAllowlist, rc.MCPToolNames)
+				rc.AllowlistSet = NarrowAllowlistPreservingMCP(rc.AllowlistSet, rc.ToolRegistry, def.ToolAllowlist, rc.MCPToolNames)
 			}
 			for _, name := range def.ToolDenylist {
 				RemoveToolOrGroup(rc.AllowlistSet, rc.ToolRegistry, name)
@@ -193,7 +193,7 @@ func NewPersonaResolutionMiddleware(
 	}
 }
 
-func narrowAllowlistForPersona(
+func NarrowAllowlistPreservingMCP(
 	current map[string]struct{},
 	registry *tools.Registry,
 	allowlist []string,
