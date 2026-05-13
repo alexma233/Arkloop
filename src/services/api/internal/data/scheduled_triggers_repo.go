@@ -397,6 +397,30 @@ func (ScheduledTriggersRepository) ResetCooldownForMessage(
 	return err
 }
 
+func (ScheduledTriggersRepository) ResetCooldownForMessageForThread(
+	ctx context.Context,
+	db Querier,
+	threadID uuid.UUID,
+	nextFireAt time.Time,
+	lastUserMsgAt time.Time,
+	burstStartAt time.Time,
+) error {
+	if threadID == uuid.Nil {
+		return errors.New("thread_id must not be empty")
+	}
+	_, err := db.Exec(ctx, `
+		UPDATE scheduled_triggers
+		   SET cooldown_level = 0,
+		       next_fire_at = $1,
+		       last_user_msg_at = $2,
+		       burst_start_at = $3,
+		       updated_at = now()
+		 WHERE thread_id = $4`,
+		nextFireAt, lastUserMsgAt, burstStartAt, threadID,
+	)
+	return err
+}
+
 // UpdateCooldownAfterHeartbeat updates cooldown_level and next_fire_at after a heartbeat run.
 // lastUserMsgSnapshot is the last_user_msg_at value observed when the heartbeat started;
 // the update is skipped if a new message arrived in the meantime.

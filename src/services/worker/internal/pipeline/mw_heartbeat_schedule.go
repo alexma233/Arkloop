@@ -104,7 +104,7 @@ func NewHeartbeatScheduleMiddleware(db data.DB) RunMiddleware {
 			model = strings.TrimSpace(*def.Model)
 		}
 
-		existing, getErr := repo.GetHeartbeat(ctx, db, channelID, identityID)
+		existing, getErr := getExistingHeartbeatSchedule(ctx, db, repo, rc, channelID, identityID)
 		if getErr != nil {
 			slog.WarnContext(ctx, "heartbeat_schedule: get trigger failed", "identity_id", identityID, "error", getErr)
 			return nil
@@ -130,7 +130,7 @@ func NewHeartbeatScheduleMiddleware(db data.DB) RunMiddleware {
 				return nil
 			}
 			if intervalChanged {
-				nextFire, resetErr := repo.ResetHeartbeatNextFire(ctx, db, channelID, identityID, iv)
+				nextFire, resetErr := resetHeartbeatNextFire(ctx, db, repo, rc, channelID, identityID, iv)
 				if resetErr != nil {
 					slog.WarnContext(ctx, "heartbeat_schedule: reschedule trigger failed", "identity_id", identityID, "error", resetErr)
 					return nil
@@ -145,6 +145,20 @@ func NewHeartbeatScheduleMiddleware(db data.DB) RunMiddleware {
 		slog.DebugContext(ctx, "heartbeat_schedule: trigger unchanged", "identity_id", identityID)
 		return nil
 	}
+}
+
+func getExistingHeartbeatSchedule(ctx context.Context, db data.DB, repo data.ScheduledTriggersRepository, rc *RunContext, channelID, identityID uuid.UUID) (*data.ScheduledTriggerRow, error) {
+	if rc != nil && rc.Run.ThreadID != uuid.Nil {
+		return repo.GetHeartbeatForThread(ctx, db, rc.Run.ThreadID)
+	}
+	return repo.GetHeartbeat(ctx, db, channelID, identityID)
+}
+
+func resetHeartbeatNextFire(ctx context.Context, db data.DB, repo data.ScheduledTriggersRepository, rc *RunContext, channelID, identityID uuid.UUID, intervalMin int) (time.Time, error) {
+	if rc != nil && rc.Run.ThreadID != uuid.Nil {
+		return repo.ResetHeartbeatNextFireForThread(ctx, db, rc.Run.ThreadID, intervalMin)
+	}
+	return repo.ResetHeartbeatNextFire(ctx, db, channelID, identityID, intervalMin)
 }
 
 func upsertHeartbeatSchedule(ctx context.Context, db data.DB, repo data.ScheduledTriggersRepository, rc *RunContext, channelID, identityID uuid.UUID, personaKey, model string, intervalMin int) error {

@@ -135,6 +135,47 @@ func TestScheduledTriggersRepositoryIdentityMethodsIgnoreThreadScopedRows(t *tes
 	}
 }
 
+func TestScheduledTriggersRepositoryResetCooldownForMessageForThread(t *testing.T) {
+	repo, pool, ctx := setupScheduledTriggersRepo(t)
+	channelID := uuid.New()
+	identity := uuid.New()
+	account := uuid.New()
+	threadID := uuid.New()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	nextFire := now.Add(15 * time.Second)
+	burstStart := now.Add(-10 * time.Second)
+
+	if err := repo.UpsertHeartbeatForThread(ctx, pool, account, channelID, identity, threadID, "thread", "thread-model", 5); err != nil {
+		t.Fatalf("upsert thread heartbeat: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE scheduled_triggers SET cooldown_level = 2, next_fire_at = $1 WHERE thread_id = $2`, now.Add(time.Hour), threadID); err != nil {
+		t.Fatalf("set thread cooldown: %v", err)
+	}
+	if err := repo.ResetCooldownForMessageForThread(ctx, pool, threadID, nextFire, now, burstStart); err != nil {
+		t.Fatalf("reset thread cooldown: %v", err)
+	}
+
+	row, err := repo.GetHeartbeatForThread(ctx, pool, threadID)
+	if err != nil {
+		t.Fatalf("get thread heartbeat: %v", err)
+	}
+	if row == nil {
+		t.Fatal("expected thread heartbeat")
+	}
+	if row.CooldownLevel != 0 {
+		t.Fatalf("expected cooldown reset, got %d", row.CooldownLevel)
+	}
+	if row.LastUserMsgAt == nil || !row.LastUserMsgAt.Equal(now) {
+		t.Fatalf("unexpected last_user_msg_at, got=%v want=%s", row.LastUserMsgAt, now)
+	}
+	if row.BurstStartAt == nil || !row.BurstStartAt.Equal(burstStart) {
+		t.Fatalf("unexpected burst_start_at, got=%v want=%s", row.BurstStartAt, burstStart)
+	}
+	if !row.NextFireAt.Equal(nextFire) {
+		t.Fatalf("unexpected next_fire_at, got=%s want=%s", row.NextFireAt, nextFire)
+	}
+}
+
 func TestScheduledTriggersRepositoryRescheduleHeartbeatNextFireAt(t *testing.T) {
 	repo, pool, ctx := setupScheduledTriggersRepo(t)
 	channelID := uuid.New()

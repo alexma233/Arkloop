@@ -318,35 +318,19 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			_ = c.bus.Publish(ctx, pgnotify.ChannelHeartbeat, "")
 		}
 	}()
-	if !isPrivate && groupIdentity != nil && c.scheduledTriggersRepo != nil {
-		existing, _ := c.scheduledTriggersRepo.GetHeartbeat(ctx, tx, ch.ID, groupIdentity.ID)
-
-		burstStart := now
-		if existing != nil && existing.LastUserMsgAt != nil {
-			if now.Sub(*existing.LastUserMsgAt) <= 30*time.Second {
-				if existing.BurstStartAt != nil {
-					burstStart = *existing.BurstStartAt
-				}
-			}
-		}
-
-		timeInBurst := now.Sub(burstStart)
-		delaySec := 15.0 - timeInBurst.Seconds()/2
-		if delaySec < 3 {
-			delaySec = 3
-		}
-		nextFire := now.Add(time.Duration(delaySec) * time.Second)
-		if existing != nil && existing.NextFireAt.After(now) && existing.NextFireAt.Before(nextFire) {
-			nextFire = existing.NextFireAt
-		}
-
-		if resetErr := c.scheduledTriggersRepo.ResetCooldownForMessage(
+	if !isPrivate && groupIdentity != nil {
+		reset, resetErr := resetGroupHeartbeatCooldownForMessage(
 			ctx, tx,
-			ch.ID, groupIdentity.ID,
-			nextFire, now, burstStart,
-		); resetErr != nil {
+			c.scheduledTriggersRepo,
+			c.channelGroupThreadsRepo,
+			ch,
+			ch.PersonaID,
+			platformChatID,
+			now,
+		)
+		if resetErr != nil {
 			slog.WarnContext(ctx, "heartbeat_cooldown_reset_failed", "error", resetErr, "channel_id", ch.ID, "identity_id", groupIdentity.ID)
-		} else {
+		} else if reset {
 			if c.bus != nil {
 				pendingHeartbeatNotify = true
 			} else {
@@ -685,7 +669,7 @@ func (c *qqConnector) persistQQGroupPassiveMessage(
 				inboundLedgerKeyConversationType: incoming.ChatType,
 				inboundLedgerKeyMentionsBot:      incoming.MentionsBot,
 				inboundLedgerKeyIsReplyToBot:     incoming.IsReplyToBot,
-				"passive":           true,
+				"passive":                        true,
 			}, inboundStatePassivePersisted),
 		); err != nil {
 			return err

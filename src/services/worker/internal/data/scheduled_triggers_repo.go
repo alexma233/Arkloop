@@ -330,6 +330,35 @@ func (ScheduledTriggersRepository) ResetHeartbeatNextFire(
 	return nextFire, nil
 }
 
+func (ScheduledTriggersRepository) ResetHeartbeatNextFireForThread(
+	ctx context.Context,
+	db DB,
+	threadID uuid.UUID,
+	intervalMin int,
+) (time.Time, error) {
+	if threadID == uuid.Nil {
+		return time.Time{}, errors.New("thread_id must not be empty")
+	}
+	intervalMin = normalizeHeartbeatInterval(intervalMin)
+	nextFire := time.Now().UTC().Add(time.Duration(intervalMin) * time.Minute)
+	cmd, err := db.Exec(ctx, `
+		UPDATE scheduled_triggers
+		   SET interval_min = $1,
+		       next_fire_at = $2,
+		       cooldown_level = 0,
+		       updated_at = now()
+		 WHERE thread_id = $3`,
+		intervalMin, nextFire, threadID,
+	)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if cmd.RowsAffected() == 0 {
+		return time.Time{}, fmt.Errorf("reset heartbeat next fire: thread_id %s not found", threadID)
+	}
+	return nextFire, nil
+}
+
 // DeleteHeartbeat 删除某个 channel identity 的 heartbeat 调度。
 func (ScheduledTriggersRepository) DeleteHeartbeat(
 	ctx context.Context,

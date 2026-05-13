@@ -182,6 +182,150 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacyGroupHeartbeatThreads(t *testing.T) {
+	pool := openTestDB(t)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`CREATE TABLE goose_db_version (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			version_id INTEGER NOT NULL,
+			is_applied INTEGER NOT NULL,
+			tstamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE personas (
+			id TEXT PRIMARY KEY,
+			account_id TEXT NOT NULL,
+			persona_key TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE channel_identities (
+			id TEXT PRIMARY KEY,
+			channel_type TEXT NOT NULL,
+			platform_subject_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE channels (
+			id TEXT PRIMARY KEY,
+			account_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE threads (
+			id TEXT PRIMARY KEY,
+			account_id TEXT NOT NULL,
+			deleted_at TEXT
+		)`,
+		`CREATE TABLE channel_group_threads (
+			id TEXT PRIMARY KEY,
+			channel_id TEXT NOT NULL,
+			platform_chat_id TEXT NOT NULL,
+			persona_id TEXT NOT NULL,
+			thread_id TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE scheduled_triggers (
+			id TEXT PRIMARY KEY,
+			channel_id TEXT NOT NULL,
+			channel_identity_id TEXT NOT NULL,
+			thread_id TEXT,
+			persona_key TEXT NOT NULL,
+			account_id TEXT NOT NULL,
+			model TEXT NOT NULL DEFAULT '',
+			interval_min INTEGER NOT NULL DEFAULT 30,
+			next_fire_at TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			trigger_kind TEXT NOT NULL DEFAULT 'heartbeat',
+			job_id TEXT,
+			cooldown_level INTEGER NOT NULL DEFAULT 0,
+			last_user_msg_at TEXT,
+			burst_start_at TEXT
+		)`,
+		`CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx
+			ON scheduled_triggers (thread_id)
+			WHERE thread_id IS NOT NULL`,
+		`CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx
+			ON scheduled_triggers (channel_id, channel_identity_id)
+			WHERE thread_id IS NULL`,
+	} {
+		if _, err := pool.Exec(ctx, stmt); err != nil {
+			t.Fatalf("prepare schema: %v", err)
+		}
+	}
+	for v := int64(0); v <= 101; v++ {
+		if _, err := pool.Exec(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES ($1, 1)`, v); err != nil {
+			t.Fatalf("seed goose version %d: %v", v, err)
+		}
+	}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO personas (id, account_id, persona_key, created_at)
+		VALUES ('persona-1', 'account-1', 'group-persona', '2026-01-01T00:00:00Z');
+		INSERT INTO channels (id, account_id) VALUES ('channel-1', 'account-1');
+		INSERT INTO channel_identities (id, channel_type, platform_subject_id)
+		VALUES
+			('identity-legacy', 'telegram', 'chat-migrate'),
+			('identity-conflict', 'telegram', 'chat-conflict');
+		INSERT INTO threads (id, account_id, deleted_at)
+		VALUES
+			('thread-legacy', 'account-1', NULL),
+			('thread-conflict', 'account-1', NULL);
+		INSERT INTO channel_group_threads (id, channel_id, platform_chat_id, persona_id, thread_id, created_at, updated_at)
+		VALUES
+			('group-thread-1', 'channel-1', 'chat-migrate', 'persona-1', 'thread-legacy', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+			('group-thread-2', 'channel-1', 'chat-conflict', 'persona-1', 'thread-conflict', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO scheduled_triggers (
+			id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model,
+			interval_min, next_fire_at, created_at, updated_at, trigger_kind, cooldown_level
+		) VALUES
+			('trigger-legacy', 'channel-1', 'identity-legacy', NULL, 'group-persona', 'account-1', 'legacy-model', 9, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'heartbeat', 2),
+			('trigger-conflict-legacy', 'channel-1', 'identity-conflict', NULL, 'group-persona', 'account-1', 'legacy-conflict', 9, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'heartbeat', 0),
+			('trigger-conflict-thread', 'channel-1', 'identity-conflict', 'thread-conflict', 'group-persona', 'account-1', 'thread-conflict', 9, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'heartbeat', 1);
+	`); err != nil {
+		t.Fatalf("seed legacy heartbeat data: %v", err)
+	}
+
+	if _, err := Up(ctx, pool.Unwrap()); err != nil {
+		t.Fatalf("upgrade migrations: %v", err)
+	}
+
+	var migratedThreadID string
+	var migratedCooldown int
+	if err := pool.QueryRow(ctx, `
+		SELECT thread_id, cooldown_level
+		  FROM scheduled_triggers
+		 WHERE id = 'trigger-legacy'`,
+	).Scan(&migratedThreadID, &migratedCooldown); err != nil {
+		t.Fatalf("read migrated legacy trigger: %v", err)
+	}
+	if migratedThreadID != "thread-legacy" || migratedCooldown != 2 {
+		t.Fatalf("unexpected migrated trigger: thread_id=%s cooldown=%d", migratedThreadID, migratedCooldown)
+	}
+
+	var legacyConflictCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		  FROM scheduled_triggers
+		 WHERE id = 'trigger-conflict-legacy'`,
+	).Scan(&legacyConflictCount); err != nil {
+		t.Fatalf("count conflict legacy trigger: %v", err)
+	}
+	if legacyConflictCount != 0 {
+		t.Fatalf("expected conflicting legacy trigger to be deleted, got %d", legacyConflictCount)
+	}
+
+	var keptThreadModel string
+	if err := pool.QueryRow(ctx, `
+		SELECT model
+		  FROM scheduled_triggers
+		 WHERE id = 'trigger-conflict-thread'`,
+	).Scan(&keptThreadModel); err != nil {
+		t.Fatalf("read kept thread trigger: %v", err)
+	}
+	if keptThreadModel != "thread-conflict" {
+		t.Fatalf("thread trigger model = %q, want thread-conflict", keptThreadModel)
+	}
+}
+
 func TestRepairMissingColumnsMigratesOldPlanMode(t *testing.T) {
 	t.Parallel()
 	pool := openTestDB(t)

@@ -281,6 +281,38 @@ func (ScheduledTriggersRepository) ResetHeartbeatNextFire(
 	return nextFire, nil
 }
 
+func (ScheduledTriggersRepository) ResetHeartbeatNextFireForThread(
+	ctx context.Context,
+	db DesktopDB,
+	threadID uuid.UUID,
+	intervalMin int,
+) (time.Time, error) {
+	if threadID == uuid.Nil {
+		return time.Time{}, fmt.Errorf("thread_id must not be empty")
+	}
+	intervalMin = normalizeHeartbeatInterval(intervalMin)
+	nextFire := time.Now().UTC().Add(time.Duration(intervalMin) * time.Minute)
+	tag, err := db.Exec(ctx, `
+		UPDATE scheduled_triggers
+		   SET interval_min = $1,
+		       next_fire_at = $2,
+		       cooldown_level = 0,
+		       updated_at = $3
+		 WHERE thread_id = $4`,
+		intervalMin,
+		nextFire.Format(time.RFC3339Nano),
+		time.Now().UTC().Format(time.RFC3339Nano),
+		threadID.String(),
+	)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return time.Time{}, fmt.Errorf("reset heartbeat next fire: thread_id %s not found", threadID)
+	}
+	return nextFire, nil
+}
+
 // RescheduleHeartbeatNextFireAt forces next_fire_at to the provided timestamp.
 func (ScheduledTriggersRepository) RescheduleHeartbeatNextFireAt(
 	ctx context.Context,

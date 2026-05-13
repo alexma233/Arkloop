@@ -532,6 +532,181 @@ func TestUpgradeChannelHeartbeatScopeMigrationDedupesGroupPersonaHistory(t *test
 	}
 }
 
+func TestMigrateLegacyGroupHeartbeatThreads(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "migrate_legacy_group_heartbeat_threads")
+	ctx := context.Background()
+
+	sqlDB, err := openDB(db.DSN)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	for _, stmt := range []string{
+		`CREATE TABLE goose_db_version (
+			id SERIAL PRIMARY KEY,
+			version_id BIGINT NOT NULL,
+			is_applied BOOLEAN NOT NULL,
+			tstamp TIMESTAMP DEFAULT now()
+		)`,
+		`CREATE TABLE personas (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL,
+			persona_key TEXT NOT NULL,
+			deleted_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE channel_identities (
+			id UUID PRIMARY KEY,
+			channel_type TEXT NOT NULL,
+			platform_subject_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE channels (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL
+		)`,
+		`CREATE TABLE threads (
+			id UUID PRIMARY KEY,
+			account_id UUID NOT NULL,
+			deleted_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE channel_group_threads (
+			id UUID PRIMARY KEY,
+			channel_id UUID NOT NULL,
+			platform_chat_id TEXT NOT NULL,
+			persona_id UUID NOT NULL,
+			thread_id UUID NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE scheduled_triggers (
+			id UUID PRIMARY KEY,
+			channel_id UUID NOT NULL,
+			channel_identity_id UUID NOT NULL,
+			thread_id UUID,
+			persona_key TEXT NOT NULL,
+			account_id UUID NOT NULL,
+			model TEXT NOT NULL DEFAULT '',
+			interval_min INT NOT NULL DEFAULT 30,
+			next_fire_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			trigger_kind TEXT NOT NULL DEFAULT 'heartbeat',
+			job_id UUID,
+			cooldown_level INT NOT NULL DEFAULT 0,
+			last_user_msg_at TIMESTAMPTZ,
+			burst_start_at TIMESTAMPTZ
+		)`,
+		`CREATE UNIQUE INDEX scheduled_triggers_thread_target_idx
+			ON scheduled_triggers (thread_id)
+			WHERE thread_id IS NOT NULL`,
+		`CREATE UNIQUE INDEX scheduled_triggers_identity_target_idx
+			ON scheduled_triggers (channel_id, channel_identity_id)
+			WHERE thread_id IS NULL`,
+	} {
+		if _, err := sqlDB.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("prepare schema: %v", err)
+		}
+	}
+	for v := int64(0); v <= 194; v++ {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES ($1, true)`, v); err != nil {
+			t.Fatalf("seed goose version %d: %v", v, err)
+		}
+	}
+
+	accountID := uuid.New()
+	personaID := uuid.New()
+	channelID := uuid.New()
+	legacyIdentityID := uuid.New()
+	conflictIdentityID := uuid.New()
+	legacyTriggerID := uuid.New()
+	conflictLegacyTriggerID := uuid.New()
+	threadTriggerID := uuid.New()
+	threadID := uuid.New()
+	conflictThreadID := uuid.New()
+	now := time.Now().UTC()
+
+	if _, err := sqlDB.ExecContext(ctx, `
+		INSERT INTO personas (id, account_id, persona_key, deleted_at, created_at)
+		VALUES ($1, $2, 'group-persona', NULL, $11);
+		INSERT INTO channels (id, account_id) VALUES ($3, $2);
+		INSERT INTO channel_identities (id, channel_type, platform_subject_id)
+		VALUES
+			($4, 'telegram', 'chat-migrate'),
+			($5, 'telegram', 'chat-conflict');
+		INSERT INTO threads (id, account_id, deleted_at)
+		VALUES ($6, $2, NULL), ($7, $2, NULL);
+		INSERT INTO channel_group_threads (id, channel_id, platform_chat_id, persona_id, thread_id, created_at, updated_at)
+		VALUES
+			(gen_random_uuid(), $3, 'chat-migrate', $1, $6, $11, $11),
+			(gen_random_uuid(), $3, 'chat-conflict', $1, $7, $11, $11);
+		INSERT INTO scheduled_triggers (
+			id, channel_id, channel_identity_id, thread_id, persona_key, account_id, model,
+			interval_min, next_fire_at, created_at, updated_at, trigger_kind, cooldown_level
+		) VALUES
+			($8, $3, $4, NULL, 'group-persona', $2, 'legacy-model', 9, $11, $11, $11, 'heartbeat', 2),
+			($9, $3, $5, NULL, 'group-persona', $2, 'legacy-conflict', 9, $11, $11, $11, 'heartbeat', 0),
+			($10, $3, $5, $7, 'group-persona', $2, 'thread-conflict', 9, $11, $11, $11, 'heartbeat', 1);`,
+		personaID,
+		accountID,
+		channelID,
+		legacyIdentityID,
+		conflictIdentityID,
+		threadID,
+		conflictThreadID,
+		legacyTriggerID,
+		conflictLegacyTriggerID,
+		threadTriggerID,
+		now,
+	); err != nil {
+		t.Fatalf("seed legacy heartbeat data: %v", err)
+	}
+
+	if _, err := Up(ctx, db.DSN); err != nil {
+		t.Fatalf("upgrade migrations: %v", err)
+	}
+
+	var migratedThreadID uuid.UUID
+	var migratedCooldown int
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT thread_id, cooldown_level
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		legacyTriggerID,
+	).Scan(&migratedThreadID, &migratedCooldown); err != nil {
+		t.Fatalf("read migrated legacy trigger: %v", err)
+	}
+	if migratedThreadID != threadID || migratedCooldown != 2 {
+		t.Fatalf("unexpected migrated trigger: thread_id=%s cooldown=%d", migratedThreadID, migratedCooldown)
+	}
+
+	var legacyConflictCount int
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		conflictLegacyTriggerID,
+	).Scan(&legacyConflictCount); err != nil {
+		t.Fatalf("count conflict legacy trigger: %v", err)
+	}
+	if legacyConflictCount != 0 {
+		t.Fatalf("expected conflicting legacy trigger to be deleted, got %d", legacyConflictCount)
+	}
+
+	var keptThreadModel string
+	if err := sqlDB.QueryRowContext(ctx, `
+		SELECT model
+		  FROM scheduled_triggers
+		 WHERE id = $1`,
+		threadTriggerID,
+	).Scan(&keptThreadModel); err != nil {
+		t.Fatalf("read kept thread trigger: %v", err)
+	}
+	if keptThreadModel != "thread-conflict" {
+		t.Fatalf("thread trigger model = %q, want thread-conflict", keptThreadModel)
+	}
+}
+
 func TestReasoningIterationsBudgetMigration(t *testing.T) {
 	db := testutil.SetupPostgresDatabase(t, "migrate_reasoning_budget")
 	ctx := context.Background()

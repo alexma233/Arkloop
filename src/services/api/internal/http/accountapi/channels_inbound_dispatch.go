@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"arkloop/services/api/internal/data"
 
@@ -391,4 +392,59 @@ func updateInboundThreadHeartbeatConfig(ctx context.Context, db data.Querier, th
 		config["heartbeat_model"] = strings.TrimSpace(model)
 	}
 	return writeInboundThreadConfigMap(ctx, db, threadID, config)
+}
+
+func resetGroupHeartbeatCooldownForMessage(
+	ctx context.Context,
+	tx pgx.Tx,
+	scheduledTriggersRepo *data.ScheduledTriggersRepository,
+	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository,
+	channel data.Channel,
+	personaID *uuid.UUID,
+	platformChatID string,
+	now time.Time,
+) (bool, error) {
+	if scheduledTriggersRepo == nil || channelGroupThreadsRepo == nil || personaID == nil || *personaID == uuid.Nil {
+		return false, nil
+	}
+	platformChatID = strings.TrimSpace(platformChatID)
+	if platformChatID == "" {
+		return false, nil
+	}
+
+	threadMap, err := channelGroupThreadsRepo.WithTx(tx).GetByBinding(ctx, channel.ID, platformChatID, *personaID)
+	if err != nil {
+		return false, err
+	}
+	if threadMap == nil || threadMap.ThreadID == uuid.Nil {
+		return false, nil
+	}
+
+	existing, err := scheduledTriggersRepo.GetHeartbeatForThread(ctx, tx, threadMap.ThreadID)
+	if err != nil {
+		return false, err
+	}
+	if existing == nil {
+		return false, nil
+	}
+
+	burstStart := now
+	if existing.LastUserMsgAt != nil && now.Sub(*existing.LastUserMsgAt) <= 30*time.Second && existing.BurstStartAt != nil {
+		burstStart = *existing.BurstStartAt
+	}
+
+	timeInBurst := now.Sub(burstStart)
+	delaySec := 15.0 - timeInBurst.Seconds()/2
+	if delaySec < 3 {
+		delaySec = 3
+	}
+	nextFire := now.Add(time.Duration(delaySec) * time.Second)
+	if existing.NextFireAt.After(now) && existing.NextFireAt.Before(nextFire) {
+		nextFire = existing.NextFireAt
+	}
+
+	if err := scheduledTriggersRepo.ResetCooldownForMessageForThread(ctx, tx, threadMap.ThreadID, nextFire, now, burstStart); err != nil {
+		return false, err
+	}
+	return true, nil
 }
