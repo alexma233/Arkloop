@@ -315,13 +315,24 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 			if cmd == "/reset" {
 				cmdText = "/new"
 			}
+			groupIdentity, _ := c.channelIdentitiesRepo.WithTx(tx).Upsert(ctx, ch.ChannelType, incoming.PlatformChatID, nil, nil, nil)
+			commandIdentity := identity
+			if groupIdentity.ID != uuid.Nil && (strings.HasPrefix(cmd, "/heartbeat") || cmd == "/status" || cmd == "/models" || cmd == "/persona" || cmd == "/model" || strings.HasPrefix(cmd, "/think")) {
+				commandIdentity = groupIdentity
+			}
 			handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
-				ctx, tx, ch, *persona, identity,
+				ctx, tx, ch, *persona, commandIdentity,
 				cmdText, false, incoming.PlatformChatID,
 				cfg.DefaultModel, c.entitlementSvc,
 				ChannelCommandResolver{
 					ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
 						return c.resolveTelegramThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
+					},
+					ResolveHeartbeatIdentity: func(ctx context.Context, tx pgx.Tx) (*data.ChannelIdentity, error) {
+						if groupIdentity.ID != uuid.Nil {
+							return &groupIdentity, nil
+						}
+						return nil, nil
 					},
 					IsGroupAdmin: func(ctx context.Context) bool {
 						if c.telegramClient == nil || strings.TrimSpace(token) == "" {
