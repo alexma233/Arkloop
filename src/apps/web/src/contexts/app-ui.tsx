@@ -550,6 +550,7 @@ export function AppUIProvider({ children }: { children: ReactNode }) {
       if (!modifier) return
       if (e.key !== ',') return
       if (e.shiftKey || e.altKey) return
+      if (e.repeat) return
       e.preventDefault()
       if (settingsOpen) closeSettings()
       else openSettings()
