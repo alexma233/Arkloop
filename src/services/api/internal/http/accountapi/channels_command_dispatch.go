@@ -13,6 +13,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ChannelCommandDeps groups repository dependencies for DispatchChannelCommand.
+type ChannelCommandDeps struct {
+	ChannelIdentitiesRepo    *data.ChannelIdentitiesRepository
+	ChannelDMThreadsRepo     *data.ChannelDMThreadsRepository
+	ChannelGroupThreadsRepo  *data.ChannelGroupThreadsRepository
+	PersonasRepo             *data.PersonasRepository
+	RunEventRepo             *data.RunEventRepository
+	ChannelBindCodesRepo     *data.ChannelBindCodesRepository
+	ChannelIdentityLinksRepo *data.ChannelIdentityLinksRepository
+	ThreadRepo               *data.ThreadRepository
+}
+
 // PreferenceResult carries structured data from /model and /think commands.
 // Channels with rich UI (Telegram) use AvailableModels to build inline keyboards.
 // Channels with plain text (WeChat) ignore it and just use the text reply.
@@ -84,15 +96,7 @@ func DispatchChannelCommand(
 	defaultModel string,
 	entSvc *entitlement.Service,
 	resolver ChannelCommandResolver,
-	channelIdentitiesRepo *data.ChannelIdentitiesRepository,
-	channelDMThreadsRepo *data.ChannelDMThreadsRepository,
-	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository,
-	personasRepo *data.PersonasRepository,
-	runEventRepo *data.RunEventRepository,
-	channelBindCodesRepo *data.ChannelBindCodesRepository,
-	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
-	threadRepo *data.ThreadRepository,
-	channelsRepo *data.ChannelsRepository,
+	deps ChannelCommandDeps,
 	channelLabel string,
 ) (handled bool, replyText string, prefResult *PreferenceResult, personaResult *PersonaResult, cancelRunID uuid.UUID, err error) {
 	cmd, ok := slashCommandBase(strings.TrimSpace(commandText), "")
@@ -111,7 +115,7 @@ func DispatchChannelCommand(
 			ownerUserID = *identity.UserID
 		}
 		if ownerUserID != uuid.Nil {
-			if pid, err := personasRepo.GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, ownerUserID); err == nil {
+			if pid, err := deps.PersonasRepo.GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, ownerUserID); err == nil {
 				threadProjectID = pid
 			}
 		}
@@ -159,8 +163,8 @@ func DispatchChannelCommand(
 			threadID,
 			heartbeatIdentity,
 			strings.TrimSpace(commandText),
-			channelIdentitiesRepo,
-			personasRepo,
+			deps.ChannelIdentitiesRepo,
+			deps.PersonasRepo,
 			entSvc,
 		)
 		return true, replyText, nil, nil, uuid.Nil, err
@@ -173,15 +177,15 @@ func DispatchChannelCommand(
 			return true, "无权限。", nil, nil, uuid.Nil, nil
 		}
 		if isPrivate {
-			if channelDMThreadsRepo != nil {
-				if err := channelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, identity.ID, *ch.PersonaID, ""); err != nil {
+			if deps.ChannelDMThreadsRepo != nil {
+				if err := deps.ChannelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, identity.ID, *ch.PersonaID, ""); err != nil {
 					slog.WarnContext(ctx, "channel_command_new_delete_dm_failed", "error", err, "channel_id", ch.ID, "identity_id", identity.ID)
 					return true, "操作失败。", nil, nil, uuid.Nil, nil
 				}
 			}
 		} else {
-			if channelGroupThreadsRepo != nil {
-				if err := channelGroupThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, platformChatID, *ch.PersonaID); err != nil {
+			if deps.ChannelGroupThreadsRepo != nil {
+				if err := deps.ChannelGroupThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, platformChatID, *ch.PersonaID); err != nil {
 					slog.WarnContext(ctx, "channel_command_new_delete_group_failed", "error", err, "channel_id", ch.ID, "platform_chat_id", platformChatID)
 					return true, "操作失败。", nil, nil, uuid.Nil, nil
 				}
@@ -200,11 +204,11 @@ func DispatchChannelCommand(
 		if err != nil {
 			return true, "当前没有运行中的任务。", nil, nil, uuid.Nil, err
 		}
-		activeRun, _ := runEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
+		activeRun, _ := deps.RunEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
 		if activeRun == nil {
 			return true, "当前没有运行中的任务。", nil, nil, uuid.Nil, nil
 		}
-		if _, err := runEventRepo.WithTx(tx).RequestCancel(ctx, activeRun.ID, identity.UserID, "", 0, nil); err != nil {
+		if _, err := deps.RunEventRepo.WithTx(tx).RequestCancel(ctx, activeRun.ID, identity.UserID, "", 0, nil); err != nil {
 			return true, "", nil, nil, uuid.Nil, err
 		}
 		return true, "已请求停止当前任务。", nil, nil, activeRun.ID, nil
@@ -218,7 +222,7 @@ func DispatchChannelCommand(
 			payload := resolver.ResolveStartPayload()
 			if strings.HasPrefix(payload, "bind_") {
 				code := strings.TrimPrefix(payload, "bind_")
-				replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, channelBindCodesRepo, channelIdentitiesRepo, channelIdentityLinksRepo, channelDMThreadsRepo, threadRepo)
+				replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo)
 				return true, replyText, nil, nil, uuid.Nil, err
 			}
 		}
@@ -232,7 +236,7 @@ func DispatchChannelCommand(
 		if code == "" {
 			return true, "用法：/bind <code>", nil, nil, uuid.Nil, nil
 		}
-		replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, channelBindCodesRepo, channelIdentitiesRepo, channelIdentityLinksRepo, channelDMThreadsRepo, threadRepo)
+		replyText, err := bindChannelIdentity(ctx, tx, &ch, identity, code, channelLabel, deps.ChannelBindCodesRepo, deps.ChannelIdentitiesRepo, deps.ChannelIdentityLinksRepo, deps.ChannelDMThreadsRepo, deps.ThreadRepo)
 		return true, replyText, nil, nil, uuid.Nil, err
 
 	case cmd == "/reset":
@@ -243,15 +247,15 @@ func DispatchChannelCommand(
 			return true, "无权限。", nil, nil, uuid.Nil, nil
 		}
 		if isPrivate {
-			if channelDMThreadsRepo != nil {
-				if err := channelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, identity.ID, *ch.PersonaID, ""); err != nil {
+			if deps.ChannelDMThreadsRepo != nil {
+				if err := deps.ChannelDMThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, identity.ID, *ch.PersonaID, ""); err != nil {
 					slog.WarnContext(ctx, "channel_command_reset_delete_dm_failed", "error", err, "channel_id", ch.ID)
 					return true, "操作失败。", nil, nil, uuid.Nil, nil
 				}
 			}
 		} else {
-			if channelGroupThreadsRepo != nil {
-				if err := channelGroupThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, platformChatID, *ch.PersonaID); err != nil {
+			if deps.ChannelGroupThreadsRepo != nil {
+				if err := deps.ChannelGroupThreadsRepo.WithTx(tx).DeleteByBinding(ctx, ch.ID, platformChatID, *ch.PersonaID); err != nil {
 					slog.WarnContext(ctx, "channel_command_reset_delete_group_failed", "error", err, "channel_id", ch.ID)
 					return true, "操作失败。", nil, nil, uuid.Nil, nil
 				}
@@ -260,13 +264,15 @@ func DispatchChannelCommand(
 		return true, "已重置会话。", nil, nil, uuid.Nil, nil
 
 	case cmd == "/status":
-		threadID, err := resolveThreadID()
-		if err != nil || threadID == uuid.Nil {
-			return true, "当前会话未配置 persona。", nil, nil, uuid.Nil, nil
-		}
-		preferredModel, reasoningMode, _, err := getInboundThreadModelPreference(ctx, tx, threadID)
-		if err != nil {
-			return true, "", nil, nil, uuid.Nil, err
+		threadID, resolveErr := resolveThreadID()
+		preferredModel := ""
+		reasoningMode := ""
+		if resolveErr == nil && threadID != uuid.Nil {
+			var err error
+			preferredModel, reasoningMode, _, err = getInboundThreadModelPreference(ctx, tx, threadID)
+			if err != nil {
+				return true, "", nil, nil, uuid.Nil, err
+			}
 		}
 		modelDisplay := "跟随频道"
 		if strings.TrimSpace(preferredModel) != "" {
@@ -278,11 +284,13 @@ func DispatchChannelCommand(
 		}
 		var sb strings.Builder
 		_, _ = fmt.Fprintf(&sb, "模型：%s\n思考：%s", modelDisplay, thinkDisplay)
-		activeRun, _ := runEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
-		if activeRun != nil {
-			sb.WriteString("\n状态：运行中")
-		} else {
-			sb.WriteString("\n状态：空闲")
+		if resolveErr == nil && threadID != uuid.Nil {
+			activeRun, _ := deps.RunEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
+			if activeRun != nil {
+				sb.WriteString("\n状态：运行中")
+			} else {
+				sb.WriteString("\n状态：空闲")
+			}
 		}
 		return true, sb.String(), nil, nil, uuid.Nil, nil
 
@@ -331,14 +339,14 @@ func DispatchChannelCommand(
 				return true, "无权限。", nil, nil, uuid.Nil, nil
 			}
 		}
-		currentPersona, err := personasRepo.GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID)
+		currentPersona, err := deps.PersonasRepo.GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID)
 		if err != nil {
 			return true, "", nil, nil, uuid.Nil, err
 		}
 		if currentPersona == nil || currentPersona.ProjectID == nil {
 			return true, "当前会话未配置 persona。", nil, nil, uuid.Nil, nil
 		}
-		personas, err := personasRepo.ListActiveByProject(ctx, *currentPersona.ProjectID)
+		personas, err := deps.PersonasRepo.ListActiveByProject(ctx, *currentPersona.ProjectID)
 		if err != nil {
 			return true, "", nil, nil, uuid.Nil, err
 		}
@@ -356,11 +364,16 @@ func DispatchChannelCommand(
 		if len(opts) == 0 {
 			return true, "没有可切换的 persona。", nil, nil, uuid.Nil, nil
 		}
-		header := "Choose persona."
-		if currentPersona != nil {
-			header = "Choose persona.\nCurrent: " + currentPersona.DisplayName
+		var sb strings.Builder
+		sb.WriteString("Choose persona.\nCurrent: " + currentPersona.DisplayName)
+		for _, p := range opts {
+			mark := ""
+			if p.IsSelected {
+				mark = " ✓"
+			}
+			sb.WriteString(fmt.Sprintf("\n- %s%s", p.DisplayName, mark))
 		}
-		return true, header, nil, &PersonaResult{Personas: opts}, uuid.Nil, nil
+		return true, sb.String(), nil, &PersonaResult{Personas: opts}, uuid.Nil, nil
 
 	default:
 		return false, "", nil, nil, uuid.Nil, nil

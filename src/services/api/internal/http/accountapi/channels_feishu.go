@@ -509,21 +509,21 @@ func feishuWebhookEntry(
 		channelLedgerRepo = repo
 	}
 	connector := feishuConnector{
-		channelsRepo:            channelsRepo,
-		channelIdentitiesRepo:   channelIdentitiesRepo,
-		channelDMThreadsRepo:    channelDMThreadsRepo,
-		channelGroupThreadsRepo: channelGroupThreadsRepo,
-		channelReceiptsRepo:     channelReceiptsRepo,
-		channelLedgerRepo:       channelLedgerRepo,
-		secretsRepo:             secretsRepo,
-		personasRepo:            personasRepo,
-		threadRepo:              threadRepo,
-		messageRepo:             messageRepo,
-		runEventRepo:            runEventRepo,
-		jobRepo:                 jobRepo,
+		channelsRepo:             channelsRepo,
+		channelIdentitiesRepo:    channelIdentitiesRepo,
+		channelDMThreadsRepo:     channelDMThreadsRepo,
+		channelGroupThreadsRepo:  channelGroupThreadsRepo,
+		channelReceiptsRepo:      channelReceiptsRepo,
+		channelLedgerRepo:        channelLedgerRepo,
+		secretsRepo:              secretsRepo,
+		personasRepo:             personasRepo,
+		threadRepo:               threadRepo,
+		messageRepo:              messageRepo,
+		runEventRepo:             runEventRepo,
+		jobRepo:                  jobRepo,
 		channelBindCodesRepo:     channelBindCodesRepo,
 		channelIdentityLinksRepo: channelIdentityLinksRepo,
-		pool:                    pool,
+		pool:                     pool,
 		inputNotify: func(ctx context.Context, runID uuid.UUID) {
 			if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunInput, runID.String()); err != nil {
 				slog.Warn("feishu_active_run_notify_failed", "run_id", runID.String(), "error", err)
@@ -942,7 +942,7 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 
 	// --- 命令解析 ---
 	cmdText := strings.TrimSpace(incoming.Text)
-	handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
+	handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
 		cmdText, incoming.ConversationType == "private", incoming.ChatID,
 		cfg.DefaultModel, nil,
@@ -965,12 +965,18 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 				return ""
 			},
 		},
-		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-		c.personasRepo, c.runEventRepo,
-		c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+		ChannelCommandDeps{
+			ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+			ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+			ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+			PersonasRepo:             c.personasRepo,
+			RunEventRepo:             c.runEventRepo,
+			ChannelBindCodesRepo:     c.channelBindCodesRepo,
+			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+			ThreadRepo:               c.threadRepo,
+		},
 		"飞书",
 	)
-	_ = personaResult
 	if err != nil {
 		return err
 	}

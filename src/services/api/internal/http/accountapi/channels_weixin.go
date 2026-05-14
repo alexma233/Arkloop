@@ -171,7 +171,7 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 
 	// 命令处理
 	cmdText := incoming.CommandText
-	handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
+	handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
 		cmdText, isPrivate, platformChatID,
 		cfg.DefaultModel, nil,
@@ -194,12 +194,18 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 				return ""
 			},
 		},
-		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-		c.personasRepo, c.runEventRepo,
-		c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+		ChannelCommandDeps{
+			ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+			ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+			ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+			PersonasRepo:             c.personasRepo,
+			RunEventRepo:             c.runEventRepo,
+			ChannelBindCodesRepo:     c.channelBindCodesRepo,
+			ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+			ThreadRepo:               c.threadRepo,
+		},
 		"微信",
 	)
-	_ = personaResult
 	if err != nil {
 		return err
 	}

@@ -154,60 +154,66 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			}
 			return &telegramInboundStageAResult{finalState: inboundStateIgnoredUnlinked}, nil
 		}
-			handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
-				ctx, tx, ch, *persona, identity,
-				trimmedCommandText, true, incoming.PlatformChatID,
-				cfg.DefaultModel, c.entitlementSvc,
-				ChannelCommandResolver{
-					ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
-						return c.resolveTelegramThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
-					},
-					ResolveStartPayload: func() string {
-						parts := strings.Fields(trimmedCommandText)
-						if len(parts) > 1 && parts[0] == "/start" {
-							return parts[1]
-						}
-						return ""
-					},
-					BindCode: func() string {
-						parts := strings.Fields(trimmedCommandText)
-						if len(parts) >= 2 && parts[0] == "/bind" {
-							return parts[1]
-						}
-						return ""
-					},
+		handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
+			ctx, tx, ch, *persona, identity,
+			trimmedCommandText, true, incoming.PlatformChatID,
+			cfg.DefaultModel, c.entitlementSvc,
+			ChannelCommandResolver{
+				ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
+					return c.resolveTelegramThreadID(ctx, tx, ch, personaID, projectID, identity, incoming)
 				},
-				c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-				c.personasRepo, c.runEventRepo,
-				c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
-				"Telegram",
-			)
-			if err != nil {
+				ResolveStartPayload: func() string {
+					parts := strings.Fields(trimmedCommandText)
+					if len(parts) > 1 && parts[0] == "/start" {
+						return parts[1]
+					}
+					return ""
+				},
+				BindCode: func() string {
+					parts := strings.Fields(trimmedCommandText)
+					if len(parts) >= 2 && parts[0] == "/bind" {
+						return parts[1]
+					}
+					return ""
+				},
+			},
+			ChannelCommandDeps{
+				ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+				ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+				ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+				PersonasRepo:             c.personasRepo,
+				RunEventRepo:             c.runEventRepo,
+				ChannelBindCodesRepo:     c.channelBindCodesRepo,
+				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+				ThreadRepo:               c.threadRepo,
+			},
+			"Telegram",
+		)
+		if err != nil {
+			return nil, err
+		}
+		if handled {
+			var replyMarkup *telegrambot.InlineKeyboardMarkup
+			if prefResult != nil {
+				replyMarkup = buildPreferenceKeyboard(prefResult)
+			} else if personaResult != nil {
+				replyMarkup = buildPersonaKeyboard(personaResult)
+			}
+			if cancelRunID != uuid.Nil {
+				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+			}
+			if err := c.recordTelegramInboundFinalState(ctx, tx, ch, incoming, &identity.ID, nil, nil, inboundStateCommandHandled, baseMetadata); err != nil {
 				return nil, err
 			}
-			if handled {
-				var replyMarkup *telegrambot.InlineKeyboardMarkup
-				if prefResult != nil {
-					replyMarkup = buildPreferenceKeyboard(prefResult)
-				}
-				if personaResult != nil {
-					replyMarkup = buildPersonaKeyboard(personaResult)
-				}
-				if cancelRunID != uuid.Nil {
-					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
-				}
-				if err := c.recordTelegramInboundFinalState(ctx, tx, ch, incoming, &identity.ID, nil, nil, inboundStateCommandHandled, baseMetadata); err != nil {
-					return nil, err
-				}
-				if err := commitTx(); err != nil {
-					return nil, err
-				}
-				return &telegramInboundStageAResult{
-					finalState:  inboundStateCommandHandled,
-					replyText:   replyText,
-					replyMarkup: replyMarkup,
-				}, nil
+			if err := commitTx(); err != nil {
+				return nil, err
 			}
+			return &telegramInboundStageAResult{
+				finalState:  inboundStateCommandHandled,
+				replyText:   replyText,
+				replyMarkup: replyMarkup,
+			}, nil
+		}
 	}
 
 	if !incoming.IsPrivate() && isTelegramGroupLikeChatType(incoming.ChatType) && c.channelGroupThreadsRepo != nil {
@@ -255,9 +261,16 @@ func (c telegramConnector) persistTelegramInboundStageA(
 						return ""
 					},
 				},
-				c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-				c.personasRepo, c.runEventRepo,
-				c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+				ChannelCommandDeps{
+					ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+					ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+					ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+					PersonasRepo:             c.personasRepo,
+					RunEventRepo:             c.runEventRepo,
+					ChannelBindCodesRepo:     c.channelBindCodesRepo,
+					ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+					ThreadRepo:               c.threadRepo,
+				},
 				"Telegram",
 			)
 			if err != nil {
@@ -267,8 +280,7 @@ func (c telegramConnector) persistTelegramInboundStageA(
 				var replyMarkup *telegrambot.InlineKeyboardMarkup
 				if prefResult != nil {
 					replyMarkup = buildPreferenceKeyboard(prefResult)
-				}
-				if personaResult != nil {
+				} else if personaResult != nil {
 					replyMarkup = buildPersonaKeyboard(personaResult)
 				}
 				if err := c.recordTelegramInboundFinalState(ctx, tx, ch, incoming, &commandIdentity.ID, nil, nil, inboundStateCommandHandled, baseMetadata); err != nil {

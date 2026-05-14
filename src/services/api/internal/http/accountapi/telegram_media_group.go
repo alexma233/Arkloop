@@ -263,9 +263,16 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 					return ""
 				},
 			},
-			c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-			c.personasRepo, c.runEventRepo,
-			c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+			ChannelCommandDeps{
+				ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+				ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+				ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+				PersonasRepo:             c.personasRepo,
+				RunEventRepo:             c.runEventRepo,
+				ChannelBindCodesRepo:     c.channelBindCodesRepo,
+				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+				ThreadRepo:               c.threadRepo,
+			},
 			"Telegram",
 		)
 		if err != nil {
@@ -288,8 +295,7 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 					if kb := buildPreferenceKeyboard(prefResult); kb != nil {
 						req.ReplyMarkup = kb
 					}
-				}
-				if personaResult != nil {
+				} else if personaResult != nil {
 					if kb := buildPersonaKeyboard(personaResult); kb != nil {
 						req.ReplyMarkup = kb
 					}
@@ -339,9 +345,16 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 						return ""
 					},
 				},
-				c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-				c.personasRepo, c.runEventRepo,
-				c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+				ChannelCommandDeps{
+					ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+					ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+					ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+					PersonasRepo:             c.personasRepo,
+					RunEventRepo:             c.runEventRepo,
+					ChannelBindCodesRepo:     c.channelBindCodesRepo,
+					ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+					ThreadRepo:               c.threadRepo,
+				},
 				"Telegram",
 			)
 			if err != nil {
@@ -364,8 +377,7 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 						if kb := buildPreferenceKeyboard(prefResult); kb != nil {
 							req.ReplyMarkup = kb
 						}
-					}
-					if personaResult != nil {
+					} else if personaResult != nil {
 						if kb := buildPersonaKeyboard(personaResult); kb != nil {
 							req.ReplyMarkup = kb
 						}
@@ -379,7 +391,6 @@ func (c telegramConnector) processTelegramMediaGroupMerged(
 			}
 		}
 	}
-
 
 	if !incoming.HasContent() {
 		return tx.Commit(ctx)

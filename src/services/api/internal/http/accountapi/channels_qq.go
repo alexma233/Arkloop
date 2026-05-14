@@ -356,7 +356,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			}
 		}
 
-		handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
+		handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			text, true, platformChatID,
 			cfg.DefaultModel, nil,
@@ -372,12 +372,18 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 					return ""
 				},
 			},
-			c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-			c.personasRepo, c.runEventRepo,
-			c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+			ChannelCommandDeps{
+				ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+				ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+				ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+				PersonasRepo:             c.personasRepo,
+				RunEventRepo:             c.runEventRepo,
+				ChannelBindCodesRepo:     c.channelBindCodesRepo,
+				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+				ThreadRepo:               c.threadRepo,
+			},
 			"QQ",
 		)
-		_ = personaResult
 		if err != nil {
 			return err
 		}
@@ -398,7 +404,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 	// --- 群聊命令路径 ---
 	if !isPrivate {
 		cmdText := stripLeadingMention(text)
-		handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
+		handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			cmdText, false, platformChatID,
 			cfg.DefaultModel, nil,
@@ -424,12 +430,18 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 					return ""
 				},
 			},
-			c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
-			c.personasRepo, c.runEventRepo,
-			c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+			ChannelCommandDeps{
+				ChannelIdentitiesRepo:    c.channelIdentitiesRepo,
+				ChannelDMThreadsRepo:     c.channelDMThreadsRepo,
+				ChannelGroupThreadsRepo:  c.channelGroupThreadsRepo,
+				PersonasRepo:             c.personasRepo,
+				RunEventRepo:             c.runEventRepo,
+				ChannelBindCodesRepo:     c.channelBindCodesRepo,
+				ChannelIdentityLinksRepo: c.channelIdentityLinksRepo,
+				ThreadRepo:               c.threadRepo,
+			},
 			"QQ",
 		)
-		_ = personaResult
 		if err != nil {
 			return err
 		}
