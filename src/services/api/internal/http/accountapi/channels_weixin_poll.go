@@ -23,11 +23,13 @@ const weixinDefaultBaseURL = "https://ilinkai.weixin.qq.com"
 
 // WeChatPollingDeps 微信长轮询依赖。
 type WeChatPollingDeps struct {
-	ChannelsRepo            *data.ChannelsRepository
-	ChannelIdentitiesRepo   *data.ChannelIdentitiesRepository
-	ChannelDMThreadsRepo    *data.ChannelDMThreadsRepository
-	ChannelGroupThreadsRepo *data.ChannelGroupThreadsRepository
-	ChannelReceiptsRepo     *data.ChannelMessageReceiptsRepository
+	ChannelsRepo             *data.ChannelsRepository
+	ChannelIdentitiesRepo    *data.ChannelIdentitiesRepository
+	ChannelBindCodesRepo     *data.ChannelBindCodesRepository
+	ChannelIdentityLinksRepo *data.ChannelIdentityLinksRepository
+	ChannelDMThreadsRepo     *data.ChannelDMThreadsRepository
+	ChannelGroupThreadsRepo  *data.ChannelGroupThreadsRepository
+	ChannelReceiptsRepo      *data.ChannelMessageReceiptsRepository
 	PersonasRepo            *data.PersonasRepository
 	ThreadRepo              *data.ThreadRepository
 	MessageRepo             *data.MessageRepository
@@ -53,11 +55,13 @@ func StartWeChatPollingListener(ctx context.Context, deps WeChatPollingDeps) {
 	channelLedgerRepo = repo
 
 	connector := &weixinConnector{
-		channelsRepo:            deps.ChannelsRepo,
-		channelIdentitiesRepo:   deps.ChannelIdentitiesRepo,
-		channelDMThreadsRepo:    deps.ChannelDMThreadsRepo,
-		channelGroupThreadsRepo: deps.ChannelGroupThreadsRepo,
-		channelReceiptsRepo:     deps.ChannelReceiptsRepo,
+		channelsRepo:             deps.ChannelsRepo,
+		channelIdentitiesRepo:    deps.ChannelIdentitiesRepo,
+		channelBindCodesRepo:     deps.ChannelBindCodesRepo,
+		channelIdentityLinksRepo: deps.ChannelIdentityLinksRepo,
+		channelDMThreadsRepo:     deps.ChannelDMThreadsRepo,
+		channelGroupThreadsRepo:  deps.ChannelGroupThreadsRepo,
+		channelReceiptsRepo:      deps.ChannelReceiptsRepo,
 		channelLedgerRepo:       channelLedgerRepo,
 		personasRepo:            deps.PersonasRepo,
 		threadRepo:              deps.ThreadRepo,

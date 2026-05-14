@@ -64,20 +64,22 @@ func weixinUserAllowed(cfg weixinChannelConfig, userID, groupID string) bool {
 // --- connector ---
 
 type weixinConnector struct {
-	channelsRepo            *data.ChannelsRepository
-	channelIdentitiesRepo   *data.ChannelIdentitiesRepository
-	channelDMThreadsRepo    *data.ChannelDMThreadsRepository
-	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository
-	channelReceiptsRepo     *data.ChannelMessageReceiptsRepository
-	channelLedgerRepo       *data.ChannelMessageLedgerRepository
-	personasRepo            *data.PersonasRepository
-	threadRepo              *data.ThreadRepository
-	messageRepo             *data.MessageRepository
-	runEventRepo            *data.RunEventRepository
-	jobRepo                 *data.JobRepository
-	pool                    data.DB
-	inputNotify             func(ctx context.Context, runID uuid.UUID)
-	weixinClient            *weixinclient.Client
+	channelsRepo             *data.ChannelsRepository
+	channelIdentitiesRepo    *data.ChannelIdentitiesRepository
+	channelBindCodesRepo     *data.ChannelBindCodesRepository
+	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository
+	channelDMThreadsRepo     *data.ChannelDMThreadsRepository
+	channelGroupThreadsRepo  *data.ChannelGroupThreadsRepository
+	channelReceiptsRepo      *data.ChannelMessageReceiptsRepository
+	channelLedgerRepo        *data.ChannelMessageLedgerRepository
+	personasRepo             *data.PersonasRepository
+	threadRepo               *data.ThreadRepository
+	messageRepo              *data.MessageRepository
+	runEventRepo             *data.RunEventRepository
+	jobRepo                  *data.JobRepository
+	pool                     data.DB
+	inputNotify              func(ctx context.Context, runID uuid.UUID)
+	weixinClient             *weixinclient.Client
 }
 
 // HandleWeChatMessage 处理一条微信 iLink 消息。
@@ -167,9 +169,9 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 		CommandText:      text,
 	}
 
-	// 命令处理：/model /think /heartbeat /new /stop
+	// 命令处理
 	cmdText := incoming.CommandText
-	if _, replyText, _, cancelRunID, err := DispatchChannelCommand(
+	handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
 		cmdText, isPrivate, platformChatID,
 		cfg.DefaultModel, nil,
@@ -184,19 +186,33 @@ func (c *weixinConnector) HandleWeChatMessage(ctx context.Context, traceID strin
 				}
 				return &gi, nil
 			},
+			BindCode: func() string {
+				parts := strings.Fields(cmdText)
+				if len(parts) >= 2 && parts[0] == "/bind" {
+					return parts[1]
+				}
+				return ""
+			},
 		},
 		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
 		c.personasRepo, c.runEventRepo,
-	); err != nil {
+		c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+		"微信",
+	)
+	_ = personaResult
+	if err != nil {
 		return err
-	} else if replyText != "" {
+	}
+	if handled {
 		if err := commitTx(); err != nil {
 			return err
 		}
 		if cancelRunID != uuid.Nil {
 			_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
 		}
-		c.sendWeixinReply(ctx, msg, replyText)
+		if replyText != "" {
+			c.sendWeixinReply(ctx, msg, replyText)
+		}
 		return nil
 	}
 

@@ -27,12 +27,12 @@ func TestTelegramCommandBaseWorksForQQ(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd, ok := telegramCommandBase(tt.text, "")
+			cmd, ok := slashCommandBase(tt.text, "")
 			if ok != tt.wantOK {
-				t.Fatalf("telegramCommandBase(%q, \"\") ok = %v, want %v", tt.text, ok, tt.wantOK)
+				t.Fatalf("slashCommandBase(%q, \"\") ok = %v, want %v", tt.text, ok, tt.wantOK)
 			}
 			if cmd != tt.wantCmd {
-				t.Fatalf("telegramCommandBase(%q, \"\") cmd = %q, want %q", tt.text, cmd, tt.wantCmd)
+				t.Fatalf("slashCommandBase(%q, \"\") cmd = %q, want %q", tt.text, cmd, tt.wantCmd)
 			}
 		})
 	}

@@ -356,26 +356,37 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			}
 		}
 
-		// 私聊命令处理（复用 Telegram 的命令处理器）
-		if handled, replyText, _, err := handleTelegramCommand(
-			ctx, tx, &ch, identity, text,
-			"",
-			ch.AccountID,
-			nil,
-			c.channelBindCodesRepo,
-			c.channelIdentitiesRepo,
-			c.channelIdentityLinksRepo,
-			c.channelDMThreadsRepo,
-			c.threadRepo,
-			c.runEventRepo.WithTx(tx),
-			c.pool,
-			c.personasRepo,
-			c.channelsRepo,
-		); err != nil {
+		handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
+			ctx, tx, ch, *persona, identity,
+			text, true, platformChatID,
+			cfg.DefaultModel, nil,
+			ChannelCommandResolver{
+				ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
+					return c.resolveQQThreadID(ctx, tx, ch, personaID, projectID, identity, true, chatID, displayName)
+				},
+				BindCode: func() string {
+					parts := strings.Fields(text)
+					if len(parts) >= 2 && parts[0] == "/bind" {
+						return parts[1]
+					}
+					return ""
+				},
+			},
+			c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
+			c.personasRepo, c.runEventRepo,
+			c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+			"QQ",
+		)
+		_ = personaResult
+		if err != nil {
 			return err
-		} else if handled {
+		}
+		if handled {
 			if err := commitTx(); err != nil {
 				return err
+			}
+			if cancelRunID != uuid.Nil {
+				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
 			}
 			if replyText != "" {
 				c.sendQQReply(ctx, cfg, "private", platformChatID, replyText)
@@ -387,7 +398,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 	// --- 群聊命令路径 ---
 	if !isPrivate {
 		cmdText := stripLeadingMention(text)
-		_, replyText, _, cancelRunID, err := DispatchChannelCommand(
+		handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			cmdText, false, platformChatID,
 			cfg.DefaultModel, nil,
@@ -405,14 +416,24 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 				IsGroupAdmin: func(ctx context.Context) bool {
 					return c.isQQGroupAdmin(ctx, cfg, platformChatID, identity.PlatformSubjectID)
 				},
+				BindCode: func() string {
+					parts := strings.Fields(cmdText)
+					if len(parts) >= 2 && parts[0] == "/bind" {
+						return parts[1]
+					}
+					return ""
+				},
 			},
 			c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
 			c.personasRepo, c.runEventRepo,
+			c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+			"QQ",
 		)
+		_ = personaResult
 		if err != nil {
 			return err
 		}
-		if replyText != "" {
+		if handled {
 			if err := commitTx(); err != nil {
 				return err
 			}
@@ -425,11 +446,12 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 					_ = c.bus.Publish(ctx, pgnotify.ChannelHeartbeat, "")
 				}
 			}
-			c.sendQQReply(ctx, cfg, "group", platformChatID, replyText)
+			if replyText != "" {
+				c.sendQQReply(ctx, cfg, "group", platformChatID, replyText)
+			}
 			return nil
 		}
 	}
-
 	// --- Passive persist（群消息无 @/回复 bot） ---
 	if !isPrivate && !incoming.inboundMessage().ShouldCreateRun() {
 		slog.InfoContext(ctx, "qq_inbound_processed",

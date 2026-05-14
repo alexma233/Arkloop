@@ -123,6 +123,8 @@ func RegisterRoutes(mux *nethttp.ServeMux, deps Deps) {
 		deps.MessageRepo,
 		deps.RunEventRepo,
 		deps.JobRepo,
+		deps.ChannelBindCodesRepo,
+		deps.ChannelIdentityLinksRepo,
 		deps.Pool,
 	))
 	mux.HandleFunc("/v1/channels", channelsEntry(deps.AuthService, deps.AccountMembershipRepo, deps.ChannelsRepo, deps.PersonasRepo, deps.EntitlementService, deps.APIKeysRepo, deps.SecretsRepo, deps.Pool, deps.AppBaseURL, deps.TelegramBotClient, deps.DiscordBotClient, deps.TelegramMode))

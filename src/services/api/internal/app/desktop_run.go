@@ -757,11 +757,13 @@ func RunDesktop(ctx context.Context) error {
 	})
 
 	accountapi.StartWeChatPollingListener(ctx, accountapi.WeChatPollingDeps{
-		ChannelsRepo:            channelsRepo,
-		ChannelIdentitiesRepo:   channelIdentitiesRepo,
-		ChannelDMThreadsRepo:    channelDMThreadsRepo,
-		ChannelGroupThreadsRepo: channelGroupThreadsRepo,
-		ChannelReceiptsRepo:     channelReceiptsRepo,
+		ChannelsRepo:             channelsRepo,
+		ChannelIdentitiesRepo:    channelIdentitiesRepo,
+		ChannelBindCodesRepo:     channelBindCodesRepo,
+		ChannelIdentityLinksRepo: channelIdentityLinksRepo,
+		ChannelDMThreadsRepo:     channelDMThreadsRepo,
+		ChannelGroupThreadsRepo:  channelGroupThreadsRepo,
+		ChannelReceiptsRepo:      channelReceiptsRepo,
 		PersonasRepo:            personasRepo,
 		ThreadRepo:              threadRepo,
 		MessageRepo:             messageRepo,

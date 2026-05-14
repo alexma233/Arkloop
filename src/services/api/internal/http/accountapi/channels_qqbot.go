@@ -152,6 +152,7 @@ type qqbotIngressManager struct {
 }
 
 type qqbotConnector struct {
+	channelsRepo             *data.ChannelsRepository
 	channelIdentitiesRepo    *data.ChannelIdentitiesRepository
 	channelBindCodesRepo     *data.ChannelBindCodesRepository
 	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository
@@ -267,6 +268,7 @@ func (m *qqbotIngressManager) ensureSession(parent context.Context, ch data.Chan
 		defer close(done)
 		client := qqbotclient.NewClient(creds, nil)
 		connector := qqbotConnector{
+				channelsRepo:             m.deps.ChannelsRepo,
 			channelIdentitiesRepo:    m.deps.ChannelIdentitiesRepo,
 			channelBindCodesRepo:     m.deps.ChannelBindCodesRepo,
 			channelIdentityLinksRepo: m.deps.ChannelIdentityLinksRepo,
@@ -402,47 +404,14 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		}
 	}
 
-	handled, replyText, err := c.handleCommand(ctx, tx, &ch, identity, text)
-	if err != nil {
-		return err
-	}
-	if handled {
-		if err := tx.Commit(ctx); err != nil {
-			return err
-		}
-		replyScope := qqbotclient.ScopeC2C
-		if conversationType == "group" {
-			replyScope = qqbotclient.ScopeGroup
-		}
-		c.sendTextReply(ctx, replyScope, platformChatID, replyText, messageID)
-		return nil
-	}
-
 	persona, personaRef, err := c.resolvePersona(ctx, ch)
 	if err != nil {
 		return err
 	}
 
-	threadProjectID := derefUUID(persona.ProjectID)
-	if threadProjectID == uuid.Nil && ch.OwnerUserID != nil {
-		if pid, err := c.personasRepo.GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, *ch.OwnerUserID); err == nil {
-			threadProjectID = pid
-		}
-	}
-	if threadProjectID == uuid.Nil {
-		return fmt.Errorf("cannot resolve project for qqbot persona %s", persona.ID)
-	}
-	threadID, err := c.resolveThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, conversationType == "private", platformChatID, displayName)
-	if err != nil {
-		return err
-	}
-
-	// 处理需要 persona 和 threadID 的命令（/model、/think、/heartbeat、/new、/stop）
-	cmdText := text
-	var cancelRunID uuid.UUID
-	_, replyText, _, cancelRunID, err = DispatchChannelCommand(
+	handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
-		cmdText, conversationType == "private", platformChatID,
+		text, conversationType == "private", platformChatID,
 		cfg.DefaultModel, nil,
 		ChannelCommandResolver{
 			ResolveThreadID: func(ctx context.Context, tx pgx.Tx, personaID, projectID uuid.UUID, isPrivate bool, chatID string) (uuid.UUID, error) {
@@ -458,14 +427,24 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 				}
 				return nil, nil
 			},
+			BindCode: func() string {
+				parts := strings.Fields(text)
+				if len(parts) >= 2 && parts[0] == "/bind" {
+					return parts[1]
+				}
+				return ""
+			},
 		},
 		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
 		c.personasRepo, c.runEventRepo,
+		c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+		"QQBot",
 	)
+	_ = personaResult
 	if err != nil {
 		return err
 	}
-	if replyText != "" {
+	if handled {
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
@@ -476,9 +455,25 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		if conversationType == "group" {
 			replyScope = qqbotclient.ScopeGroup
 		}
-		c.sendTextReply(ctx, replyScope, platformChatID, replyText, messageID)
+		if replyText != "" {
+			c.sendTextReply(ctx, replyScope, platformChatID, replyText, messageID)
+		}
 		return nil
 	}
+
+		threadProjectID := derefUUID(persona.ProjectID)
+		if threadProjectID == uuid.Nil && ch.OwnerUserID != nil {
+			if pid, err := c.personasRepo.GetOrCreateDefaultProjectIDByOwner(ctx, ch.AccountID, *ch.OwnerUserID); err == nil {
+				threadProjectID = pid
+			}
+		}
+		if threadProjectID == uuid.Nil {
+			return fmt.Errorf("cannot resolve project for qqbot persona %s", persona.ID)
+		}
+		threadID, err := c.resolveThreadID(ctx, tx, ch, persona.ID, threadProjectID, identity, conversationType == "private", platformChatID, displayName)
+		if err != nil {
+			return err
+		}
 
 	projection := buildQQBotEnvelopeText(identity.ID, displayName, conversationType, text, msg.Timestamp, senderID, messageID)
 	contentJSON, err := messagecontent.FromText(projection).JSON()
@@ -549,30 +544,6 @@ func (c qqbotConnector) HandleMessage(ctx context.Context, traceID string, ch da
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-func (c qqbotConnector) handleCommand(ctx context.Context, tx pgx.Tx, ch *data.Channel, identity data.ChannelIdentity, text string) (bool, string, error) {
-	if !strings.HasPrefix(strings.TrimSpace(text), "/") {
-		return false, "", nil
-	}
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return false, "", nil
-	}
-	switch strings.TrimSpace(parts[0]) {
-	case "/help":
-		return true, "/bind <code> — 绑定你的账号\n/help — 显示帮助", nil
-	case "/start":
-		return true, "已连接 Arkloop\n\n使用 /bind <code> 绑定账号。", nil
-	case "/bind":
-		if len(parts) < 2 {
-			return true, "用法：/bind <code>", nil
-		}
-		replyText, err := bindChannelIdentity(ctx, tx, ch, identity, parts[1], "QQ", c.channelBindCodesRepo, c.channelIdentitiesRepo, c.channelIdentityLinksRepo, c.channelDMThreadsRepo, c.threadRepo)
-		return true, replyText, err
-	default:
-		return false, "", nil
-	}
 }
 
 func (c qqbotConnector) sendTextReply(ctx context.Context, scope, target, content, msgID string) {

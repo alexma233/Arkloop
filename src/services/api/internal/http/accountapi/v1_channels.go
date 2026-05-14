@@ -293,7 +293,7 @@ func createChannel(
 		return
 	}
 	if req.ChannelType == "telegram" {
-		allowUserScoped, err := resolveTelegramByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
+		allowUserScoped, err := resolveByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
 		if err != nil {
 			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
 			return
@@ -653,7 +653,7 @@ func updateChannel(
 		desiredConfigJSON = normalizedConfig
 	}
 	if ch.ChannelType == "telegram" {
-		allowUserScoped, err := resolveTelegramByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
+		allowUserScoped, err := resolveByokEnabled(r.Context(), entitlementSvc, actor.AccountID)
 		if err != nil {
 			logChannelUpdateFailure(r.Context(), traceID, *ch, req, err, "resolve_telegram_byok_enabled")
 			httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
@@ -1105,7 +1105,7 @@ func syncTelegramHeartbeatStateAfterChannelMutation(
 	if err != nil {
 		return err
 	}
-	allowUserScoped, err := resolveTelegramByokEnabled(ctx, entitlementSvc, accountID)
+	allowUserScoped, err := resolveByokEnabled(ctx, entitlementSvc, accountID)
 	if err != nil {
 		return err
 	}

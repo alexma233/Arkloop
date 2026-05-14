@@ -60,20 +60,22 @@ type feishuChannelSecretPatch struct {
 }
 
 type feishuConnector struct {
-	channelsRepo            *data.ChannelsRepository
-	channelIdentitiesRepo   *data.ChannelIdentitiesRepository
-	channelDMThreadsRepo    *data.ChannelDMThreadsRepository
-	channelGroupThreadsRepo *data.ChannelGroupThreadsRepository
-	channelReceiptsRepo     *data.ChannelMessageReceiptsRepository
-	channelLedgerRepo       *data.ChannelMessageLedgerRepository
-	secretsRepo             *data.SecretsRepository
-	personasRepo            *data.PersonasRepository
-	threadRepo              *data.ThreadRepository
-	messageRepo             *data.MessageRepository
-	runEventRepo            *data.RunEventRepository
-	jobRepo                 *data.JobRepository
-	pool                    data.DB
-	inputNotify             func(ctx context.Context, runID uuid.UUID)
+	channelsRepo             *data.ChannelsRepository
+	channelIdentitiesRepo    *data.ChannelIdentitiesRepository
+	channelBindCodesRepo     *data.ChannelBindCodesRepository
+	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository
+	channelDMThreadsRepo     *data.ChannelDMThreadsRepository
+	channelGroupThreadsRepo  *data.ChannelGroupThreadsRepository
+	channelReceiptsRepo      *data.ChannelMessageReceiptsRepository
+	channelLedgerRepo        *data.ChannelMessageLedgerRepository
+	secretsRepo              *data.SecretsRepository
+	personasRepo             *data.PersonasRepository
+	threadRepo               *data.ThreadRepository
+	messageRepo              *data.MessageRepository
+	runEventRepo             *data.RunEventRepository
+	jobRepo                  *data.JobRepository
+	pool                     data.DB
+	inputNotify              func(ctx context.Context, runID uuid.UUID)
 }
 
 type feishuWebhookEnvelope struct {
@@ -494,6 +496,8 @@ func feishuWebhookEntry(
 	messageRepo *data.MessageRepository,
 	runEventRepo *data.RunEventRepository,
 	jobRepo *data.JobRepository,
+	channelBindCodesRepo *data.ChannelBindCodesRepository,
+	channelIdentityLinksRepo *data.ChannelIdentityLinksRepository,
 	pool data.DB,
 ) func(nethttp.ResponseWriter, *nethttp.Request) {
 	var channelLedgerRepo *data.ChannelMessageLedgerRepository
@@ -517,6 +521,8 @@ func feishuWebhookEntry(
 		messageRepo:             messageRepo,
 		runEventRepo:            runEventRepo,
 		jobRepo:                 jobRepo,
+		channelBindCodesRepo:     channelBindCodesRepo,
+		channelIdentityLinksRepo: channelIdentityLinksRepo,
 		pool:                    pool,
 		inputNotify: func(ctx context.Context, runID uuid.UUID) {
 			if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunInput, runID.String()); err != nil {
@@ -936,7 +942,7 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 
 	// --- 命令解析 ---
 	cmdText := strings.TrimSpace(incoming.Text)
-	_, replyText, _, cancelRunID, err := DispatchChannelCommand(
+	handled, replyText, _, personaResult, cancelRunID, err := DispatchChannelCommand(
 		ctx, tx, ch, *persona, identity,
 		cmdText, incoming.ConversationType == "private", incoming.ChatID,
 		cfg.DefaultModel, nil,
@@ -951,21 +957,33 @@ func (c *feishuConnector) HandleIncoming(ctx context.Context, traceID string, ch
 				}
 				return &gi, nil
 			},
+			BindCode: func() string {
+				parts := strings.Fields(cmdText)
+				if len(parts) >= 2 && parts[0] == "/bind" {
+					return parts[1]
+				}
+				return ""
+			},
 		},
 		c.channelIdentitiesRepo, c.channelDMThreadsRepo, c.channelGroupThreadsRepo,
 		c.personasRepo, c.runEventRepo,
+		c.channelBindCodesRepo, c.channelIdentityLinksRepo, c.threadRepo, c.channelsRepo,
+		"飞书",
 	)
+	_ = personaResult
 	if err != nil {
 		return err
 	}
-	if replyText != "" {
+	if handled {
 		if err := commitTx(); err != nil {
 			return err
 		}
 		if cancelRunID != uuid.Nil {
 			_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
 		}
-		_ = c.sendFeishuCommandReply(ctx, cfg, ch, incoming, replyText)
+		if replyText != "" {
+			_ = c.sendFeishuCommandReply(ctx, cfg, ch, incoming, replyText)
+		}
 		return nil
 	}
 

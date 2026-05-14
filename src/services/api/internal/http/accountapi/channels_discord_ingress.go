@@ -1052,7 +1052,7 @@ func handleDiscordCommand(
 		if nameArg != "" {
 			rawText = "/model " + nameArg
 		}
-		replyText, _, err := handleTelegramPreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
+		replyText, _, err := handlePreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1077,7 +1077,7 @@ func handleDiscordCommand(
 		if levelArg != "" {
 			rawText = "/think " + levelArg
 		}
-		replyText, _, err := handleTelegramPreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
+		replyText, _, err := handlePreferenceCommand(ctx, tx, channel.AccountID, threadID, rawText, nil)
 		if err != nil {
 			return nil, err
 		}
