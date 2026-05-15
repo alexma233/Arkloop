@@ -59,7 +59,6 @@ function localMemoryApi(accessToken: string): DesktopMemoryApi {
     rebuildImpression: async (agentId?: string) => apiFetch(`/v1/desktop/memory/impression/rebuild${query(agentId)}`, {
       ...auth,
       method: 'POST',
-      signal: AbortSignal.timeout(120_000),
     }),
   }
 }

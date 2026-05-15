@@ -610,6 +610,7 @@ export function MemorySettings({ accessToken }: Props) {
   const [rebuildImpressionDone, setRebuildImpressionDone] = useState(false)
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [impressionLoading, setImpressionLoading] = useState(false)
+  const impressionPollRef = useRef<{ interval: ReturnType<typeof setInterval> | null; safety: ReturnType<typeof setTimeout> | null }>({ interval: null, safety: null })
   // Runtime health probe (lightweight — no full Bridge UI, just status)
   const [health, setHealth] = useState<HealthStatus>('checking')
   const [healthLabel, setHealthLabel] = useState('')
@@ -789,6 +790,45 @@ export function MemorySettings({ accessToken }: Props) {
     if (memoryUiActionState.rebuildingImpression) return
     memoryUiActionState.rebuildingImpression = true
     setRebuildingImpression(true)
+
+    const previousUpdatedAt = impressionUpdatedAt
+
+    const pollForCompletion = () => {
+      if (!memoryApi?.getImpression) return
+      const pollInterval = setInterval(async () => {
+        try {
+          const imp = await memoryApi.getImpression!()
+          const newUpdatedAt = imp.updated_at
+          if (newUpdatedAt && newUpdatedAt !== previousUpdatedAt) {
+            setImpression(imp.impression ?? '')
+            setImpressionUpdatedAt(newUpdatedAt)
+            setRebuildImpressionDone(true)
+            setTimeout(() => setRebuildImpressionDone(false), 2000)
+            clearInterval(pollInterval)
+            if (impressionPollRef.current) impressionPollRef.current.interval = null
+            memoryUiActionState.rebuildingImpression = false
+            setRebuildingImpression(false)
+          }
+        } catch {
+          // keep polling
+        }
+      }, 30_000)
+
+      const safetyTimer = setTimeout(() => {
+        clearInterval(pollInterval)
+        if (impressionPollRef.current) impressionPollRef.current.interval = null
+        if (memoryUiActionState.rebuildingImpression) {
+          memoryUiActionState.rebuildingImpression = false
+          setRebuildingImpression(false)
+        }
+      }, 30 * 60_000)
+
+      if (impressionPollRef.current) {
+        impressionPollRef.current.interval = pollInterval
+        impressionPollRef.current.safety = safetyTimer
+      }
+    }
+
     try {
       const resp = await memoryApi.rebuildImpression()
       if (memoryApi.getImpression) {
@@ -800,13 +840,32 @@ export function MemorySettings({ accessToken }: Props) {
       }
       setRebuildImpressionDone(true)
       setTimeout(() => setRebuildImpressionDone(false), 2000)
-    } catch (err) { console.error('rebuildImpression failed', err) } finally {
-      memoryUiActionState.rebuildingImpression = false
-      setRebuildingImpression(false)
+    } catch (err) {
+      console.error('rebuildImpression failed, starting poll', err)
+      pollForCompletion()
+      return
+    } finally {
+      if (!impressionPollRef.current?.interval) {
+        memoryUiActionState.rebuildingImpression = false
+        setRebuildingImpression(false)
+      }
     }
-  }, [memoryApi])
+  }, [memoryApi, impressionUpdatedAt])
 
   useEffect(() => { void loadData() }, [loadData])
+
+  useEffect(() => {
+    return () => {
+      if (impressionPollRef.current?.interval) {
+        clearInterval(impressionPollRef.current.interval)
+      }
+      if (impressionPollRef.current?.safety) {
+        clearTimeout(impressionPollRef.current.safety)
+      }
+      impressionPollRef.current = { interval: null, safety: null }
+      memoryUiActionState.rebuildingImpression = false
+    }
+  }, [])
 
   const saveConfig = useCallback(async (next: MemoryConfig) => {
     if (!memoryApi) return
