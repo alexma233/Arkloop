@@ -38,6 +38,9 @@ interface UseScrollPinOptions {
   liveRunUiVisible?: boolean
   topLevelCodeExecutionsLength?: number
   promptPinningDisabled?: boolean
+  // 跳到底部前先把虚拟化历史区瞬移到末尾，避免浏览器原生 smooth scroll 逐帧穿过几千 px
+  // 触发大量挂载/卸载导致的「灰条 / 抖动」。由 MessageList 通过 imperative handle 提供。
+  jumpHistoryToEnd?: () => void
 }
 
 export interface ScrollPinResult {
@@ -71,7 +74,12 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
     liveRunUiVisible = false,
     topLevelCodeExecutionsLength = 0,
     promptPinningDisabled = false,
+    jumpHistoryToEnd,
   } = options
+  const jumpHistoryToEndRef = useRef<typeof jumpHistoryToEnd>(jumpHistoryToEnd)
+  useEffect(() => {
+    jumpHistoryToEndRef.current = jumpHistoryToEnd
+  }, [jumpHistoryToEnd])
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const lastUserMsgRef = useRef<HTMLDivElement>(null)
@@ -760,6 +768,12 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
     followLiveOutputRef.current = true
     viewportAnchorRef.current = null
     clearBottomScrollFrame()
+    // 关键：动画开始前先让 Virtuoso 用 scrollToIndex 把历史区跳到末尾。
+    // 浏览器原生 smooth scroll 逐帧改 scrollTop，跨越数千 px 时会让 Virtuoso 一帧一帧 mount
+    // 途经的消息组件（Markdown/iframe），跟不上就出灰条。Virtuoso 自带的 scrollToIndex 知道目标
+    // index，会直接挂载目标区域、跳过中间项的逐帧挂载。
+    // 之后再让 useScrollPin 平滑滚到「真正的最底部」（最后 turn 的尾巴 + 底 padding）。
+    jumpHistoryToEndRef.current?.()
     bottomSmoothScrollPendingRef.current = shouldAnimate
     bottomScrollFrameRef.current = requestAnimationFrame(() => {
       bottomScrollFrameRef.current = null

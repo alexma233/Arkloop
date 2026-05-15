@@ -33,7 +33,7 @@ import { BrowserSiteIcon } from './resource-preview/BrowserSiteIcon'
 import type { BrowserResourceRef, LocalFileResourceRef, ResourceRef } from './resource-preview/types'
 import { resourceTitle } from './resource-preview/resourceUri'
 import { ChatTitleMenu } from './ChatTitleMenu'
-import { MessageList } from './MessageList'
+import { MessageList, type MessageListHandle } from './MessageList'
 import { CopSegmentBlocks } from './CopSegmentBlocks'
 import { TopLevelCopToolBlock } from './TopLevelCopToolBlock'
 import { ContextCompactBar } from './ContextCompactBar'
@@ -1091,6 +1091,13 @@ export const ChatView = memo(function ChatView() {
     !liveTurnHasThinkingSegment(liveAssistantTurn) &&
     (sending || activeRunId != null)
 
+  const messageListRef = useRef<MessageListHandle>(null)
+  // 提供给 useScrollPin 的桥：scrollToBottom 触发时先让 Virtuoso 跳过中间区间，
+  // 避免浏览器原生 smooth scroll 逐帧穿过数千 px 引发挂载风暴。
+  const jumpHistoryToEnd = useCallback(() => {
+    messageListRef.current?.scrollHistoryToEnd('auto')
+  }, [])
+
   const {
     bottomRef,
     scrollContainerRef,
@@ -1113,7 +1120,16 @@ export const ChatView = memo(function ChatView() {
     liveRunUiVisible,
     topLevelCodeExecutionsLength: topLevelCodeExecutions.length,
     promptPinningDisabled: isWorkMode,
+    jumpHistoryToEnd,
   })
+
+  // 把 scrollContainer 的 DOM 元素以 state 暴露出来，供 Virtuoso 的 customScrollParent 使用。
+  // 必须保持与 scrollContainerRef.current 同步——同一个 div 同时承担 useScrollPin 的 ref 目标与 Virtuoso 的滚动父容器。
+  const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null)
+  const setScrollContainerEl = useCallback((el: HTMLDivElement | null) => {
+    (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+    setScrollParent(el)
+  }, [scrollContainerRef])
 
   const { resetAssistantTurnLive, captureTerminalRunCache, persistThreadRunHandoff } = useRunTransition()
 
@@ -3328,7 +3344,7 @@ export const ChatView = memo(function ChatView() {
   // CSS custom properties set on the parent div.
   const messageListArea = useMemo(() => (
     <div
-      ref={scrollContainerRef}
+      ref={setScrollContainerEl}
       onScroll={handleScrollContainerScroll}
       className="theme-surface-page chat-scroll-hidden relative flex-1 min-h-0 overflow-y-auto bg-[var(--c-bg-page)] [scrollbar-gutter:stable]"
       style={{ contain: 'layout paint style' }}
@@ -3361,6 +3377,8 @@ export const ChatView = memo(function ChatView() {
             )}
             <CopTimelineLocalExpansionProvider stabilizeScroll={stabilizeDocumentPanelScroll}>
               <MessageList
+              ref={messageListRef}
+              scrollParent={scrollParent}
               isWorkMode={isWorkMode}
               lastTurnStartIdx={lastTurnStartIdx}
               lastTurnRef={lastUserMsgRef}
@@ -3403,7 +3421,8 @@ export const ChatView = memo(function ChatView() {
     openCodePanel,
     openDocumentPanel,
     openResourcePanel,
-    scrollContainerRef,
+    scrollParent,
+    setScrollContainerEl,
     sourcePanelMessageId,
     setRunDetailPanelRunId,
     stabilizeDocumentPanelScroll,
