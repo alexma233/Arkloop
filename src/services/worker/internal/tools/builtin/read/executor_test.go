@@ -1,8 +1,11 @@
 package read
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,6 +156,33 @@ func TestReadFilePathImageSourceReturnsImagePart(t *testing.T) {
 	}
 	if !tracker.HasBeenReadForRun(runID.String(), fileops.TrackingKey(workDir, "./sample.png")) {
 		t.Fatal("expected file tracker to record image read for the current run")
+	}
+}
+
+func TestReadFilePathImageSourceRejectsInvalidImageData(t *testing.T) {
+	executor := NewToolExecutor()
+
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, "broken.png")
+	if err := os.WriteFile(path, []byte("not-an-image"), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+
+	result := executor.Execute(context.Background(), "read", map[string]any{
+		"source": map[string]any{
+			"kind":      "file_path",
+			"file_path": "broken.png",
+		},
+	}, tools.ExecutionContext{RunID: uuid.New(), WorkDir: workDir}, "")
+
+	if result.Error == nil {
+		t.Fatal("expected invalid image data to be rejected")
+	}
+	if result.Error.ErrorClass != errorUnsupportedMedia {
+		t.Fatalf("unexpected error class: %s", result.Error.ErrorClass)
+	}
+	if len(result.ContentParts) != 0 {
+		t.Fatalf("invalid image should not attach content parts, got %d", len(result.ContentParts))
 	}
 }
 
@@ -376,10 +406,11 @@ func TestReadImageSourceRequiresPrompt(t *testing.T) {
 
 func testPNGBytes(t *testing.T) []byte {
 	t.Helper()
-	raw := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
-	decoded, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		t.Fatalf("decode png: %v", err)
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
 	}
-	return decoded
+	return buf.Bytes()
 }

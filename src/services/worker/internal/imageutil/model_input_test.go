@@ -69,8 +69,11 @@ func TestPrepareModelInputImageResizesLargeImage(t *testing.T) {
 	source := makePNG(4000, 3000)
 
 	out, mime := PrepareModelInputImage(source, "image/png", "attachments/account/thread/image.png")
-	if mime != "image/png" {
+	if mime != "image/jpeg" && mime != "image/png" {
 		t.Fatalf("unexpected mime: %q", mime)
+	}
+	if len(out) > maxPromptImageBytes {
+		t.Fatalf("output should fit prompt byte budget, got %d", len(out))
 	}
 	img := decodeTestImage(t, out)
 	if b := img.Bounds(); b.Dx() > maxPromptImageDimension || b.Dy() > maxPromptImageDimension {

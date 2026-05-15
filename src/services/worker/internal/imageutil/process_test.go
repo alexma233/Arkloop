@@ -90,11 +90,14 @@ func TestProcessImage_LargeJPEGCompressed(t *testing.T) {
 func TestProcessImage_LargePNGCompressed(t *testing.T) {
 	data := makePNG(4000, 3000)
 	out, mime := ProcessImage(data, "image/png")
-	if mime != "image/png" {
-		t.Errorf("output should preserve PNG, got %s", mime)
+	if mime != "image/jpeg" && mime != "image/png" {
+		t.Errorf("output should remain model-visible image, got %s", mime)
 	}
 	if len(out) >= len(data) {
 		t.Errorf("output should be smaller than input")
+	}
+	if len(out) > maxPromptImageBytes {
+		t.Fatalf("output should fit prompt byte budget, got %d", len(out))
 	}
 	img, _, err := image.Decode(bytes.NewReader(out))
 	if err != nil {
@@ -105,11 +108,35 @@ func TestProcessImage_LargePNGCompressed(t *testing.T) {
 	}
 }
 
+func TestProcessImage_SmallDimensionLargePNGBounded(t *testing.T) {
+	data := makePNG(1600, 1600)
+	if len(data) <= maxPromptImageBytes {
+		t.Fatalf("test setup: expected PNG larger than byte budget, got %d", len(data))
+	}
+	out, mime := ProcessImage(data, "image/png")
+	if mime != "image/jpeg" {
+		t.Fatalf("expected oversized small-dimension PNG to be JPEG, got %s", mime)
+	}
+	if len(out) > maxPromptImageBytes {
+		t.Fatalf("output should fit prompt byte budget, got %d", len(out))
+	}
+	img, _, err := image.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() > maxPromptImageDimension || b.Dy() > maxPromptImageDimension {
+		t.Fatalf("bounded image should fit within %d, got %dx%d", maxPromptImageDimension, b.Dx(), b.Dy())
+	}
+}
+
 func TestProcessModelInputImage_UsesPromptDimensionBudget(t *testing.T) {
 	data := makePNG(4000, 3000)
 	out, mime := ProcessModelInputImage(data, "image/png")
-	if mime != "image/png" {
-		t.Errorf("output should preserve PNG, got %s", mime)
+	if mime != "image/jpeg" && mime != "image/png" {
+		t.Errorf("output should remain model-visible image, got %s", mime)
+	}
+	if len(out) > maxPromptImageBytes {
+		t.Fatalf("output should fit prompt byte budget, got %d", len(out))
 	}
 	img, _, err := image.Decode(bytes.NewReader(out))
 	if err != nil {

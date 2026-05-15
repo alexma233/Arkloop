@@ -14,7 +14,19 @@ import (
 
 const (
 	maxPromptImageDimension = 2048
+	maxPromptImageBytes     = 3 * 1024 * 1024
 )
+
+var promptImageJPEGSteps = []struct {
+	dimension int
+	quality   int
+}{
+	{2048, 85},
+	{1792, 82},
+	{1536, 80},
+	{1280, 78},
+	{1024, 75},
+}
 
 // ProcessImage keeps prompt images readable: preserve supported images when
 // already within the model-facing dimension cap, otherwise resize by dimension.
@@ -27,11 +39,19 @@ func ProcessModelInputImage(data []byte, mimeType string) ([]byte, string) {
 	return processImageForPrompt(data, mimeType)
 }
 
+func DecodeImageMimeType(data []byte, fallback string) (string, bool) {
+	if len(data) == 0 {
+		return "", false
+	}
+	_, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return "", false
+	}
+	return mimeTypeForFormat(format, fallback), true
+}
+
 func processImageForPrompt(data []byte, mimeType string) ([]byte, string) {
 	if len(data) == 0 {
-		return data, mimeType
-	}
-	if normalizeImageMimeType(mimeType) == "image/gif" {
 		return data, mimeType
 	}
 
@@ -40,17 +60,16 @@ func processImageForPrompt(data []byte, mimeType string) ([]byte, string) {
 		return data, mimeType
 	}
 
-	if format == "gif" {
+	if format == "gif" && len(data) <= maxPromptImageBytes {
 		return data, "image/gif"
 	}
 
 	normalizedMime := mimeTypeForFormat(format, mimeType)
-	if fitsPromptDimensions(img) && canPreserveSourceBytes(format) {
+	if len(data) <= maxPromptImageBytes && fitsPromptDimensions(img) && canPreserveSourceBytes(format) {
 		return data, normalizedMime
 	}
 
-	scaled := scaleToFit(img, maxPromptImageDimension)
-	out, outMime, err := encodePromptImage(scaled, format)
+	out, outMime, err := encodePromptImage(img, format)
 	if err != nil {
 		return data, mimeType
 	}
@@ -117,18 +136,31 @@ func scaleToFit(img image.Image, maxDim int) image.Image {
 }
 
 func encodePromptImage(img image.Image, sourceFormat string) ([]byte, string, error) {
-	switch sourceFormat {
-	case "png":
+	if sourceFormat == "png" {
+		scaled := scaleToFit(img, maxPromptImageDimension)
 		var buf bytes.Buffer
-		if err := png.Encode(&buf, img); err != nil {
+		if err := png.Encode(&buf, scaled); err != nil {
 			return nil, "", err
 		}
-		return buf.Bytes(), "image/png", nil
-	case "jpeg":
-		return encodeJPEG(img, 85)
-	default:
-		return encodeJPEG(img, 85)
+		if buf.Len() <= maxPromptImageBytes {
+			return buf.Bytes(), "image/png", nil
+		}
+		img = scaled
 	}
+
+	var last []byte
+	for _, step := range promptImageJPEGSteps {
+		scaled := scaleToFit(img, step.dimension)
+		out, mime, err := encodeJPEG(scaled, step.quality)
+		if err != nil {
+			return nil, "", err
+		}
+		last = out
+		if len(out) <= maxPromptImageBytes {
+			return out, mime, nil
+		}
+	}
+	return last, "image/jpeg", nil
 }
 
 func encodeJPEG(img image.Image, quality int) ([]byte, string, error) {

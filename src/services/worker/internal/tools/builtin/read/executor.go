@@ -302,6 +302,18 @@ func (e *Executor) executeFilePathImage(
 			DurationMs: durationMs(started),
 		}
 	}
+	decodedMime, ok := imageutil.DecodeImageMimeType(data, mimeType)
+	if !ok {
+		return tools.ExecutionResult{
+			Error: &tools.ExecutionError{
+				ErrorClass: errorUnsupportedMedia,
+				Message:    "image file is empty or cannot be decoded",
+				Details:    map[string]any{"file_path": filePath, "mime_type": mimeType},
+			},
+			DurationMs: durationMs(started),
+		}
+	}
+	mimeType = decodedMime
 
 	processed, processedMime := imageutil.ProcessImage(data, mimeType)
 	normPath := backend.NormalizePath(filePath)
