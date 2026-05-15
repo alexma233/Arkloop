@@ -1,9 +1,9 @@
-import { act } from 'react'
+import { act, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AppUIProvider, useSidebarUI } from '../contexts/app-ui'
+import { AppUIProvider, useSettingsUI, useSidebarUI, useTitleBarRightPanelUI } from '../contexts/app-ui'
 import { AuthContextBridge, type AuthContextValue } from '../contexts/auth'
 import { DesktopTitleBar } from '../components/DesktopTitleBar'
 import { LocaleProvider } from '../contexts/LocaleContext'
@@ -33,6 +33,41 @@ function SidebarProbe() {
   )
 }
 
+function SettingsProbe() {
+  const { settingsOpen, settingsInitialTab } = useSettingsUI()
+
+  return (
+    <div>
+      <span data-testid="settings-open">{settingsOpen ? 'open' : 'closed'}</span>
+      <span data-testid="settings-tab">{settingsInitialTab}</span>
+    </div>
+  )
+}
+
+function RightPanelShortcutProbe() {
+  const { rightPanelOpen, setRightPanelOpen } = useSidebarUI()
+  const { setTitleBarRightPanelClick } = useTitleBarRightPanelUI()
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    setTitleBarRightPanelClick(() => {
+      setVisible((open) => !open)
+    })
+    return () => setTitleBarRightPanelClick(null)
+  }, [setTitleBarRightPanelClick])
+
+  useEffect(() => {
+    setRightPanelOpen(visible)
+  }, [visible, setRightPanelOpen])
+
+  return (
+    <div>
+      <span data-testid="right-panel-visible">{visible ? 'open' : 'closed'}</span>
+      <span data-testid="right-panel-icon">{rightPanelOpen ? 'open' : 'closed'}</span>
+    </div>
+  )
+}
+
 describe('AppUIProvider sidebar state', () => {
   const authValue: AuthContextValue = {
     me: null,
@@ -43,11 +78,13 @@ describe('AppUIProvider sidebar state', () => {
   }
 
   const originalInnerWidth = window.innerWidth
+  const originalNavigatorPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
   const originalActEnvironment = (globalThis as typeof globalThis & {
     IS_REACT_ACT_ENVIRONMENT?: boolean
   }).IS_REACT_ACT_ENVIRONMENT
 
   beforeEach(() => {
+    desktopMock.isDesktop.mockReturnValue(true)
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0))
     vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
@@ -77,6 +114,11 @@ describe('AppUIProvider sidebar state', () => {
       ;(globalThis as typeof globalThis & {
         IS_REACT_ACT_ENVIRONMENT?: boolean
       }).IS_REACT_ACT_ENVIRONMENT = originalActEnvironment
+    }
+    if (originalNavigatorPlatform) {
+      Object.defineProperty(window.navigator, 'platform', originalNavigatorPlatform)
+    } else {
+      Reflect.deleteProperty(window.navigator, 'platform')
     }
   })
 
@@ -142,6 +184,112 @@ describe('AppUIProvider sidebar state', () => {
     })
 
     expect(collapsedState?.textContent).toBe('collapsed')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('全局设置快捷键打开 settings 页签并可再次关闭', async () => {
+    desktopMock.isDesktop.mockReturnValue(false)
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Win32',
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/']}>
+          <AuthContextBridge value={authValue}>
+            <AppUIProvider>
+              <SettingsProbe />
+            </AppUIProvider>
+          </AuthContextBridge>
+        </MemoryRouter>,
+      )
+    })
+
+    expect(container.querySelector('[data-testid="settings-open"]')?.textContent).toBe('closed')
+    expect(container.querySelector('[data-testid="settings-tab"]')?.textContent).toBe('account')
+
+    let event = new KeyboardEvent('keydown', {
+      key: ',',
+      code: 'Comma',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      window.dispatchEvent(event)
+    })
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(container.querySelector('[data-testid="settings-open"]')?.textContent).toBe('open')
+    expect(container.querySelector('[data-testid="settings-tab"]')?.textContent).toBe('settings')
+
+    event = new KeyboardEvent('keydown', {
+      key: ',',
+      code: 'Comma',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      window.dispatchEvent(event)
+    })
+
+    expect(container.querySelector('[data-testid="settings-open"]')?.textContent).toBe('closed')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('右侧面板快捷键复用标题栏回调路径', async () => {
+    desktopMock.isDesktop.mockReturnValue(false)
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Win32',
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/']}>
+          <AuthContextBridge value={authValue}>
+            <AppUIProvider>
+              <RightPanelShortcutProbe />
+            </AppUIProvider>
+          </AuthContextBridge>
+        </MemoryRouter>,
+      )
+    })
+
+    expect(container.querySelector('[data-testid="right-panel-visible"]')?.textContent).toBe('closed')
+    expect(container.querySelector('[data-testid="right-panel-icon"]')?.textContent).toBe('closed')
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'b',
+        code: 'KeyB',
+        altKey: true,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+
+    expect(container.querySelector('[data-testid="right-panel-visible"]')?.textContent).toBe('open')
+    expect(container.querySelector('[data-testid="right-panel-icon"]')?.textContent).toBe('open')
 
     act(() => {
       root.unmount()

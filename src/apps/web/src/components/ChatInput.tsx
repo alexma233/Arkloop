@@ -38,6 +38,8 @@ import { ModelPicker } from './ModelPicker'
 import { AutoResizeTextarea, measureTextareaHeight } from '@arkloop/shared'
 import { useLatest } from '../hooks/useLatest'
 import { useInputPerfDebug } from '../hooks/useInputPerfDebug'
+import { ActionIconButton } from './ActionIconButton'
+import { SHORTCUTS } from '../shortcuts'
 
 export type ChatInputHandle = {
   clear: () => void
@@ -1443,23 +1445,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             ) : isStreaming && canCancel && !isEditingQueuedPrompt ? (
               showSendButton ? (
-                <button
+                <ActionIconButton
                   type="submit"
                   disabled={!draft.trim() && attachments.length === 0}
+                  tooltip={t.sendAction}
+                  shortcut={SHORTCUTS.sendMessage.binding}
                   className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
+                  wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
                   style={{
                     position: 'absolute',
                     inset: 0,
                   }}
                 >
                   <ArrowUp size={17} />
-                </button>
+                </ActionIconButton>
               ) : (
-                <button
+                <ActionIconButton
                   type="button"
                   onClick={onCancel}
                   disabled={cancelSubmitting}
+                  tooltip={t.stopAction}
                   className="flex h-full w-full items-center justify-center rounded-lg border border-[var(--c-border)] bg-[var(--c-bg-input)] transition-[opacity,transform,background-color] duration-[140ms] hover:bg-[var(--c-bg-sub)] active:scale-[0.97] active:opacity-[0.82] disabled:cursor-not-allowed disabled:opacity-50"
+                  wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -1471,7 +1478,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       width: '14px',
                       height: '14px',
                       borderRadius: '999px',
-                      border: '1.3px solid #1A1A19',
+                      border: '1.3px solid var(--c-text-primary)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1483,20 +1490,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         width: '5px',
                         height: '5px',
                         borderRadius: '1px',
-                        background: '#1A1A19',
+                        background: 'var(--c-text-primary)',
                         flexShrink: 0,
                       }}
                     />
                   </span>
-                </button>
+                </ActionIconButton>
               )
             ) : (
               <>
-                <button
+                <ActionIconButton
                   type="button"
                   onClick={startRecording}
                   disabled={isRecording || isTranscribing || !accessToken}
+                  tooltip={t.recordVoiceAction}
                   className="flex h-full w-full items-center justify-center rounded-lg text-[var(--c-text-secondary)] hover:bg-[var(--c-bg-deep)] disabled:cursor-not-allowed disabled:opacity-30"
+                  wrapperStyle={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: showSendButton ? 'none' : 'auto',
+                  }}
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -1507,11 +1522,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}
                 >
                   <Mic size={19} />
-                </button>
-                <button
+                </ActionIconButton>
+                <ActionIconButton
                   type="submit"
                   disabled={(!isEditingQueuedPrompt && isStreaming) || (!draft.trim() && attachments.length === 0)}
+                  tooltip={t.sendAction}
+                  shortcut={SHORTCUTS.sendMessage.binding}
                   className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
+                  wrapperStyle={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: showSendButton ? 'auto' : 'none',
+                  }}
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -1522,7 +1546,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}
                 >
                   <ArrowUp size={17} />
-                </button>
+                </ActionIconButton>
               </>
             )}
           </div>
