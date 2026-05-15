@@ -25,6 +25,8 @@ import type { SettingsTab } from './SettingsModal'
 import { openExternal } from '../openExternal'
 import { beginPerfTrace, endPerfTrace } from '../perfDebug'
 import { secondaryButtonSmCls, secondaryButtonBorderStyle } from './buttonStyles'
+import { ActionIconButton } from './ActionIconButton'
+import { SHORTCUTS } from '../shortcuts'
 
 export const DESKTOP_TITLEBAR_HEIGHT = 44
 const WINDOWS_TITLEBAR_HEIGHT = 44
@@ -196,7 +198,7 @@ export function DesktopTitleBar({
           WebkitAppRegion: 'no-drag',
         } as React.CSSProperties}
       >
-        <button
+        <ActionIconButton
           onClick={() => {
             endPerfTrace(sidebarToggleTrace.current, {
               phase: 'click',
@@ -216,25 +218,27 @@ export function DesktopTitleBar({
           onPointerLeave={() => {
             sidebarToggleTrace.current = null
           }}
+          tooltip={sidebarCollapsed ? t.showSidebarAction : t.hideSidebarAction}
+          shortcut={SHORTCUTS.toggleSidebar.binding}
           className={btnCls}
         >
           {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-        </button>
-        <button onClick={() => window.history.back()} className={btnCls}>
+        </ActionIconButton>
+        <ActionIconButton onClick={() => window.history.back()} tooltip={t.browserPanel.back} className={btnCls}>
           <ChevronLeft size={17} />
-        </button>
-        <button onClick={() => window.history.forward()} className={btnCls}>
+        </ActionIconButton>
+        <ActionIconButton onClick={() => window.history.forward()} tooltip={t.browserPanel.forward} className={btnCls}>
           <ChevronRight size={17} />
-        </button>
+        </ActionIconButton>
         {showTitleBarNewThread && onNewThread && (
-          <button
+          <ActionIconButton
             onClick={onNewThread}
-            title={newThreadLabel}
             aria-label={newThreadLabel}
+            tooltip={newThreadLabel}
             className={btnCls}
           >
             <SquarePen size={17} />
-          </button>
+          </ActionIconButton>
         )}
       </div>
 
@@ -272,9 +276,9 @@ export function DesktopTitleBar({
       >
         <div className={isWindows ? 'flex items-center justify-end gap-1 pr-2' : 'flex items-center justify-end'}>
           {showIncognitoToggle && onTogglePrivateMode && (
-            <button
+            <ActionIconButton
               onClick={onTogglePrivateMode}
-              title={t.toggleIncognito}
+              tooltip={t.toggleIncognito}
               className={[
                 'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
                 isPrivateMode
@@ -283,16 +287,17 @@ export function DesktopTitleBar({
               ].join(' ')}
             >
               <Glasses size={17} />
-            </button>
+            </ActionIconButton>
           )}
           {onToggleRightPanel && (
-            <button
+            <ActionIconButton
               onClick={onToggleRightPanel}
-              title={t.rightPanel.toggle}
+              tooltip={t.rightPanel.toggle}
+              shortcut={SHORTCUTS.toggleRightPanel.binding}
               className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-tertiary)] transition-colors hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-secondary)]"
             >
               {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-            </button>
+            </ActionIconButton>
           )}
           {hasAppUpdate && (
             <button

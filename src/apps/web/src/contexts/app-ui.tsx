@@ -27,6 +27,7 @@ import {
   type PerfSample,
 } from '../perfDebug'
 import { useAuth } from './auth'
+import { SHORTCUTS, matchesShortcut } from '../shortcuts'
 
 export interface AppUIContextValue {
   sidebarCollapsed: boolean
@@ -542,6 +543,34 @@ export function AppUIProvider({ children }: { children: ReactNode }) {
     window.addEventListener('arkloop:app:open-settings', handler as EventListener)
     return () => window.removeEventListener('arkloop:app:open-settings', handler as EventListener)
   }, [desktop, location.pathname])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat) return
+      if (matchesShortcut(e, SHORTCUTS.openSettings)) {
+        e.preventDefault()
+        if (settingsOpen) closeSettings()
+        else openSettings('settings')
+        return
+      }
+      if (matchesShortcut(e, SHORTCUTS.openSearch)) {
+        e.preventDefault()
+        openSearchOverlay()
+        return
+      }
+      if (matchesShortcut(e, SHORTCUTS.toggleRightPanel)) {
+        e.preventDefault()
+        triggerTitleBarRightPanelClick()
+        return
+      }
+      if (matchesShortcut(e, SHORTCUTS.toggleSidebar)) {
+        e.preventDefault()
+        toggleSidebar('titlebar')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [settingsOpen, openSettings, closeSettings, openSearchOverlay, triggerTitleBarRightPanelClick, toggleSidebar])
 
   useEffect(() => {
     if (!(desktop && settingsOpen)) return

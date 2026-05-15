@@ -30,6 +30,8 @@ import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } fro
 import { useAuth } from '../contexts/auth'
 import { useThreadList, useThreadLiveState } from '../contexts/thread-list'
 import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarUI } from '../contexts/app-ui'
+import { SHORTCUTS } from '../shortcuts'
+import { ActionIconButton } from './ActionIconButton'
 import {
   readGtdInboxThreadIds, writeGtdInboxThreadIds,
   readGtdTodoThreadIds, writeGtdTodoThreadIds,
@@ -1754,7 +1756,7 @@ export function Sidebar({
         {/* Settings button: fixed pl-1 so the icon x-position never
             changes during sidebar collapse/expand — no justifyContent flip. */}
         <div className="mt-0.5 pl-1">
-          <button
+          <ActionIconButton
             onClick={() => {
               endPerfTrace(settingsPointerTraceRef.current, {
                 phase: 'click',
@@ -1782,10 +1784,13 @@ export function Sidebar({
             onPointerLeave={() => {
               settingsPointerTraceRef.current = null
             }}
+            aria-label={t.nav.settings}
+            tooltip={t.nav.settings}
+            shortcut={SHORTCUTS.openSettings.binding}
             className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--c-text-icon)] transition-[background-color,color,transform] duration-[60ms] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)] active:scale-[0.96]"
           >
             <Bolt size={18} />
-          </button>
+          </ActionIconButton>
         </div>
       </div>
 

@@ -10,6 +10,8 @@ export interface LocaleStrings {
   chats: string;
   searchChats: string;
   searchTasks: string;
+  showSidebarAction: string;
+  hideSidebarAction: string;
   projects: string;
   retrieve: string;
   legal: string;
@@ -101,6 +103,9 @@ export interface LocaleStrings {
   sseReconnectNotice: string;
   failedRunTitle: string;
   retryAction: string;
+  sendAction: string;
+  stopAction: string;
+  recordVoiceAction: string;
   messageSending: string;
   messageNotSent: string;
   resetAction: string;
