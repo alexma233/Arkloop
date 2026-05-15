@@ -565,21 +565,17 @@ export function GeneralSettings({ me, accessToken, onLogout, onMeUpdated }: Prop
 
       <GeneralSection title={ds.backgroundToolsSection}>
         <GeneralCard>
-          <GeneralRow
+	          <GeneralRow
             title={ds.chatModel}
             control={(
-              <div className="w-full min-w-[220px] sm:w-[320px]">
-                <ChatModelSettingControl accessToken={accessToken} />
-              </div>
+              <ChatModelSettingControl accessToken={accessToken} />
             )}
           />
           <GeneralRow
             title={ds.toolModel}
             description={ds.toolModelDesc}
             control={(
-              <div className="w-full min-w-[220px] sm:w-[320px]">
-                <ToolModelSettingControl accessToken={accessToken} />
-              </div>
+              <ToolModelSettingControl accessToken={accessToken} />
             )}
           />
           <GeneralSwitchRow

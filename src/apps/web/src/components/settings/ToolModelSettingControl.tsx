@@ -261,76 +261,69 @@ export function ToolModelSettingControl({ accessToken, disabled = false }: Props
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex w-full items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <SettingsModelDropdown
-            value={toolModelValue}
-            options={modelOptions}
-            placeholder={toolModelPlaceholder}
-            disabled={disabled || saving}
-            onChange={(value) => void handleChange(value)}
-          />
-        </div>
-        <SettingsIconButton
-          label={ds.toolModel}
-          onClick={() => {
-            if (testResult?.success) {
-              setTestResult(null)
-              return
-            }
-            void handleTest()
-          }}
-          disabled={testing || (!toolModelSelection && !testResult)}
-          className="h-9 w-9"
-        >
-          {testing
-            ? <Loader2 size={14} className="animate-spin" />
-            : testResult
-              ? testResult.success
-                ? <AnimatedCheck size={14} color="var(--c-status-success-text)" />
-                : <X size={14} className="text-[var(--c-status-error-text)]" />
-              : <Zap size={14} strokeWidth={1.5} />}
-        </SettingsIconButton>
-        {testResult && !testResult.success && !testing && (
-          <div ref={testErrorTriggerRef}>
-            <SettingsButton
-              variant="danger"
-              onClick={() => {
-                if (testErrorOpen) {
-                  setTestErrorMenuStyle(null)
-                  return
-                }
-                const next = computeTestErrorMenuStyle()
-                if (next) setTestErrorMenuStyle(next)
+    <div className="flex min-w-0 items-center gap-2">
+      <SettingsModelDropdown
+        value={toolModelValue}
+        options={modelOptions}
+        placeholder={toolModelPlaceholder}
+        disabled={disabled || saving}
+        onChange={(value) => void handleChange(value)}
+      />
+      <SettingsIconButton
+        label={ds.toolModel}
+        onClick={() => {
+          if (testResult?.success) {
+            setTestResult(null)
+            return
+          }
+          void handleTest()
+        }}
+        disabled={testing || (!toolModelSelection && !testResult)}
+        className="h-9 w-9"
+      >
+        {testing
+          ? <Loader2 size={14} className="animate-spin" />
+          : testResult
+            ? testResult.success
+              ? <AnimatedCheck size={14} color="var(--c-status-success-text)" />
+              : <X size={14} className="text-[var(--c-status-error-text)]" />
+            : <Zap size={14} strokeWidth={1.5} />}
+      </SettingsIconButton>
+      {testResult && !testResult.success && !testing && (
+        <div ref={testErrorTriggerRef}>
+          <SettingsButton
+            variant="danger"
+            onClick={() => {
+              if (testErrorOpen) {
+                setTestErrorMenuStyle(null)
+                return
+              }
+              const next = computeTestErrorMenuStyle()
+              if (next) setTestErrorMenuStyle(next)
+            }}
+            className="h-9 shrink-0 text-xs"
+          >
+            Error
+          </SettingsButton>
+          {testErrorMenuStyle && createPortal(
+            <div
+              ref={testErrorMenuRef}
+              className="dropdown-menu overflow-y-auto"
+              style={{
+                ...testErrorMenuStyle,
+                border: '0.5px solid var(--c-border-subtle)',
+                borderRadius: '10px',
+                padding: '12px',
+                background: 'var(--c-bg-menu)',
+                boxShadow: 'var(--c-dropdown-shadow)',
               }}
-              className="h-9 shrink-0 text-xs"
+              onMouseDown={(event) => event.stopPropagation()}
             >
-              Error
-            </SettingsButton>
-            {testErrorMenuStyle && createPortal(
-              <div
-                ref={testErrorMenuRef}
-                className="dropdown-menu overflow-y-auto"
-                style={{
-                  ...testErrorMenuStyle,
-                  border: '0.5px solid var(--c-border-subtle)',
-                  borderRadius: '10px',
-                  padding: '12px',
-                  background: 'var(--c-bg-menu)',
-                  boxShadow: 'var(--c-dropdown-shadow)',
-                }}
-                onMouseDown={(event) => event.stopPropagation()}
-              >
-                <pre className="whitespace-pre-wrap break-all text-xs text-[var(--c-text-secondary)]">{testResult.error ?? ''}</pre>
-              </div>,
-              document.body,
-            )}
-          </div>
-        )}
-      </div>
-      {!toolProfile?.has_override && toolProfile?.auto_model && (
-        <p className="text-xs text-[var(--c-text-muted)]">{ds.toolModelAutoHint}</p>
+              <pre className="whitespace-pre-wrap break-all text-xs text-[var(--c-text-secondary)]">{testResult.error ?? ''}</pre>
+            </div>,
+            document.body,
+          )}
+        </div>
       )}
     </div>
   )
