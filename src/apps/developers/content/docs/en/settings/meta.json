@@ -1,0 +1,4 @@
+{
+  "title": "Settings",
+  "pages": ["overview", "general", "appearance", "providers", "channels", "memory", "mcp", "advanced"]
+}

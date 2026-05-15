@@ -27,7 +27,7 @@ const CONTENT: Record<Lang, {
     heroDesc: '你的私人 AI 运行时 -- 工具执行、记忆系统、沙盒代码、多模型路由，全部运行在你自己的设备上。',
     dlBtnLabel: '下载 Arkloop',
     docsBtnLabel: '文档',
-    docsHref: '/zh/docs/guide',
+    docsHref: '/zh/docs',
     platforms: [
       { label: 'macOS (Apple Silicon)', url: 'https://github.com/qqqqqf-q/Arkloop/releases/latest/download/Arkloop-mac-arm64.dmg', icon: 'apple' },
       { label: 'macOS (Intel)', url: 'https://github.com/qqqqqf-q/Arkloop/releases/latest/download/Arkloop-mac-x64.dmg', icon: 'apple' },
@@ -38,14 +38,14 @@ const CONTENT: Record<Lang, {
     contribDesc: '我们欢迎所有形式的贡献。即使你不是开发者，只是一个普通用户 -- 如果你在使用中感到任何不舒服的地方，哪怕只是一点间距、一个颜色、一个很小很小的细节，或者是一个很大很大的方向，都可以直接开一个 issue。我们认真对待每一个体验细节，你的反馈会让所有人的体验变得更好。',
     githubLabel: 'GitHub',
     contribGuideLabel: '贡献指南',
-    contribGuideHref: '/zh/docs/guide',
+    contribGuideHref: '/zh/docs/self-hosting/deployment',
   },
   en: {
     heroTitle: ['Clean, powerful AI agents.', 'Yours to own.'],
     heroDesc: 'Your personal AI runtime -- tool execution, memory, sandboxed code, and multi-model routing, all running on your own device.',
     dlBtnLabel: 'Get Arkloop',
     docsBtnLabel: 'Docs',
-    docsHref: '/en/docs/guide',
+    docsHref: '/en/docs',
     platforms: [
       { label: 'macOS (Apple Silicon)', url: 'https://github.com/qqqqqf-q/Arkloop/releases/latest/download/Arkloop-mac-arm64.dmg', icon: 'apple' },
       { label: 'macOS (Intel)', url: 'https://github.com/qqqqqf-q/Arkloop/releases/latest/download/Arkloop-mac-x64.dmg', icon: 'apple' },
@@ -56,7 +56,7 @@ const CONTENT: Record<Lang, {
     contribDesc: "We welcome contributions of all kinds. Even if you're not a developer -- if something feels off, a bit of spacing, a color that doesn't sit right, any tiny detail or even a big-picture direction -- please open an issue. We take every UX detail seriously, and your feedback makes Arkloop better for everyone.",
     githubLabel: 'GitHub',
     contribGuideLabel: 'Contributing Guide',
-    contribGuideHref: '/en/docs/guide',
+    contribGuideHref: '/en/docs/self-hosting/deployment',
   },
 };
 

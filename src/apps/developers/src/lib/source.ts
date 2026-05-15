@@ -1,5 +1,5 @@
 import { loader } from 'fumadocs-core/source';
-import { docsZh, docsEn, apiZh, apiEn } from '../../.source';
+import { docsZh, docsEn, apiZh, apiEn } from '../../.source/server';
 
 export const docsZhSource = loader({
   baseUrl: '/zh/docs',

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { RootProvider } from 'fumadocs-ui/provider';
+import { RootProvider } from 'fumadocs-ui/provider/next';
 import Topbar from '@/components/Topbar';
 
 const validLangs = ['zh', 'en'] as const;

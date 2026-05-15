@@ -1,0 +1,4 @@
+{
+  "title": "Features",
+  "pages": ["chat", "agents", "memory", "tools", "workspace", "channels", "scheduled-jobs", "sharing"]
+}

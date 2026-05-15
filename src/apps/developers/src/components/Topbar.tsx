@@ -9,11 +9,11 @@ type Lang = 'zh' | 'en';
 
 const NAV: Record<Lang, { label: string; href: string }[]> = {
   zh: [
-    { label: '文档', href: '/zh/docs/guide' },
+    { label: '文档', href: '/zh/docs' },
     { label: 'API', href: '/zh/api' },
   ],
   en: [
-    { label: 'Docs', href: '/en/docs/guide' },
+    { label: 'Docs', href: '/en/docs' },
     { label: 'API', href: '/en/api' },
   ],
 };
@@ -37,7 +37,7 @@ export default function Topbar({ lang }: { lang: Lang }) {
             <Link
               key={item.href}
               href={item.href}
-              className={`nav-link${pathname.startsWith(item.href.replace('/guide', '')) ? ' nav-link-active' : ''}`}
+              className={`nav-link${pathname.startsWith(item.href) ? ' nav-link-active' : ''}`}
             >
               {item.label}
             </Link>
