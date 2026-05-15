@@ -2080,7 +2080,7 @@ func TestCompactToolResultsKeepsLatestImageToolResult(t *testing.T) {
 	}
 }
 
-func TestCompactToolResultsDropsOlderImageParts(t *testing.T) {
+func TestCompactToolResultsKeepsPendingImageBatch(t *testing.T) {
 	oldLimit := maxToolResultHistoryChars
 	maxToolResultHistoryChars = 40
 	defer func() { maxToolResultHistoryChars = oldLimit }()
@@ -2103,14 +2103,11 @@ func TestCompactToolResultsDropsOlderImageParts(t *testing.T) {
 	}
 
 	got := compactToolResults(messages)
-	if len(got[0].Content) != 1 {
-		t.Fatalf("expected old image tool result to drop image parts, got %d parts", len(got[0].Content))
-	}
-	if !strings.Contains(got[0].Content[0].Text, `"compacted":true`) {
-		t.Fatalf("expected old compacted stub, got %q", got[0].Content[0].Text)
+	if len(got[0].Content) != 2 {
+		t.Fatalf("expected first pending image tool result to stay visible, got %d parts", len(got[0].Content))
 	}
 	if len(got[1].Content) != 2 {
-		t.Fatalf("expected latest image tool result to stay visible, got %d parts", len(got[1].Content))
+		t.Fatalf("expected second pending image tool result to stay visible, got %d parts", len(got[1].Content))
 	}
 }
 
@@ -2136,6 +2133,41 @@ func TestCompactToolResultsCompactsImageAfterAssistantReply(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Content[0].Text, `"compacted":true`) {
 		t.Fatalf("expected compacted stub, got %q", got[0].Content[0].Text)
+	}
+}
+
+func TestCompactToolResultsCompactsImagesBeforeLatestAssistant(t *testing.T) {
+	oldLimit := maxToolResultHistoryChars
+	maxToolResultHistoryChars = 40
+	defer func() { maxToolResultHistoryChars = oldLimit }()
+
+	messages := []llm.Message{
+		{
+			Role: "tool",
+			Content: []llm.ContentPart{
+				{Text: `{"tool_call_id":"call_old","tool_name":"read","result":{"image_attached":true}}`},
+				{Type: messagecontent.PartTypeImage, Data: bytes.Repeat([]byte{1}, 80)},
+			},
+		},
+		{Role: "assistant", Content: []llm.ContentPart{{Text: "next read"}}},
+		{
+			Role: "tool",
+			Content: []llm.ContentPart{
+				{Text: `{"tool_call_id":"call_new","tool_name":"read","result":{"image_attached":true}}`},
+				{Type: messagecontent.PartTypeImage, Data: bytes.Repeat([]byte{2}, 80)},
+			},
+		},
+	}
+
+	got := compactToolResults(messages)
+	if len(got[0].Content) != 1 {
+		t.Fatalf("expected image before latest assistant to compact, got %d parts", len(got[0].Content))
+	}
+	if !strings.Contains(got[0].Content[0].Text, `"compacted":true`) {
+		t.Fatalf("expected old compacted stub, got %q", got[0].Content[0].Text)
+	}
+	if len(got[2].Content) != 2 {
+		t.Fatalf("expected pending image after latest assistant to stay visible, got %d parts", len(got[2].Content))
 	}
 }
 

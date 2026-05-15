@@ -7,7 +7,8 @@ import (
 
 func toOpenAIChatMessages(messages []Message) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(messages))
-	for _, message := range messages {
+	for i := 0; i < len(messages); {
+		message := messages[i]
 		text := joinParts(message.Content)
 
 		if message.Role == "assistant" && len(message.ToolCalls) > 0 {
@@ -19,13 +20,18 @@ func toOpenAIChatMessages(messages []Message) ([]map[string]any, error) {
 			applyOpenAIReasoningContent(item, message.Content)
 			ensureOpenAIReasoningContent(item)
 			out = append(out, item)
+			i++
 			continue
 		}
 
 		if message.Role == "tool" {
-			base := toOpenAIToolMessage(text)
-			imageParts := collectImageBlocks(message.Content)
-			out = append(out, base)
+			var imageParts []map[string]any
+			for i < len(messages) && messages[i].Role == "tool" {
+				base := toOpenAIToolMessage(joinParts(messages[i].Content))
+				imageParts = append(imageParts, collectImageBlocks(messages[i].Content)...)
+				out = append(out, base)
+				i++
+			}
 			if len(imageParts) > 0 {
 				out = append(out, map[string]any{"role": "user", "content": imageParts})
 			}
@@ -42,6 +48,7 @@ func toOpenAIChatMessages(messages []Message) ([]map[string]any, error) {
 				applyOpenAIReasoningContent(item, message.Content)
 			}
 			out = append(out, item)
+			i++
 			continue
 		}
 		item := map[string]any{"role": message.Role, "content": text}
@@ -49,6 +56,7 @@ func toOpenAIChatMessages(messages []Message) ([]map[string]any, error) {
 			applyOpenAIReasoningContent(item, message.Content)
 		}
 		out = append(out, item)
+		i++
 	}
 	return out, nil
 }

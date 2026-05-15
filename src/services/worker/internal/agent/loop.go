@@ -2993,7 +2993,7 @@ func compactToolResults(messages []llm.Message) []llm.Message {
 func compactToolResultsWithState(messages []llm.Message, state *toolResultReplacementState) []llm.Message {
 	total := 0
 	prepared := applyStoredToolResultReplacements(messages, state)
-	protectedImageToolIndex := latestPendingToolResultWithBinaryPart(prepared)
+	protectedImageToolIndices := pendingToolResultBinaryIndices(prepared)
 	for _, m := range prepared {
 		if m.Role == "tool" {
 			total += toolResultHistorySize(m)
@@ -3014,7 +3014,7 @@ func compactToolResultsWithState(messages []llm.Message, state *toolResultReplac
 		if out[i].Role != "tool" {
 			continue
 		}
-		if i == protectedImageToolIndex {
+		if _, ok := protectedImageToolIndices[i]; ok {
 			continue
 		}
 		msgSize := toolResultHistorySize(out[i])
@@ -3027,23 +3027,27 @@ func compactToolResultsWithState(messages []llm.Message, state *toolResultReplac
 	return out
 }
 
-func latestPendingToolResultWithBinaryPart(messages []llm.Message) int {
-	seenNonToolAfter := false
+func pendingToolResultBinaryIndices(messages []llm.Message) map[int]struct{} {
+	protected := map[int]struct{}{}
+	lastAssistant := -1
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role != "tool" {
-			seenNonToolAfter = true
-			continue
+		if messages[i].Role == "assistant" {
+			lastAssistant = i
+			break
 		}
-		if seenNonToolAfter {
+	}
+	for i := lastAssistant + 1; i < len(messages); i++ {
+		if messages[i].Role != "tool" {
 			continue
 		}
 		for _, p := range messages[i].Content {
 			if len(p.Data) > 0 {
-				return i
+				protected[i] = struct{}{}
+				break
 			}
 		}
 	}
-	return -1
+	return protected
 }
 
 func toolResultHistorySize(m llm.Message) int {

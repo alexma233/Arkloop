@@ -416,6 +416,48 @@ func TestReadMessageAttachmentSourceWithoutProviderStillReturnsImagePart(t *test
 	}
 }
 
+func TestReadMessageAttachmentSourceWithoutPromptReturnsImagePart(t *testing.T) {
+	provider := &fakeProvider{}
+	executor := NewToolExecutorWithProvider(provider)
+	key := "threads/thread-a/attachments/1/cat.png"
+
+	rc := &fakePipelineRunContext{
+		messages: []llm.Message{
+			{
+				Role: "user",
+				Content: []llm.ContentPart{
+					{
+						Type: "image",
+						Attachment: &messagecontent.AttachmentRef{
+							Key:      key,
+							Filename: "cat.png",
+							MimeType: "image/png",
+						},
+						Data: testPNGBytes(t),
+					},
+				},
+			},
+		},
+	}
+
+	result := executor.Execute(context.Background(), "read", map[string]any{
+		"source": map[string]any{
+			"kind":           "message_attachment",
+			"attachment_key": key,
+		},
+	}, tools.ExecutionContext{PipelineRC: rc}, "")
+
+	if result.Error != nil {
+		t.Fatalf("unexpected error: %+v", result.Error)
+	}
+	if len(provider.req.Bytes) != 0 {
+		t.Fatal("provider should not receive attachment without prompt")
+	}
+	if len(result.ContentParts) != 1 {
+		t.Fatalf("expected one image content part, got %d", len(result.ContentParts))
+	}
+}
+
 func TestReadMessageAttachmentSourceRejectsLegacyPipelineShape(t *testing.T) {
 	provider := &fakeProvider{
 		resp: DescribeImageResponse{

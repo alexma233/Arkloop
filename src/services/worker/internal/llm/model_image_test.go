@@ -332,11 +332,18 @@ func TestToOpenAIChatMessagesMovesToolResultImageToUserMessage(t *testing.T) {
 	messages, err := toOpenAIChatMessages([]Message{
 		{
 			Role: "assistant",
-			ToolCalls: []ToolCall{{
-				ToolCallID:    "call_1",
-				ToolName:      "read",
-				ArgumentsJSON: map[string]any{"source": map[string]any{"kind": "file_path"}},
-			}},
+			ToolCalls: []ToolCall{
+				{
+					ToolCallID:    "call_1",
+					ToolName:      "read",
+					ArgumentsJSON: map[string]any{"source": map[string]any{"kind": "file_path"}},
+				},
+				{
+					ToolCallID:    "call_2",
+					ToolName:      "read",
+					ArgumentsJSON: map[string]any{"source": map[string]any{"kind": "file_path"}},
+				},
+			},
 		},
 		{
 			Role: "tool",
@@ -352,24 +359,38 @@ func TestToOpenAIChatMessagesMovesToolResultImageToUserMessage(t *testing.T) {
 				},
 			},
 		},
+		{
+			Role: "tool",
+			Content: []ContentPart{
+				{Type: "text", Text: `{"tool_call_id":"call_2","tool_name":"read","result":{"image_attached":true}}`},
+				{
+					Type: "image",
+					Attachment: &messagecontent.AttachmentRef{
+						Filename: "image-2.png",
+						MimeType: "image/png",
+					},
+					Data: makeVisionTestPNG(t, 64, 64),
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("toOpenAIChatMessages failed: %v", err)
 	}
-	if len(messages) != 3 {
-		t.Fatalf("expected assistant, tool, user image messages, got %#v", messages)
+	if len(messages) != 4 {
+		t.Fatalf("expected assistant, tool batch, user image messages, got %#v", messages)
 	}
-	if messages[1]["role"] != "tool" {
-		t.Fatalf("expected second message to stay tool result, got %#v", messages[1])
+	if messages[1]["role"] != "tool" || messages[2]["role"] != "tool" {
+		t.Fatalf("expected tool results to stay consecutive, got %#v", messages)
 	}
 	if _, structured := messages[1]["content"].([]map[string]any); structured {
 		t.Fatalf("tool message must not carry structured image content: %#v", messages[1])
 	}
-	if messages[2]["role"] != "user" {
-		t.Fatalf("expected tool image to move into user message, got %#v", messages[2])
+	if messages[3]["role"] != "user" {
+		t.Fatalf("expected tool images to move into one user message, got %#v", messages[3])
 	}
-	content := messages[2]["content"].([]map[string]any)
-	if content[0]["type"] != "image_url" {
+	content := messages[3]["content"].([]map[string]any)
+	if len(content) != 2 || content[0]["type"] != "image_url" || content[1]["type"] != "image_url" {
 		t.Fatalf("expected user image content, got %#v", content)
 	}
 }

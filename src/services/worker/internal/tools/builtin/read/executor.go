@@ -366,6 +366,21 @@ func (e *Executor) executeMessageAttachment(
 	image.MimeType = decodedMime
 	image.Bytes, image.MimeType = imageutil.ProcessImage(image.Bytes, image.MimeType)
 
+	if strings.TrimSpace(parsed.Prompt) == "" {
+		return tools.ExecutionResult{
+			ResultJSON: map[string]any{
+				"source_kind":    string(parsed.Source.Kind),
+				"attachment_key": parsed.Source.AttachmentKey,
+				"mime_type":      image.MimeType,
+				"bytes":          len(image.Bytes),
+			},
+			ContentParts: []tools.ContentAttachment{
+				{MimeType: image.MimeType, Data: image.Bytes, AttachmentKey: parsed.Source.AttachmentKey},
+			},
+			DurationMs: durationMs(started),
+		}
+	}
+
 	provider, providerErr := e.resolveProvider(execCtx)
 	if providerErr != nil {
 		return tools.ExecutionResult{
