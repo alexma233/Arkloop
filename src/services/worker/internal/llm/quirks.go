@@ -17,10 +17,12 @@ const (
 	QuirkStripToolChoice         QuirkID = "strip_tool_choice"
 )
 
+// Quirk 把一个 SymptomID 映射成 payload 改写动作。
+// 识别交给 symptom detector 统一处理，Quirk 只负责绑定症状和修复。
 type Quirk struct {
-	ID    QuirkID
-	Match func(status int, rawBody string) bool
-	Apply func(payload map[string]any)
+	ID      QuirkID
+	Symptom SymptomID
+	Apply   func(payload map[string]any)
 }
 
 type QuirkStore struct {
@@ -66,102 +68,33 @@ func (s *QuirkStore) ApplyAll(payload map[string]any, registry []Quirk) {
 	}
 }
 
-func (s *QuirkStore) DetectFromError(status int, rawBody string, registry []Quirk) (QuirkID, bool) {
-	return detectQuirk(status, rawBody, registry)
-}
-
-func detectQuirk(status int, rawBody string, registry []Quirk) (QuirkID, bool) {
+// detectQuirk 用一组已检测到的 symptoms 在 registry 中反查可应用的 quirk。
+// 命中按 registry 顺序返回首个。
+func detectQuirk(symptoms []SymptomID, registry []Quirk) (QuirkID, bool) {
+	if len(symptoms) == 0 {
+		return "", false
+	}
 	for _, q := range registry {
-		if q.Match == nil {
-			continue
-		}
-		if q.Match(status, rawBody) {
-			return q.ID, true
+		for _, s := range symptoms {
+			if q.Symptom == s {
+				return q.ID, true
+			}
 		}
 	}
 	return "", false
 }
 
 var openAIQuirks = []Quirk{
-	{
-		ID: QuirkEchoReasoningContent,
-		Match: func(status int, rawBody string) bool {
-			if status != 400 {
-				return false
-			}
-			lower := strings.ToLower(rawBody)
-			if !strings.Contains(lower, "reasoning_content") {
-				return false
-			}
-			if strings.Contains(lower, "passed back") {
-				return true
-			}
-			return strings.Contains(lower, "reasoning_content is missing") &&
-				strings.Contains(lower, "thinking is enabled")
-		},
-		Apply: applyEchoReasoningContent,
-	},
-	{
-		ID:    QuirkDowngradeXHighReasoning,
-		Match: matchXHighReasoningUnsupported,
-		Apply: applyDowngradeXHighReasoning,
-	},
-	{
-		ID:    QuirkStripToolChoice,
-		Match: matchToolChoiceUnsupported,
-		Apply: applyStripToolChoice,
-	},
+	{ID: QuirkEchoReasoningContent, Symptom: SymptomReasoningContentPassback, Apply: applyEchoReasoningContent},
+	{ID: QuirkDowngradeXHighReasoning, Symptom: SymptomXHighReasoningUnsupported, Apply: applyDowngradeXHighReasoning},
+	{ID: QuirkStripToolChoice, Symptom: SymptomToolChoiceUnsupported, Apply: applyStripToolChoice},
 }
 
 var anthropicQuirks = []Quirk{
-	{
-		ID: QuirkStripUnsignedThinking,
-		Match: func(status int, rawBody string) bool {
-			if status != 400 {
-				return false
-			}
-			return strings.Contains(rawBody, "Invalid signature in thinking")
-		},
-		Apply: applyStripUnsignedThinking,
-	},
-	{
-		ID: QuirkForceTempOneOnThink,
-		Match: func(status int, rawBody string) bool {
-			if status != 400 {
-				return false
-			}
-			return strings.Contains(rawBody, "temperature") &&
-				strings.Contains(rawBody, "may only be set to 1") &&
-				strings.Contains(rawBody, "thinking")
-		},
-		Apply: applyForceTempOneOnThinking,
-	},
-	{
-		ID: QuirkEchoEmptyTextOnThink,
-		Match: func(status int, rawBody string) bool {
-			if status != 400 {
-				return false
-			}
-			lower := strings.ToLower(rawBody)
-			return (strings.Contains(lower, "thinking mode") || strings.Contains(lower, "thinking_mode")) &&
-				strings.Contains(lower, "content") &&
-				strings.Contains(lower, "pass") &&
-				strings.Contains(lower, "back")
-		},
-		Apply: applyEchoEmptyTextOnThinking,
-	},
-	{
-		ID: QuirkStripCacheControl,
-		Match: func(status int, rawBody string) bool {
-			if status != 400 {
-				return false
-			}
-			lower := strings.ToLower(rawBody)
-			return strings.Contains(lower, "cache_control") &&
-				strings.Contains(lower, "extra inputs are not permitted")
-		},
-		Apply: applyStripCacheControl,
-	},
+	{ID: QuirkStripUnsignedThinking, Symptom: SymptomUnsignedThinking, Apply: applyStripUnsignedThinking},
+	{ID: QuirkForceTempOneOnThink, Symptom: SymptomTempMustBeOneOnThinking, Apply: applyForceTempOneOnThinking},
+	{ID: QuirkEchoEmptyTextOnThink, Symptom: SymptomEmptyTextOnThinking, Apply: applyEchoEmptyTextOnThinking},
+	{ID: QuirkStripCacheControl, Symptom: SymptomCacheControlRejected, Apply: applyStripCacheControl},
 }
 
 func applyEchoReasoningContent(payload map[string]any) {
@@ -197,34 +130,6 @@ func echoReasoningContentOnItem(item map[string]any) {
 		return
 	}
 	item["reasoning_content"] = ""
-}
-
-func matchXHighReasoningUnsupported(status int, rawBody string) bool {
-	if status != 400 {
-		return false
-	}
-	lower := strings.ToLower(rawBody)
-	if !strings.Contains(lower, "reasoning_effort") || !hasLowerAlphaToken(lower, "xhigh") {
-		return false
-	}
-	if !hasLowerAlphaToken(lower, "low") || !hasLowerAlphaToken(lower, "medium") || !hasLowerAlphaToken(lower, "high") {
-		return false
-	}
-	return strings.Contains(lower, "expected") ||
-		strings.Contains(lower, "input should be") ||
-		strings.Contains(lower, "literal_error")
-}
-
-func matchToolChoiceUnsupported(status int, rawBody string) bool {
-	if status != 400 {
-		return false
-	}
-	lower := strings.ToLower(rawBody)
-	if !strings.Contains(lower, "tool_choice") {
-		return false
-	}
-	return strings.Contains(lower, "does not support") ||
-		strings.Contains(lower, "unsupported")
 }
 
 func hasLowerAlphaToken(text string, want string) bool {

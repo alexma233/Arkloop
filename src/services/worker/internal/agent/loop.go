@@ -1807,16 +1807,10 @@ func isOversizeTurn(turn turnResult) bool {
 		return false
 	}
 	details, _ := last.DataJSON["details"].(map[string]any)
-	statusCode, ok := anyToInt64(details["status_code"])
-	if ok && statusCode == 413 {
+	if statusCode, ok := anyToInt64(details["status_code"]); ok && statusCode == 413 {
 		return true
 	}
-	if ok && statusCode == 400 {
-		openAICode, _ := details["openai_error_code"].(string)
-		anthropicType, _ := details["anthropic_error_type"].(string)
-		return openAICode == "context_length_exceeded" || anthropicType == "context_length_exceeded"
-	}
-	return false
+	return llm.DetailsHaveSymptom(details, llm.SymptomContextLengthExceeded)
 }
 
 func currentContextCompactAnchor(runCtx RunContext) *pipeline.ContextCompactPressureAnchor {

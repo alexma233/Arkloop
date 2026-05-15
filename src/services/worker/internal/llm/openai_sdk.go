@@ -333,7 +333,9 @@ func openAISDKDetectQuirk(err error) (QuirkID, bool) {
 		return "", false
 	}
 	rawBody := string(apiErr.DumpResponse(true))
-	return detectQuirk(apiErr.StatusCode, rawBody, openAIQuirks)
+	_, details := openAIErrorMessageAndDetails([]byte(apiErr.RawJSON()), apiErr.StatusCode, "")
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: apiErr.StatusCode, RawBody: rawBody, Details: details}, openAISymptoms)
+	return detectQuirk(symptoms, openAIQuirks)
 }
 
 type openAISDKChatState struct {
@@ -693,6 +695,8 @@ func openAISDKErrorToGateway(err error, fallback string, payloadBytes int) Gatew
 		if apiErr.StatusCode == http.StatusRequestEntityTooLarge {
 			details = OversizeFailureDetails(payloadBytes, OversizePhaseProvider, details)
 		}
+		symptoms := DetectSymptoms(SymptomMatchContext{Status: apiErr.StatusCode, RawBody: string(apiErr.RawJSON()), Details: details}, openAISymptoms)
+		details = MergeSymptomsIntoDetails(details, symptoms)
 		return GatewayError{ErrorClass: classifyOpenAIStatus(apiErr.StatusCode, details), Message: message, Details: details}
 	}
 	return GatewayError{ErrorClass: ErrorClassProviderRetryable, Message: "OpenAI network error", Details: map[string]any{"reason": err.Error()}}
@@ -713,10 +717,22 @@ func openAISDKStreamErrorToGateway(err error, fallback string, payloadBytes int,
 	details := sdkTransportErrorDetails(err, "openai", apiMode, true, true)
 	details = mergeContextErrorDetails(details, err, ctx)
 	details = mergeProviderResponseCaptureDetails(details, responseCapture)
-	return GatewayError{ErrorClass: ErrorClassProviderRetryable, Message: "OpenAI network error", Details: details}
+	// stream 场景下 provider 可能 200 + SSE error event，错误埋在 tail 里。
+	tail, _ := details["provider_response_tail"].(string)
+	statusCode, _ := details["status_code"].(int)
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: statusCode, RawBody: tail, Details: details}, openAISymptoms)
+	details = MergeSymptomsIntoDetails(details, symptoms)
+	errClass := ErrorClassProviderRetryable
+	if DetailsHaveSymptom(details, SymptomContextLengthExceeded) {
+		errClass = ErrorClassProviderNonRetryable
+	}
+	return GatewayError{ErrorClass: errClass, Message: "OpenAI network error", Details: details}
 }
 
 func classifyOpenAIStatus(status int, details map[string]any) string {
+	if DetailsHaveSymptom(details, SymptomContextLengthExceeded) {
+		return ErrorClassProviderNonRetryable
+	}
 	if status == http.StatusBadRequest {
 		code, _ := details["openai_error_code"].(string)
 		errorType, _ := details["openai_error_type"].(string)

@@ -3411,6 +3411,7 @@ func (g *openAIContextLengthThenSuccessGateway) Stream(ctx context.Context, requ
 					"openai_error_type":  "invalid_request_error",
 					"openai_error_code":  "context_length_exceeded",
 					"openai_error_param": "messages",
+					"symptoms":           []string{"context_length_exceeded"},
 				},
 			},
 		})
@@ -3433,6 +3434,7 @@ func (g *anthropicContextLengthThenSuccessGateway) Stream(ctx context.Context, r
 				Details: map[string]any{
 					"status_code":          400,
 					"anthropic_error_type": "context_length_exceeded",
+					"symptoms":             []string{"context_length_exceeded"},
 				},
 			},
 		})

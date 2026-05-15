@@ -254,6 +254,8 @@ func openAICodexHTTPError(resp *http.Response, body []byte, payloadBytes int, re
 		details = OversizeFailureDetails(payloadBytes, OversizePhaseProvider, details)
 	}
 	details = mergeProviderResponseCaptureDetails(details, responseCapture)
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: resp.StatusCode, RawBody: string(body), Details: details}, openAISymptoms)
+	details = MergeSymptomsIntoDetails(details, symptoms)
 	return GatewayError{ErrorClass: classifyOpenAIStatus(resp.StatusCode, details), Message: message, Details: details}
 }
 
@@ -264,7 +266,15 @@ func openAICodexStreamErrorToGateway(err error, payloadBytes int, responseCaptur
 	if capturedStatus, _ := details["status_code"].(int); capturedStatus == http.StatusRequestEntityTooLarge {
 		details = OversizeFailureDetails(payloadBytes, OversizePhaseProvider, details)
 	}
-	return GatewayError{ErrorClass: ErrorClassProviderRetryable, Message: "Codex responses network error", Details: details}
+	tail, _ := details["provider_response_tail"].(string)
+	statusCode, _ := details["status_code"].(int)
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: statusCode, RawBody: tail, Details: details}, openAISymptoms)
+	details = MergeSymptomsIntoDetails(details, symptoms)
+	errClass := ErrorClassProviderRetryable
+	if DetailsHaveSymptom(details, SymptomContextLengthExceeded) {
+		errClass = ErrorClassProviderNonRetryable
+	}
+	return GatewayError{ErrorClass: errClass, Message: "Codex responses network error", Details: details}
 }
 
 func normalizeOpenAICodexResponsesBaseURL(baseURL string) string {

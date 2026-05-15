@@ -281,21 +281,26 @@ func isDeepSeekAnthropicBaseURL(baseURL string) bool {
 func anthropicSDKDetectQuirk(err error, responseCapture *providerResponseCapture) (QuirkID, bool) {
 	status := 0
 	rawBody := ""
+	details := map[string]any{}
 	var apiErr *anthropic.Error
 	if errors.As(err, &apiErr) {
 		status = apiErr.StatusCode
 		rawBody = string(apiErr.DumpResponse(true))
+		if errorType := strings.TrimSpace(string(apiErr.Type())); errorType != "" {
+			details["anthropic_error_type"] = errorType
+		}
 	}
 	if responseCapture != nil {
-		details := responseCapture.details()
+		captured := responseCapture.details()
 		if status == 0 {
-			status, _ = details["status_code"].(int)
+			status, _ = captured["status_code"].(int)
 		}
-		if tail, _ := details["provider_response_tail"].(string); strings.TrimSpace(tail) != "" {
+		if tail, _ := captured["provider_response_tail"].(string); strings.TrimSpace(tail) != "" {
 			rawBody += "\n" + tail
 		}
 	}
-	return detectQuirk(status, rawBody, anthropicQuirks)
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: status, RawBody: rawBody, Details: details}, anthropicSymptoms)
+	return detectQuirk(symptoms, anthropicQuirks)
 }
 
 func (g *anthropicSDKGateway) messageParams(request Request) (anthropic.MessageNewParams, map[string]any, int, error) {
@@ -969,22 +974,31 @@ func anthropicSDKErrorToGateway(err error, payloadBytes int, apiMode string, str
 			details = OversizeFailureDetails(payloadBytes, OversizePhaseProvider, details)
 		}
 		details = mergeProviderResponseCaptureDetails(details, responseCapture)
+		details = MergeSymptomsIntoDetails(details, DetectSymptoms(SymptomMatchContext{Status: apiErr.StatusCode, RawBody: string(apiErr.RawJSON()), Details: details}, anthropicSymptoms))
 		return GatewayError{ErrorClass: anthropicSDKErrorClass(apiErr, details), Message: message, Details: details}
 	}
 	details := sdkTransportErrorDetails(err, "anthropic", apiMode, streaming, true)
 	details = mergeContextErrorDetails(details, err, ctx)
 	details = mergeProviderResponseCaptureDetails(details, responseCapture)
-	return GatewayError{ErrorClass: ErrorClassProviderRetryable, Message: "Anthropic network error", Details: details}
+	tail, _ := details["provider_response_tail"].(string)
+	statusCode, _ := details["status_code"].(int)
+	symptoms := DetectSymptoms(SymptomMatchContext{Status: statusCode, RawBody: tail, Details: details}, anthropicSymptoms)
+	details = MergeSymptomsIntoDetails(details, symptoms)
+	errClass := ErrorClassProviderRetryable
+	if DetailsHaveSymptom(details, SymptomContextLengthExceeded) {
+		errClass = ErrorClassProviderNonRetryable
+	}
+	return GatewayError{ErrorClass: errClass, Message: "Anthropic network error", Details: details}
 }
 
 func anthropicSDKErrorClass(err *anthropic.Error, details map[string]any) string {
 	if err == nil {
 		return ErrorClassProviderRetryable
 	}
+	if DetailsHaveSymptom(details, SymptomContextLengthExceeded) {
+		return ErrorClassProviderNonRetryable
+	}
 	if err.StatusCode == http.StatusBadRequest {
-		if errorType, _ := details["anthropic_error_type"].(string); errorType == "context_length_exceeded" || errorType == "invalid_value" {
-			return ErrorClassProviderNonRetryable
-		}
 		return ErrorClassProviderNonRetryable
 	}
 	switch err.Type() {

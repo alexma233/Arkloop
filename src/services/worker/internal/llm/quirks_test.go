@@ -25,7 +25,7 @@ func TestQuirkMatch_EchoReasoningContent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := q.Match(tc.status, tc.body)
+			got := matchQuirkForTest(q, tc.status, tc.body)
 			if got != tc.want {
 				t.Fatalf("Match(%d,%q)=%v want %v", tc.status, tc.body, got, tc.want)
 			}
@@ -57,7 +57,7 @@ func TestQuirkMatch_DowngradeXHighReasoning(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := q.Match(tc.status, tc.body)
+			got := matchQuirkForTest(q, tc.status, tc.body)
 			if got != tc.want {
 				t.Fatalf("Match(%d,%q)=%v want %v", tc.status, tc.body, got, tc.want)
 			}
@@ -84,7 +84,7 @@ func TestQuirkMatch_StripToolChoice(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := q.Match(tc.status, tc.body)
+			got := matchQuirkForTest(q, tc.status, tc.body)
 			if got != tc.want {
 				t.Fatalf("Match(%d,%q)=%v want %v", tc.status, tc.body, got, tc.want)
 			}
@@ -109,7 +109,7 @@ func TestQuirkMatch_StripUnsignedThinking(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := q.Match(tc.status, tc.body); got != tc.want {
+			if got := matchQuirkForTest(q, tc.status, tc.body); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -133,7 +133,7 @@ func TestQuirkMatch_ForceTempOneOnThinking(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := q.Match(tc.status, tc.body); got != tc.want {
+			if got := matchQuirkForTest(q, tc.status, tc.body); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -159,7 +159,7 @@ func TestQuirkMatch_EchoEmptyTextOnThinking(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := q.Match(tc.status, tc.body); got != tc.want {
+			if got := matchQuirkForTest(q, tc.status, tc.body); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -390,7 +390,7 @@ func TestQuirkMatch_StripCacheControl(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := q.Match(tc.status, tc.body); got != tc.want {
+			if got := matchQuirkForTest(q, tc.status, tc.body); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -481,27 +481,59 @@ func TestQuirkStore_ApplyAll_OnlyActive(t *testing.T) {
 }
 
 func TestDetectQuirk(t *testing.T) {
-	id, ok := detectQuirk(400, `reasoning_content must be passed back to the API`, openAIQuirks)
+	id, ok := detectQuirkForTest(400, `reasoning_content must be passed back to the API`, openAIQuirks)
 	if !ok || id != QuirkEchoReasoningContent {
 		t.Fatalf("expected echo, got %s ok=%v", id, ok)
 	}
-	if _, ok := detectQuirk(200, `reasoning_content must be passed back`, openAIQuirks); ok {
+	if _, ok := detectQuirkForTest(200, `reasoning_content must be passed back`, openAIQuirks); ok {
 		t.Fatalf("status 200 must not match")
 	}
-	id, ok = detectQuirk(400, `reasoning_content is missing because thinking is enabled`, openAIQuirks)
+	id, ok = detectQuirkForTest(400, `reasoning_content is missing because thinking is enabled`, openAIQuirks)
 	if !ok || id != QuirkEchoReasoningContent {
 		t.Fatalf("expected moonshot echo, got %s ok=%v", id, ok)
 	}
-	id, ok = detectQuirk(400, `reasoning_effort input xhigh expected low medium high`, openAIQuirks)
+	id, ok = detectQuirkForTest(400, `reasoning_effort input xhigh expected low medium high`, openAIQuirks)
 	if !ok || id != QuirkDowngradeXHighReasoning {
 		t.Fatalf("expected xhigh downgrade, got %s ok=%v", id, ok)
 	}
-	id, ok = detectQuirk(400, `Invalid signature in thinking block`, anthropicQuirks)
+	id, ok = detectQuirkForTest(400, `Invalid signature in thinking block`, anthropicQuirks)
 	if !ok || id != QuirkStripUnsignedThinking {
 		t.Fatalf("expected strip, got %s ok=%v", id, ok)
 	}
-	id, ok = detectQuirk(400, `content in thinking mode must be passed back`, anthropicQuirks)
+	id, ok = detectQuirkForTest(400, `content in thinking mode must be passed back`, anthropicQuirks)
 	if !ok || id != QuirkEchoEmptyTextOnThink {
 		t.Fatalf("expected anthropic echo empty text, got %s ok=%v", id, ok)
 	}
+}
+
+// matchQuirkForTest 把旧测试的 q.Match(status, body) 适配到新结构：
+// 先跑 symptom detector，再判断目标 quirk 的 symptom 是否命中。
+func matchQuirkForTest(q Quirk, status int, body string) bool {
+	registry := openAISymptoms
+	for _, aq := range anthropicQuirks {
+		if aq.ID == q.ID {
+			registry = anthropicSymptoms
+			break
+		}
+	}
+	syms := DetectSymptoms(SymptomMatchContext{Status: status, RawBody: body}, registry)
+	for _, s := range syms {
+		if s == q.Symptom {
+			return true
+		}
+	}
+	return false
+}
+
+// detectQuirkForTest 兼容旧测试签名：传入 status+body+registry，内部跑 symptom detect。
+func detectQuirkForTest(status int, body string, registry []Quirk) (QuirkID, bool) {
+	symRegistry := openAISymptoms
+	for _, q := range registry {
+		if q.ID == QuirkStripUnsignedThinking || q.ID == QuirkEchoEmptyTextOnThink {
+			symRegistry = anthropicSymptoms
+			break
+		}
+	}
+	syms := DetectSymptoms(SymptomMatchContext{Status: status, RawBody: body}, symRegistry)
+	return detectQuirk(syms, registry)
 }
