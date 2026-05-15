@@ -1949,6 +1949,17 @@ button:not(:disabled) {
   animation-name: user-prompt-enter-light;
 }
 
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 4px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+}
+
 .action-icon-tooltip[data-side="bottom"] {
   animation: action-icon-tooltip-in-bottom 120ms ease-out both;
 }
