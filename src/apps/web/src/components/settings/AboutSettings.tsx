@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ExternalLink, Github, HardDrive } from 'lucide-react'
 import { getDesktopApi, getDesktopAppVersion, type DesktopAdvancedOverview } from '@arkloop/shared/desktop'
 import { useLocale } from '../../contexts/LocaleContext'
+import { formatDesktopAppVersion } from '../../desktopVersion'
 import { openExternal } from '../../openExternal'
 import { readDeveloperMode, writeDeveloperMode } from '../../storage'
 import { UpdateSettingsContent } from './UpdateSettings'
@@ -114,7 +115,7 @@ export function AboutSettings({ accessToken: _accessToken }: { accessToken: stri
   }, [api, localAppVersion, overview?.appVersion])
 
   const appName = overview?.appName ?? 'Arkloop'
-  const appVersion = overview?.appVersion ?? fallbackVersion
+  const appVersion = formatDesktopAppVersion(overview?.appVersion ?? fallbackVersion)
   const links = overview?.links ?? []
   const iconDataUrl = overview?.iconDataUrl ?? null
 

@@ -1001,8 +1001,7 @@ function desktopStoragePath(): string {
 
 function getDesktopIconDataUrl(): string | null {
   const fs = require('fs') as typeof import('fs')
-  const { app } = require('electron') as typeof import('electron')
-  const { pathToFileURL } = require('node:url') as typeof import('node:url')
+  const { app, nativeImage } = require('electron') as typeof import('electron')
   const candidates = app.isPackaged
     ? (
       process.platform === 'darwin'
@@ -1028,7 +1027,9 @@ function getDesktopIconDataUrl(): string | null {
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue
-    return pathToFileURL(candidate).toString()
+    const image = nativeImage.createFromPath(candidate)
+    if (image.isEmpty()) continue
+    return image.resize({ width: 64, height: 64, quality: 'best' }).toDataURL()
   }
   return null
 }

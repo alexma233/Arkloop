@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { Button } from '@arkloop/shared'
 import { SpinnerIcon } from '@arkloop/shared/components/auth-ui'
 import { useLocale } from '../../contexts/LocaleContext'
+import { formatDesktopAppVersion } from '../../desktopVersion'
 import { getDesktopApi, getDesktopAppVersion, type UpdaterComponent, type AppUpdaterState } from '@arkloop/shared/desktop'
 
 type ComponentStatus = {
@@ -147,7 +148,7 @@ function VersionValue({
       ) : missingText ? (
         <span className="text-[var(--c-text-muted)]">{missingText}</span>
       ) : null}
-      {latest && latest !== current && (
+      {current && latest && latest !== current && (
         <>
           <span className="text-[var(--c-text-muted)]">→</span>
           <span
@@ -380,7 +381,7 @@ export function UpdateSettingsContent() {
             ) : undefined}
             value={(
               <VersionValue
-                current={appUpdateState?.currentVersion}
+                current={formatDesktopAppVersion(appUpdateState?.currentVersion)}
                 latest={appUpdateState?.latestVersion}
               />
             )}
