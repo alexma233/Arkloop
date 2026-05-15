@@ -351,6 +351,22 @@ func TestSelectCompactAtomWindow_TokenCap(t *testing.T) {
 	}
 }
 
+func TestSelectCompactAtomWindow_SelectsLargeLeadingAtom(t *testing.T) {
+	nodes := []FrontierNode{
+		{Kind: FrontierNodeChunk, ApproxTokens: 12000, AtomSeq: 1, AtomType: compactAtomToolEpisode, Role: "tool", SourceText: "large tool"},
+		{Kind: FrontierNodeChunk, ApproxTokens: 200, AtomSeq: 2, AtomType: compactAtomUserText, Role: "user", SourceText: "next"},
+		{Kind: FrontierNodeChunk, ApproxTokens: 200, AtomSeq: 3, AtomType: compactAtomUserText, Role: "user", SourceText: "tail"},
+	}
+
+	selection := selectCompactAtomWindow(nodes, 1, contextCompactMaxLLMInputTokens)
+	if len(selection.Nodes) != 1 {
+		t.Fatalf("expected large leading atom to remain selectable, got %d", len(selection.Nodes))
+	}
+	if selection.Nodes[0].AtomSeq != 1 {
+		t.Fatalf("expected atom 1 selected, got %#v", selection.Nodes)
+	}
+}
+
 func TestSelectCompactAtomWindow_ProtectsLastAtom(t *testing.T) {
 	nodes := []FrontierNode{
 		{Kind: FrontierNodeChunk, ApproxTokens: 10, AtomSeq: 1, AtomType: compactAtomUserText, Role: "user", SourceText: "head"},
