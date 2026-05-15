@@ -276,10 +276,114 @@ func configureHeadlessEnv(apiPort int, bridgePort int, dataDir string, publicURL
 			return err
 		}
 	}
+	if err := configureHeadlessResourceEnv(); err != nil {
+		return err
+	}
 	if err := applyHeadlessDesktopConfigEnv(dataDir); err != nil {
 		return err
 	}
 	return nil
+}
+
+func configureHeadlessResourceEnv() error {
+	candidates := headlessResourceRootCandidates()
+	if readEnvVar("ARKLOOP_PERSONAS_ROOT") == "" {
+		for _, candidate := range candidates {
+			if root := findChildDir(candidate, "src", "personas"); root != "" {
+				if err := os.Setenv("ARKLOOP_PERSONAS_ROOT", root); err != nil {
+					return err
+				}
+				break
+			}
+			if root := findChildDir(candidate, "personas"); root != "" {
+				if err := os.Setenv("ARKLOOP_PERSONAS_ROOT", root); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	if readEnvVar("ARKLOOP_SKILLS_ROOT") == "" {
+		for _, candidate := range candidates {
+			if root := findChildDir(candidate, "src", "skills"); root != "" {
+				if err := os.Setenv("ARKLOOP_SKILLS_ROOT", root); err != nil {
+					return err
+				}
+				break
+			}
+			if root := findChildDir(candidate, "skills"); root != "" {
+				if err := os.Setenv("ARKLOOP_SKILLS_ROOT", root); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func headlessResourceRootCandidates() []string {
+	candidates := []string{}
+	if explicit := readEnvVar("ARKLOOP_PROJECT_DIR"); explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, cwd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, resourceRootCandidatesForExecutable(exe)...)
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil && resolved != exe {
+			candidates = append(candidates, resourceRootCandidatesForExecutable(resolved)...)
+		}
+	}
+	return uniqueCleanPaths(candidates)
+}
+
+func resourceRootCandidatesForExecutable(exe string) []string {
+	if strings.TrimSpace(exe) == "" {
+		return nil
+	}
+	dir := filepath.Dir(exe)
+	return []string{
+		dir,
+		filepath.Join(dir, ".."),
+		filepath.Join(dir, "..", "arkloop-project"),
+		filepath.Join(dir, "..", ".."),
+		filepath.Join(dir, "..", "..", "arkloop-project"),
+	}
+}
+
+func uniqueCleanPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	seen := map[string]bool{}
+	for _, raw := range paths {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		cleaned, err := filepath.Abs(raw)
+		if err != nil {
+			cleaned = filepath.Clean(raw)
+		}
+		if seen[cleaned] {
+			continue
+		}
+		seen[cleaned] = true
+		out = append(out, cleaned)
+	}
+	return out
+}
+
+func findChildDir(root string, parts ...string) string {
+	candidate := filepath.Join(append([]string{root}, parts...)...)
+	info, err := os.Stat(candidate)
+	if err == nil && info.IsDir() {
+		return candidate
+	}
+	return ""
+}
+
+func readEnvVar(name string) string {
+	return strings.TrimSpace(os.Getenv(name))
 }
 
 func applyHeadlessDesktopConfigEnv(explicitDataDir string) error {

@@ -172,6 +172,9 @@ jobs:
             -o "package/${PACKAGE_NAME}/${BIN_NAME}" \
             ./src/services/cli/cmd/ark
           cp -R src/apps/web/dist "package/${PACKAGE_NAME}/web"
+          mkdir -p "package/${PACKAGE_NAME}/src"
+          cp -R src/personas "package/${PACKAGE_NAME}/src/personas"
+          cp -R src/skills "package/${PACKAGE_NAME}/src/skills"
           tar -czf "dist/${PACKAGE_NAME}.tar.gz" -C package "${PACKAGE_NAME}"
           echo "Built dist/${PACKAGE_NAME}.tar.gz"
           ls -lh dist/

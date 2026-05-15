@@ -13,6 +13,8 @@ class Arkloop < Formula
     system "pnpm", "install", "--frozen-lockfile"
     system "pnpm", "--dir", "src/apps/web", "build"
     prefix.install "src/apps/web/dist" => "web"
+    prefix.install "src/personas" => "src/personas"
+    prefix.install "src/skills" => "src/skills"
 
     cd "src/services/cli" do
       system "go", "build", "-tags", "desktop",

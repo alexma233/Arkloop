@@ -146,6 +146,30 @@ func TestWebRootCandidatesIncludeDesktopBundledRenderer(t *testing.T) {
 	t.Fatalf("webRootCandidates missing bundled renderer path %q: %#v", want, candidates)
 }
 
+func TestConfigureHeadlessResourceEnvUsesPackagedResources(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src", "personas"), 0o755); err != nil {
+		t.Fatalf("mkdir personas: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src", "skills"), 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+
+	t.Setenv("ARKLOOP_PROJECT_DIR", root)
+	t.Setenv("ARKLOOP_PERSONAS_ROOT", "")
+	t.Setenv("ARKLOOP_SKILLS_ROOT", "")
+
+	if err := configureHeadlessResourceEnv(); err != nil {
+		t.Fatalf("configureHeadlessResourceEnv: %v", err)
+	}
+	if got, want := os.Getenv("ARKLOOP_PERSONAS_ROOT"), filepath.Join(root, "src", "personas"); got != want {
+		t.Fatalf("ARKLOOP_PERSONAS_ROOT = %q, want %q", got, want)
+	}
+	if got, want := os.Getenv("ARKLOOP_SKILLS_ROOT"), filepath.Join(root, "src", "skills"); got != want {
+		t.Fatalf("ARKLOOP_SKILLS_ROOT = %q, want %q", got, want)
+	}
+}
+
 func TestLocalTrustConfigForHost(t *testing.T) {
 	tests := []struct {
 		host string
