@@ -845,9 +845,11 @@ func traceDesktopMemoryInjection(inner pipeline.RunMiddleware) pipeline.RunMiddl
 				delta = delta[len(before):]
 			}
 			rc.Tracer.Event("memory_injection", "memory_injection.completed", map[string]any{
-				"memory_injected":   strings.Contains(delta, "<memory>"),
-				"notebook_injected": strings.Contains(delta, "<notebook>"),
-				"injection_len":     len(delta),
+				"memory_injected":                  strings.Contains(delta, "<memory>"),
+				"notebook_injected":                strings.Contains(delta, "<notebook>"),
+				"nowledge_working_memory_injected": strings.Contains(delta, "<working_memory>"),
+				"nowledge_recall_injected":         strings.Contains(delta, "<system_recalled_memories>"),
+				"injection_len":                    len(delta),
 			})
 		}
 		return err

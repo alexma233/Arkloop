@@ -478,24 +478,12 @@ func TestNowledgeContextContributorInjectsBehavioralGuidanceWithoutRecall(t *tes
 	}
 }
 
-func TestNowledgeContextContributorAdjustsBehavioralGuidanceWhenContextInjected(t *testing.T) {
+func TestNowledgeContextContributorInjectsWorkingMemoryWithoutAutoRecall(t *testing.T) {
 	t.Setenv(sharedoutbound.AllowLoopbackHTTPEnv, "true")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/agent/working-memory":
 			_ = json.NewEncoder(w).Encode(map[string]any{"exists": true, "content": "今天聚焦 memory 系统"})
-		case "/memories/search":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"memories": []map[string]any{{
-					"id":               "mem-1",
-					"title":            "最近决策",
-					"content":          "统一走 SeaweedFS",
-					"score":            0.91,
-					"relevance_reason": "topic match",
-				}},
-			})
-		case "/threads/search":
-			_ = json.NewEncoder(w).Encode(map[string]any{"threads": []map[string]any{}})
 		default:
 			t.Fatalf("unexpected nowledge request: %s %s", r.Method, r.URL.Path)
 		}
@@ -528,8 +516,8 @@ func TestNowledgeContextContributorAdjustsBehavioralGuidanceWhenContextInjected(
 	if _, ok := keys["hook.before.nowledge.working_memory"]; !ok {
 		t.Fatal("expected working memory segment")
 	}
-	if _, ok := keys["hook.before.nowledge.recalled_memories"]; !ok {
-		t.Fatal("expected recalled memories segment")
+	if _, ok := keys["hook.before.nowledge.recalled_memories"]; ok {
+		t.Fatalf("unexpected recalled memories segment: %#v", keys["hook.before.nowledge.recalled_memories"])
 	}
 	guidance := ""
 	for _, segment := range segments {
@@ -538,19 +526,17 @@ func TestNowledgeContextContributorAdjustsBehavioralGuidanceWhenContextInjected(
 			break
 		}
 	}
-	if !strings.Contains(guidance, "已注入 Working Memory和相关记忆") {
+	if !strings.Contains(guidance, "已注入 Working Memory") || !strings.Contains(guidance, "不会自动注入相关记忆") {
 		t.Fatalf("guidance should acknowledge injected context: %q", guidance)
 	}
 }
 
-func TestNowledgeContextContributorKeepsWorkingMemoryWhenRecallFails(t *testing.T) {
+func TestNowledgeContextContributorDoesNotSearchWhenUserMessageIsRecallable(t *testing.T) {
 	t.Setenv(sharedoutbound.AllowLoopbackHTTPEnv, "true")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/agent/working-memory":
 			_ = json.NewEncoder(w).Encode(map[string]any{"exists": true, "content": "今天聚焦 memory 系统"})
-		case "/memories/search":
-			http.Error(w, "boom", http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected nowledge request: %s %s", r.Method, r.URL.Path)
 		}
@@ -577,7 +563,7 @@ func TestNowledgeContextContributorKeepsWorkingMemoryWhenRecallFails(t *testing.
 		t.Fatalf("BeforePromptSegments: %v", err)
 	}
 	if len(segments) == 0 || segments[0].Name != "hook.before.nowledge.working_memory" {
-		t.Fatalf("unexpected segments on recall failure: %#v", segments)
+		t.Fatalf("unexpected segments: %#v", segments)
 	}
 	foundGuidance := false
 	for _, segment := range segments {
@@ -587,7 +573,7 @@ func TestNowledgeContextContributorKeepsWorkingMemoryWhenRecallFails(t *testing.
 		}
 	}
 	if !foundGuidance {
-		t.Fatal("expected guidance segment when recall fails")
+		t.Fatal("expected guidance segment")
 	}
 }
 

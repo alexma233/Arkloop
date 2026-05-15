@@ -342,7 +342,7 @@ var registry = []ToolMeta{
 			"Use for recommendations, comparisons, preference-driven questions, or open-ended problems where user context improves quality. " +
 			"Call at most once per query. Results may inform subsequent tool choices but rarely suffice alone. " +
 			"Each hit includes uri and kind. For kind=memory, pass that exact uri to memory_read, memory_edit, or memory_forget. For kind=thread, pass that exact uri to memory_read or use thread_id with memory_thread_fetch. " +
-			"This memory is auto-recalled and may not appear every turn. " +
+			"Memory is not auto-recalled into the prompt; call this tool when prior context would improve the answer. " +
 			"Internal fields (uri, _ref) are system identifiers — never expose raw uri text to the user unless they explicitly need to copy it.",
 	},
 	{

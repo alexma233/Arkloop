@@ -4,13 +4,10 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"fmt"
 	"strings"
-	"sync"
 
 	sharedconfig "arkloop/services/shared/config"
 	"arkloop/services/worker/internal/data"
-	"arkloop/services/worker/internal/llm"
 	"arkloop/services/worker/internal/memory"
 	"arkloop/services/worker/internal/memory/nowledge"
 
@@ -35,7 +32,6 @@ type nowledgePromptState struct {
 	segments              PromptSegments
 	guidance              string
 	workingMemoryInjected bool
-	recalledInjected      bool
 }
 
 func NewNowledgeContextContributor(provider *nowledge.Client) ContextContributor {
@@ -57,25 +53,7 @@ func (c *NowledgeContextContributor) collectPromptState(ctx context.Context, rc 
 		AgentID:   StableAgentID(rc),
 	}
 	state := nowledgePromptState{}
-	query := buildNowledgeRecallQuery(rc)
-	var workingMemory nowledge.WorkingMemory
-	var searchResults []nowledge.SearchResult
-	var searchErr error
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		workingMemory, _ = c.provider.ReadWorkingMemory(ctx, ident)
-	}()
-	if strings.TrimSpace(query) != "" {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			searchResults, searchErr = c.provider.SearchRich(ctx, ident, query, 5)
-		}()
-	}
-	wg.Wait()
-
+	workingMemory, _ := c.provider.ReadWorkingMemory(ctx, ident)
 	if workingMemory.Available && strings.TrimSpace(workingMemory.Content) != "" {
 		state.segments = append(state.segments, PromptSegment{
 			Name:          "hook.before.nowledge.working_memory",
@@ -87,39 +65,7 @@ func (c *NowledgeContextContributor) collectPromptState(ctx context.Context, rc 
 		})
 		state.workingMemoryInjected = true
 	}
-	if strings.TrimSpace(query) == "" {
-		state.guidance = buildNowledgeGuidanceText(state.workingMemoryInjected, state.recalledInjected)
-		return state, nil
-	}
-	if searchErr != nil || len(searchResults) == 0 {
-		state.guidance = buildNowledgeGuidanceText(state.workingMemoryInjected, state.recalledInjected)
-		return state, nil
-	}
-	var lines []string
-	for index, result := range searchResults {
-		if result.Score < 0.1 {
-			continue
-		}
-		abstract := compactInline(firstNonEmptyString(result.Content, result.Title), 250)
-		if abstract == "" {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("%d. %.0f%% %s", index+1, result.Score*100, abstract))
-	}
-	if len(lines) == 0 {
-		state.guidance = buildNowledgeGuidanceText(state.workingMemoryInjected, state.recalledInjected)
-		return state, nil
-	}
-	state.segments = append(state.segments, PromptSegment{
-		Name:          "hook.before.nowledge.recalled_memories",
-		Target:        PromptTargetRuntimeTail,
-		Role:          "user",
-		Text:          "<system_recalled_memories>\n以下是从历史对话中检索到的参考片段，仅供上下文参考\n" + strings.Join(lines, "\n") + "\n</system_recalled_memories>",
-		Stability:     PromptStabilityVolatileTail,
-		CacheEligible: false,
-	})
-	state.recalledInjected = true
-	state.guidance = buildNowledgeGuidanceText(state.workingMemoryInjected, state.recalledInjected)
+	state.guidance = buildNowledgeGuidanceText(state.workingMemoryInjected)
 	return state, nil
 }
 
@@ -361,57 +307,6 @@ func buildNowledgeSnapshotQueries(delta ThreadDelta) map[string][]string {
 	}
 }
 
-func buildNowledgeRecallQuery(rc *RunContext) string {
-	if rc == nil {
-		return ""
-	}
-	var latest string
-	for index := len(rc.Messages) - 1; index >= 0; index-- {
-		message := rc.Messages[index]
-		if message.Role != "user" {
-			continue
-		}
-		latest = strings.TrimSpace(nowledgeMessageText(message))
-		if latest != "" {
-			break
-		}
-	}
-	if len([]rune(latest)) < 3 {
-		return ""
-	}
-	if len([]rune(latest)) >= 40 {
-		return latest
-	}
-	window := make([]string, 0, 3)
-	start := len(rc.Messages) - 3
-	if start < 0 {
-		start = 0
-	}
-	for _, msg := range rc.Messages[start:] {
-		if msg.Role != "user" && msg.Role != "assistant" {
-			continue
-		}
-		text := strings.TrimSpace(nowledgeMessageText(msg))
-		if text == "" {
-			continue
-		}
-		window = append(window, text)
-	}
-	return strings.TrimSpace(strings.Join(window, "\n"))
-}
-
-func nowledgeMessageText(message llm.Message) string {
-	parts := make([]string, 0, len(message.Content))
-	for _, part := range llm.VisibleContentParts(message.Content) {
-		text := strings.TrimSpace(llm.PartPromptText(part))
-		if text == "" {
-			continue
-		}
-		parts = append(parts, text)
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
-}
-
 func compactInline(text string, maxRunes int) string {
 	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 	runes := []rune(text)
@@ -419,6 +314,16 @@ func compactInline(text string, maxRunes int) string {
 		return text
 	}
 	return string(runes[:maxRunes]) + "..."
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildNowledgeThreadPayload(delta ThreadDelta) []nowledge.ThreadMessage {
@@ -495,34 +400,17 @@ func buildNowledgeConversation(delta ThreadDelta) string {
 	return strings.Join(lines, "\n\n")
 }
 
-func firstNonEmptyString(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func buildNowledgeGuidanceText(workingMemoryInjected, recalledInjected bool) string {
+func buildNowledgeGuidanceText(workingMemoryInjected bool) string {
 	lines := []string{
 		"你可以访问用户的个人知识图谱（Nowledge Mem）。",
 	}
-	if workingMemoryInjected || recalledInjected {
-		injected := make([]string, 0, 2)
-		if workingMemoryInjected {
-			injected = append(injected, "Working Memory")
-		}
-		if recalledInjected {
-			injected = append(injected, "相关记忆")
-		}
+	if workingMemoryInjected {
 		lines = append(lines,
-			"本轮 prompt 已注入 "+strings.Join(injected, "和")+"；先利用已注入内容回答，只有需要更具体、更新或更广的上下文时再调用 memory_search。",
+			"本轮 prompt 已注入 Working Memory，但不会自动注入相关记忆；需要历史上下文时主动调用 memory_search。",
 		)
 	} else {
 		lines = append(lines,
-			"当问题涉及过往工作、决策、日期、人物、偏好、计划或历史上下文时，主动先用 memory_search 做语义检索，不要等用户点名要求。",
+			"本轮 prompt 不会自动注入相关记忆。当问题涉及过往工作、决策、日期、人物、偏好、计划或历史上下文时，主动先用 memory_search 做语义检索，不要等用户点名要求。",
 		)
 	}
 	lines = append(lines,
