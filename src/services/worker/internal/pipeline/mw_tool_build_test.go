@@ -12,6 +12,7 @@ import (
 	"arkloop/services/worker/internal/llm"
 	"arkloop/services/worker/internal/personas"
 	"arkloop/services/worker/internal/pipeline"
+	"arkloop/services/worker/internal/routing"
 	"arkloop/services/worker/internal/tools"
 	"arkloop/services/worker/internal/tools/builtin"
 	loadskill "arkloop/services/worker/internal/tools/builtin/load_skill"
@@ -375,6 +376,56 @@ func TestToolBuildMiddleware_KeepsUserProviderTool(t *testing.T) {
 	}
 }
 
+func TestToolBuildMiddleware_DoesNotExposeRemoteURLForUnconfiguredReadBridge(t *testing.T) {
+	registry := tools.NewRegistry()
+	if err := registry.Register(readtool.AgentSpec); err != nil {
+		t.Fatalf("register read: %v", err)
+	}
+	if err := registry.Register(readtool.AgentSpecMiniMax); err != nil {
+		t.Fatalf("register read minimax: %v", err)
+	}
+
+	rc := &pipeline.RunContext{
+		Run: data.Run{
+			ID: uuid.New(),
+		},
+		Emitter:                   events.NewEmitter("test"),
+		ToolRegistry:              registry,
+		ToolExecutors:             map[string]tools.Executor{readtool.AgentSpec.Name: readtool.NewToolExecutor()},
+		AllowlistSet:              map[string]struct{}{"read": {}},
+		ActiveToolProviderByGroup: map[string]string{"read": readtool.ProviderNameMiniMax},
+		SelectedRoute: &routing.SelectedProviderRoute{
+			Route: routing.ProviderRouteRule{
+				AdvancedJSON: map[string]any{
+					"available_catalog": map[string]any{
+						"input_modalities": []string{"text", "image"},
+					},
+				},
+			},
+		},
+		ToolSpecs: []llm.ToolSpec{readtool.LlmSpec},
+		Runtime:   &sharedtoolruntime.RuntimeSnapshot{},
+	}
+
+	mw := pipeline.NewToolBuildMiddleware()
+	h := pipeline.Build([]pipeline.RunMiddleware{mw}, func(_ context.Context, rc *pipeline.RunContext) error {
+		readSpec, ok := findSpecByName(rc.FinalSpecs, "read")
+		if !ok {
+			t.Fatal("expected read spec")
+		}
+		source := schemaNestedObject(readSpec.JSONSchema, "properties", "source")
+		kind := schemaNestedObject(source, "properties", "kind")
+		if enumHas(kind["enum"], "remote_url") {
+			t.Fatalf("did not expect remote_url when read bridge executor is unavailable: %#v", kind["enum"])
+		}
+		return nil
+	})
+
+	if err := h(context.Background(), rc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestToolBuildMiddleware_BindsBasicSearchProvider(t *testing.T) {
 	registry := tools.NewRegistry()
 	if err := registry.Register(tools.AgentToolSpec{
@@ -636,6 +687,45 @@ func hasToolSpecName(specs []llm.ToolSpec, name string) bool {
 	for _, spec := range specs {
 		if spec.Name == name {
 			return true
+		}
+	}
+	return false
+}
+
+func findSpecByName(specs []llm.ToolSpec, name string) (llm.ToolSpec, bool) {
+	for _, spec := range specs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return llm.ToolSpec{}, false
+}
+
+func schemaNestedObject(root map[string]any, keys ...string) map[string]any {
+	current := root
+	for _, key := range keys {
+		next, ok := current[key].(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
+}
+
+func enumHas(raw any, want string) bool {
+	switch values := raw.(type) {
+	case []any:
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+	case []string:
+		for _, value := range values {
+			if value == want {
+				return true
+			}
 		}
 	}
 	return false

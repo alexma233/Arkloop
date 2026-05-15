@@ -116,7 +116,7 @@ func NewToolBuildMiddleware() RunMiddleware {
 
 		allSpecs := FilterToolSpecs(rc.ToolSpecs, filteredAllowlist, rc.ToolRegistry)
 		allSpecs = applyProviderOwnedToolSpecs(allSpecs, rc.ActiveToolProviderByGroup)
-		readImageBridgeEnabled := hasImageBridgeProvider(rc.ActiveToolProviderByGroup)
+		readImageBridgeEnabled := hasExecutableImageBridgeProvider(filteredAllowlist, rc.ActiveToolProviderByGroup)
 		nativeImageInput := supportsImageInput(rc.SelectedRoute)
 		allSpecs = ApplyReadImageSourceVisibility(allSpecs, readImageBridgeEnabled, nativeImageInput)
 
@@ -201,6 +201,18 @@ func NewToolBuildMiddleware() RunMiddleware {
 
 		return next(ctx, rc)
 	}
+}
+
+func hasExecutableImageBridgeProvider(allowlist map[string]struct{}, activeByGroup map[string]string) bool {
+	if len(allowlist) == 0 || len(activeByGroup) == 0 {
+		return false
+	}
+	providerName := strings.TrimSpace(activeByGroup[read.GroupName])
+	if providerName == "" {
+		return false
+	}
+	_, ok := allowlist[providerName]
+	return ok
 }
 
 func applyProviderOwnedToolSpecs(specs []llm.ToolSpec, activeByGroup map[string]string) []llm.ToolSpec {

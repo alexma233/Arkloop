@@ -319,12 +319,6 @@ func (e *Executor) executeFilePathImage(
 	if !caps.NativeImageInput && !caps.ImageBridgeEnabled {
 		return imageUnavailableResult(filePath, processedMime, started)
 	}
-	normPath := backend.NormalizePath(filePath)
-	runID := execCtx.RunID.String()
-	if e.Tracker != nil {
-		e.Tracker.RecordReadForRun(runID, normPath)
-		e.Tracker.RecordReadState(runID, normPath, info.ModTime.UnixNano(), 1, 1)
-	}
 
 	if !caps.NativeImageInput {
 		if strings.TrimSpace(parsed.Prompt) == "" {
@@ -337,7 +331,7 @@ func (e *Executor) executeFilePathImage(
 				DurationMs: durationMs(started),
 			}
 		}
-		return e.describeImage(ctx, execCtx, DescribeImageRequest{
+		result := e.describeImage(ctx, execCtx, parsed.TimeoutOverride, DescribeImageRequest{
 			Prompt:   parsed.Prompt,
 			MimeType: processedMime,
 			Bytes:    processed,
@@ -348,8 +342,13 @@ func (e *Executor) executeFilePathImage(
 			"bytes":          len(processed),
 			"original_bytes": len(data),
 		}, started)
+		if result.Error == nil {
+			e.recordFileImageRead(execCtx, backend, filePath, info)
+		}
+		return result
 	}
 
+	e.recordFileImageRead(execCtx, backend, filePath, info)
 	return tools.ExecutionResult{
 		ResultJSON: map[string]any{
 			"source_kind":    string(parsed.Source.Kind),
@@ -364,6 +363,16 @@ func (e *Executor) executeFilePathImage(
 		},
 		DurationMs: durationMs(started),
 	}
+}
+
+func (e *Executor) recordFileImageRead(execCtx tools.ExecutionContext, backend fileops.Backend, filePath string, info fileops.FileInfo) {
+	if e == nil || e.Tracker == nil {
+		return
+	}
+	runID := execCtx.RunID.String()
+	normPath := backend.NormalizePath(filePath)
+	e.Tracker.RecordReadForRun(runID, normPath)
+	e.Tracker.RecordReadState(runID, normPath, info.ModTime.UnixNano(), 1, 1)
 }
 
 func (e *Executor) executeMessageAttachment(
@@ -591,6 +600,7 @@ func imageUnavailableResult(identifier, mimeType string, started time.Time) tool
 func (e *Executor) describeImage(
 	ctx context.Context,
 	execCtx tools.ExecutionContext,
+	timeoutOverride *int,
 	req DescribeImageRequest,
 	result map[string]any,
 	started time.Time,
@@ -599,7 +609,7 @@ func (e *Executor) describeImage(
 	if providerErr != nil {
 		return tools.ExecutionResult{Error: providerErr, DurationMs: durationMs(started)}
 	}
-	timeout := resolveTimeout(e.timeout, execCtx.TimeoutMs, nil)
+	timeout := resolveTimeout(e.timeout, execCtx.TimeoutMs, timeoutOverride)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	description, err := provider.DescribeImage(runCtx, req)

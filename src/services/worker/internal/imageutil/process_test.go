@@ -2,6 +2,8 @@ package imageutil
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -32,6 +34,28 @@ func makePNG(w, h int) []byte {
 	var buf bytes.Buffer
 	_ = png.Encode(&buf, img)
 	return buf.Bytes()
+}
+
+func pngConfigOnly(w, h int) []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	var ihdr bytes.Buffer
+	_ = binary.Write(&ihdr, binary.BigEndian, uint32(w))
+	_ = binary.Write(&ihdr, binary.BigEndian, uint32(h))
+	ihdr.Write([]byte{8, 2, 0, 0, 0})
+	writePNGChunk(&buf, "IHDR", ihdr.Bytes())
+	writePNGChunk(&buf, "IEND", nil)
+	return buf.Bytes()
+}
+
+func writePNGChunk(buf *bytes.Buffer, kind string, data []byte) {
+	_ = binary.Write(buf, binary.BigEndian, uint32(len(data)))
+	buf.WriteString(kind)
+	buf.Write(data)
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write([]byte(kind))
+	_, _ = crc.Write(data)
+	_ = binary.Write(buf, binary.BigEndian, crc.Sum32())
 }
 
 func TestProcessImage_SmallImagePassthrough(t *testing.T) {
@@ -66,6 +90,13 @@ func TestProcessImage_DecodeFallback(t *testing.T) {
 	}
 	if mime != "image/jpeg" {
 		t.Errorf("mime should be unchanged on decode failure, got %s", mime)
+	}
+}
+
+func TestDecodeImageMimeTypeRejectsHugePixelBudget(t *testing.T) {
+	data := pngConfigOnly(100000, 100000)
+	if _, ok := DecodeImageMimeType(data, "image/png"); ok {
+		t.Fatal("expected huge image dimensions to be rejected before full decode")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"arkloop/services/shared/messagecontent"
 	sharedoutbound "arkloop/services/shared/outboundurl"
@@ -23,13 +24,17 @@ import (
 )
 
 type fakeProvider struct {
-	resp DescribeImageResponse
-	err  error
-	req  DescribeImageRequest
+	resp          DescribeImageResponse
+	err           error
+	req           DescribeImageRequest
+	deadlineDelta time.Duration
 }
 
-func (p *fakeProvider) DescribeImage(_ context.Context, req DescribeImageRequest) (DescribeImageResponse, error) {
+func (p *fakeProvider) DescribeImage(ctx context.Context, req DescribeImageRequest) (DescribeImageResponse, error) {
 	p.req = req
+	if deadline, ok := ctx.Deadline(); ok {
+		p.deadlineDelta = time.Until(deadline)
+	}
 	if p.err != nil {
 		return DescribeImageResponse{}, p.err
 	}
@@ -227,6 +232,67 @@ func TestReadFilePathImageSourceBridgeReturnsTextOnly(t *testing.T) {
 	}
 	if len(result.ContentParts) != 0 {
 		t.Fatalf("bridge-only file image must not attach image parts, got %d", len(result.ContentParts))
+	}
+}
+
+func TestReadFilePathImageSourceBridgeHonorsTimeoutOverride(t *testing.T) {
+	provider := &fakeProvider{
+		resp: DescribeImageResponse{Text: "image text", Provider: "minimax", Model: "vl"},
+	}
+	executor := NewToolExecutorWithProvider(provider)
+
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, "sample.png")
+	if err := os.WriteFile(path, testPNGBytes(t), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	rc := &fakePipelineRunContextWithCaps{
+		ReadCapabilities: fakeReadCapabilities{NativeImageInput: false, ImageBridgeEnabled: true},
+	}
+
+	result := executor.Execute(context.Background(), "read", map[string]any{
+		"source": map[string]any{
+			"kind":      "file_path",
+			"file_path": "sample.png",
+		},
+		"prompt":     "describe",
+		"timeout_ms": 50,
+	}, tools.ExecutionContext{RunID: uuid.New(), WorkDir: workDir, PipelineRC: rc}, "")
+
+	if result.Error != nil {
+		t.Fatalf("unexpected error: %+v", result.Error)
+	}
+	if provider.deadlineDelta <= 0 || provider.deadlineDelta > time.Second {
+		t.Fatalf("expected provider deadline to use timeout override, got %s", provider.deadlineDelta)
+	}
+}
+
+func TestReadFilePathImageSourceBridgePromptErrorDoesNotRecordRead(t *testing.T) {
+	tracker := fileops.NewFileTracker()
+	executor := NewToolExecutorWithTracker(tracker)
+
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, "sample.png")
+	if err := os.WriteFile(path, testPNGBytes(t), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	runID := uuid.New()
+	rc := &fakePipelineRunContextWithCaps{
+		ReadCapabilities: fakeReadCapabilities{NativeImageInput: false, ImageBridgeEnabled: true},
+	}
+
+	result := executor.Execute(context.Background(), "read", map[string]any{
+		"source": map[string]any{
+			"kind":      "file_path",
+			"file_path": "sample.png",
+		},
+	}, tools.ExecutionContext{RunID: runID, WorkDir: workDir, PipelineRC: rc}, "")
+
+	if result.Error == nil {
+		t.Fatal("expected prompt error")
+	}
+	if tracker.HasBeenReadForRun(runID.String(), fileops.TrackingKey(workDir, "./sample.png")) {
+		t.Fatal("failed bridge read should not mark file as read")
 	}
 }
 

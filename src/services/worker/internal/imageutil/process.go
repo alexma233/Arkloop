@@ -15,6 +15,7 @@ import (
 const (
 	maxPromptImageDimension = 2048
 	maxPromptImageBytes     = 1024 * 1024
+	maxPromptSourcePixels   = 25_000_000
 )
 
 var promptImageJPEGSteps = []struct {
@@ -43,8 +44,11 @@ func DecodeImageMimeType(data []byte, fallback string) (string, bool) {
 	if len(data) == 0 {
 		return "", false
 	}
-	_, format, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || !imageConfigWithinBudget(cfg) {
+		return "", false
+	}
+	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
 		return "", false
 	}
 	return mimeTypeForFormat(format, fallback), true
@@ -52,6 +56,11 @@ func DecodeImageMimeType(data []byte, fallback string) (string, bool) {
 
 func processImageForPrompt(data []byte, mimeType string) ([]byte, string) {
 	if len(data) == 0 {
+		return data, mimeType
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || !imageConfigWithinBudget(cfg) {
 		return data, mimeType
 	}
 
@@ -74,6 +83,16 @@ func processImageForPrompt(data []byte, mimeType string) ([]byte, string) {
 		return data, mimeType
 	}
 	return out, outMime
+}
+
+func imageConfigWithinBudget(cfg image.Config) bool {
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return false
+	}
+	if cfg.Width > maxPromptSourcePixels/cfg.Height {
+		return false
+	}
+	return cfg.Width*cfg.Height <= maxPromptSourcePixels
 }
 
 func fitsPromptDimensions(img image.Image) bool {
