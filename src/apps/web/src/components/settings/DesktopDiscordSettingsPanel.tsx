@@ -364,48 +364,38 @@ export function DesktopDiscordSettingsPanel({
               />
             </ChannelDetailRow>
 
-            <div className="md:col-span-2">
-              <div
-                className="relative px-5 py-4"
-                style={{ border: '0.5px solid var(--c-border-subtle)', background: 'var(--c-bg-page)' }}
-              >
-                <div className="mb-4">
-                  <div className="text-sm font-medium text-[var(--c-text-heading)]">{ct.accessControl}</div>
-                </div>
-                <div className={channelRowsCls}>
-                  <div>
-                    <ListField
-                      label={ct.allowedServerIds}
-                      values={allowedServerIDs}
-                      inputValue={allowedServerInput}
-                      placeholder={ct.allowedServerIdsPlaceholder}
-                      addLabel={t.skills.add}
-                      onInputChange={setAllowedServerInput}
-                      onAdd={handleAddServerIDs}
-                      onRemove={(value) => {
-                        setAllowedServerIDs((current) => current.filter((item) => item !== value))
-                        setSaved(false)
-                      }}
-                    />
-                    <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.discordServerIdHint}</p>
-                  </div>
-
-                  <ListField
-                    label={ct.allowedChannelIds}
-                    values={allowedChannelIDs}
-                    inputValue={allowedChannelInput}
-                    placeholder={ct.allowedChannelIdsPlaceholder}
-                    addLabel={t.skills.add}
-                    onInputChange={setAllowedChannelInput}
-                    onAdd={handleAddChannelIDs}
-                    onRemove={(value) => {
-                      setAllowedChannelIDs((current) => current.filter((item) => item !== value))
-                      setSaved(false)
-                    }}
-                  />
-                </div>
+            <ChannelDetailRow label={ct.allowedServerIds}>
+              <div className="w-full">
+                <ListField
+                  values={allowedServerIDs}
+                  inputValue={allowedServerInput}
+                  placeholder={ct.allowedServerIdsPlaceholder}
+                  addLabel={t.skills.add}
+                  onInputChange={setAllowedServerInput}
+                  onAdd={handleAddServerIDs}
+                  onRemove={(value) => {
+                    setAllowedServerIDs((current) => current.filter((item) => item !== value))
+                    setSaved(false)
+                  }}
+                />
+                <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.discordServerIdHint}</p>
               </div>
-            </div>
+            </ChannelDetailRow>
+
+            <ChannelDetailRow label={ct.allowedChannelIds}>
+              <ListField
+                values={allowedChannelIDs}
+                inputValue={allowedChannelInput}
+                placeholder={ct.allowedChannelIdsPlaceholder}
+                addLabel={t.skills.add}
+                onInputChange={setAllowedChannelInput}
+                onAdd={handleAddChannelIDs}
+                onRemove={(value) => {
+                  setAllowedChannelIDs((current) => current.filter((item) => item !== value))
+                  setSaved(false)
+                }}
+              />
+            </ChannelDetailRow>
           </div>
         </div>
       </div>

@@ -274,7 +274,7 @@ describe('DesktopSettings', () => {
 })
 
 describe('DesktopChannelsSettings', () => {
-  it('父页支持 Telegram / Discord 切换并显示 Discord 访问控制字段', async () => {
+  it('父页支持 Telegram / Discord 切换并显示 Discord 允许列表字段', async () => {
     const { api, DesktopChannelsSettings, LocaleProvider } = await loadChannelsSubject()
     vi.mocked(api.listChannels).mockResolvedValue([
       {
@@ -350,7 +350,6 @@ describe('DesktopChannelsSettings', () => {
     })
     await flushEffects()
 
-    expect(document.body.textContent).toContain('访问控制')
     expect(document.body.textContent).toContain('允许的 Server ID')
     expect(document.body.textContent).toContain('允许的 Channel ID')
   })

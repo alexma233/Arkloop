@@ -319,10 +319,7 @@ export function DesktopQQBotSettingsPanel({
                 <SettingsSwitch checked={enabled} onChange={(next) => { setEnabled(next); setSaved(false) }} />
               </div>
             </ChannelDetailRow>
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium text-[var(--c-text-secondary)]">
-                {ct.qqBotAppID}
-              </label>
+            <ChannelDetailRow label={ct.qqBotAppID}>
               <input
                 type="text"
                 value={appID}
@@ -334,26 +331,24 @@ export function DesktopQQBotSettingsPanel({
                 disabled={saving}
                 className={inputCls}
               />
-            </div>
+            </ChannelDetailRow>
 
-            <TokenField
-              label={ct.qqBotClientSecret}
-              value={clientSecretDraft}
-              placeholder={
-                credentialConfigured && !clientSecretDraft
-                  ? ct.tokenAlreadyConfigured
-                  : ct.qqBotClientSecretPlaceholder
-              }
-              onChange={(value) => {
-                setClientSecretDraft(value)
-                setSaved(false)
-              }}
-            />
+            <ChannelDetailRow label={ct.qqBotClientSecret}>
+              <TokenField
+                value={clientSecretDraft}
+                placeholder={
+                  credentialConfigured && !clientSecretDraft
+                    ? ct.tokenAlreadyConfigured
+                    : ct.qqBotClientSecretPlaceholder
+                }
+                onChange={(value) => {
+                  setClientSecretDraft(value)
+                  setSaved(false)
+                }}
+              />
+            </ChannelDetailRow>
 
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium text-[var(--c-text-secondary)]">
-                {ct.persona}
-              </label>
+            <ChannelDetailRow label={ct.persona}>
               <ModelDropdown
                 value={personaID}
                 options={personaOptions}
@@ -364,11 +359,10 @@ export function DesktopQQBotSettingsPanel({
                   setSaved(false)
                 }}
               />
-            </div>
+            </ChannelDetailRow>
 
-            <div className="md:col-span-2">
+            <ChannelDetailRow label={ct.qqBotAllowedUsers}>
               <ListField
-                label={ct.qqBotAllowedUsers}
                 values={allowedUserIDs}
                 inputValue={allowedUserInput}
                 placeholder={ct.qqBotAllowedUsersPlaceholder}
@@ -380,11 +374,10 @@ export function DesktopQQBotSettingsPanel({
                   setSaved(false)
                 }}
               />
-            </div>
+            </ChannelDetailRow>
 
-            <div className="md:col-span-2">
+            <ChannelDetailRow label={ct.qqBotAllowedGroups}>
               <ListField
-                label={ct.qqBotAllowedGroups}
                 values={allowedGroupIDs}
                 inputValue={allowedGroupInput}
                 placeholder={ct.qqBotAllowedGroupsPlaceholder}
@@ -396,7 +389,7 @@ export function DesktopQQBotSettingsPanel({
                   setSaved(false)
                 }}
               />
-            </div>
+            </ChannelDetailRow>
           </div>
         </div>
       </div>

@@ -21,7 +21,7 @@ export const primaryButtonCls =
   'inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6.5px] bg-[var(--c-btn-bg)] px-3.5 text-sm font-[450] text-[var(--c-btn-text)] transition-[box-shadow] duration-150 hover:[box-shadow:inset_0_0_0_999px_rgba(255,255,255,0.07),0_0_0_0.2px_var(--c-btn-bg)] active:[box-shadow:inset_0_0_0_999px_rgba(0,0,0,0.04)] disabled:cursor-not-allowed disabled:opacity-40'
 
 export const channelRowsCls =
-  "flex flex-col [&>*]:relative [&>*]:grid [&>*]:items-center [&>*]:gap-3 [&>*]:px-5 [&>*]:py-4 [&>*]:sm:grid-cols-[minmax(0,1fr)_minmax(260px,390px)] [&>*]:sm:gap-6 [&>*+*]:before:absolute [&>*+*]:before:left-5 [&>*+*]:before:right-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-[var(--c-border-subtle)] [&>*+*]:before:content-[''] [&_label]:mb-0 [&_label]:text-[13px] [&_label]:font-medium [&_label]:text-[var(--c-text-primary)]"
+  "flex flex-col [&>*]:relative [&>*]:grid [&>*]:items-center [&>*]:gap-3 [&>*]:px-5 [&>*]:py-4 [&>*]:sm:grid-cols-[minmax(120px,1fr)_minmax(0,330px)] [&>*]:sm:gap-5 [&>*+*]:before:absolute [&>*+*]:before:left-5 [&>*+*]:before:right-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-[var(--c-border-subtle)] [&>*+*]:before:content-[''] [&_label]:mb-0 [&_label]:text-[13px] [&_label]:font-medium [&_label]:text-[var(--c-text-primary)]"
 
 export function ChannelDetailRow({
   label,
@@ -33,7 +33,7 @@ export function ChannelDetailRow({
   return (
     <div>
       <div className="min-w-0 text-[13px] font-medium text-[var(--c-text-primary)]">{label}</div>
-      <div className="min-w-0 sm:justify-self-end sm:w-full">{children}</div>
+      <div className="min-w-0 sm:flex sm:w-full sm:flex-col sm:items-end">{children}</div>
     </div>
   )
 }
@@ -167,7 +167,7 @@ export function ListField({
   onAdd,
   onRemove,
 }: {
-  label: string
+  label?: string
   values: string[]
   inputValue: string
   placeholder: string
@@ -177,10 +177,12 @@ export function ListField({
   onRemove: (value: string) => void
 }) {
   return (
-    <div className="md:col-span-2">
-      <label className="mb-1.5 block text-[13px] font-medium text-[var(--c-text-primary)]">
-        {label}
-      </label>
+    <div className="w-full md:col-span-2">
+      {label && (
+        <label className="mb-1.5 block text-[13px] font-medium text-[var(--c-text-primary)]">
+          {label}
+        </label>
+      )}
       {values.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {values.map((item) => (
@@ -214,7 +216,7 @@ export function ListField({
             }
           }}
           placeholder={placeholder}
-          className={inputCls}
+          className={settingsInputCls('sm')}
         />
         <button
           type="button"
@@ -555,7 +557,7 @@ export function TokenField({
   const [showToken, setShowToken] = useState(false)
 
   return (
-    <div className="md:col-span-2">
+    <div className="w-full md:col-span-2">
       {label && (
         <label className="mb-1.5 block text-[13px] font-medium text-[var(--c-text-primary)]">
           {label}
@@ -567,7 +569,7 @@ export function TokenField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className={inputCls}
+          className={`${inputCls} pr-10`}
         />
         <button
           type="button"

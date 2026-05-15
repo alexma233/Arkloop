@@ -369,7 +369,7 @@ export function DesktopTelegramSettingsPanel({
             </ChannelDetailRow>
 
             <ChannelDetailRow label={ct.telegramPrivateChatAccess}>
-              <div>
+              <div className="flex w-full flex-col items-end">
                 <ModelDropdown
                   value={privateRestrict ? 'restrict' : 'all'}
                   options={[
@@ -383,7 +383,7 @@ export function DesktopTelegramSettingsPanel({
                   }}
                 />
                 {privateRestrict && (
-                  <div className="mt-3">
+                  <div className="mt-3 w-full">
                     <ListField
                       label={ct.allowedUsers}
                       values={privateIDs}
@@ -413,7 +413,7 @@ export function DesktopTelegramSettingsPanel({
             </ChannelDetailRow>
 
             <ChannelDetailRow label={ct.telegramGroupChatAccess}>
-              <div>
+              <div className="flex w-full flex-col items-end">
                 <ModelDropdown
                   value={groupRestrict ? 'restrict' : 'all'}
                   options={[
@@ -427,7 +427,7 @@ export function DesktopTelegramSettingsPanel({
                   }}
                 />
                 {groupRestrict && (
-                  <div className="mt-3">
+                  <div className="mt-3 w-full">
                     <ListField
                       label={ct.telegramAllowedGroupsLabel}
                       values={groupIDs}

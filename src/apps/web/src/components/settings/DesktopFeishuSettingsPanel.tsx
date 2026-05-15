@@ -354,67 +354,62 @@ export function DesktopFeishuSettingsPanel({
               />
             </div>
 
-            <div
-              className="md:col-span-2 relative px-5 py-4"
-              style={{ border: '0.5px solid var(--c-border-subtle)', background: 'var(--c-bg-page)' }}
-            >
-              <div className="mb-4 text-sm font-medium text-[var(--c-text-heading)]">{ct.accessControl}</div>
-              <div className={channelRowsCls}>
-                <ListField
-                  label={ct.feishuAllowedUsers}
-                  values={allowedUserIDs}
-                  inputValue={allowedUserInput}
-                  placeholder={ct.feishuAllowedUsersPlaceholder}
-                  addLabel={t.skills.add}
-                  onInputChange={setAllowedUserInput}
-                  onAdd={() => {
-                    setAllowedUserIDs(mergeListValues(allowedUserIDs, allowedUserInput))
-                    setAllowedUserInput('')
-                    setSaved(false)
-                  }}
-                  onRemove={(value) => {
-                    setAllowedUserIDs((current) => current.filter((item) => item !== value))
-                    setSaved(false)
-                  }}
-                />
+            <ChannelDetailRow label={ct.feishuAllowedUsers}>
+              <ListField
+                values={allowedUserIDs}
+                inputValue={allowedUserInput}
+                placeholder={ct.feishuAllowedUsersPlaceholder}
+                addLabel={t.skills.add}
+                onInputChange={setAllowedUserInput}
+                onAdd={() => {
+                  setAllowedUserIDs(mergeListValues(allowedUserIDs, allowedUserInput))
+                  setAllowedUserInput('')
+                  setSaved(false)
+                }}
+                onRemove={(value) => {
+                  setAllowedUserIDs((current) => current.filter((item) => item !== value))
+                  setSaved(false)
+                }}
+              />
+            </ChannelDetailRow>
 
-                <ListField
-                  label={ct.feishuAllowedChats}
-                  values={allowedChatIDs}
-                  inputValue={allowedChatInput}
-                  placeholder={ct.feishuAllowedChatsPlaceholder}
-                  addLabel={t.skills.add}
-                  onInputChange={setAllowedChatInput}
-                  onAdd={() => {
-                    setAllowedChatIDs(mergeListValues(allowedChatIDs, allowedChatInput))
-                    setAllowedChatInput('')
-                    setSaved(false)
-                  }}
-                  onRemove={(value) => {
-                    setAllowedChatIDs((current) => current.filter((item) => item !== value))
-                    setSaved(false)
-                  }}
-                />
+            <ChannelDetailRow label={ct.feishuAllowedChats}>
+              <ListField
+                values={allowedChatIDs}
+                inputValue={allowedChatInput}
+                placeholder={ct.feishuAllowedChatsPlaceholder}
+                addLabel={t.skills.add}
+                onInputChange={setAllowedChatInput}
+                onAdd={() => {
+                  setAllowedChatIDs(mergeListValues(allowedChatIDs, allowedChatInput))
+                  setAllowedChatInput('')
+                  setSaved(false)
+                }}
+                onRemove={(value) => {
+                  setAllowedChatIDs((current) => current.filter((item) => item !== value))
+                  setSaved(false)
+                }}
+              />
+            </ChannelDetailRow>
 
-                <ListField
-                  label={ct.feishuTriggerKeywords}
-                  values={triggerKeywords}
-                  inputValue={triggerKeywordInput}
-                  placeholder={ct.feishuTriggerKeywordsPlaceholder}
-                  addLabel={t.skills.add}
-                  onInputChange={setTriggerKeywordInput}
-                  onAdd={() => {
-                    setTriggerKeywords(mergeListValues(triggerKeywords, triggerKeywordInput).map((item) => item.toLowerCase()))
-                    setTriggerKeywordInput('')
-                    setSaved(false)
-                  }}
-                  onRemove={(value) => {
-                    setTriggerKeywords((current) => current.filter((item) => item !== value))
-                    setSaved(false)
-                  }}
-                />
-              </div>
-            </div>
+            <ChannelDetailRow label={ct.feishuTriggerKeywords}>
+              <ListField
+                values={triggerKeywords}
+                inputValue={triggerKeywordInput}
+                placeholder={ct.feishuTriggerKeywordsPlaceholder}
+                addLabel={t.skills.add}
+                onInputChange={setTriggerKeywordInput}
+                onAdd={() => {
+                  setTriggerKeywords(mergeListValues(triggerKeywords, triggerKeywordInput).map((item) => item.toLowerCase()))
+                  setTriggerKeywordInput('')
+                  setSaved(false)
+                }}
+                onRemove={(value) => {
+                  setTriggerKeywords((current) => current.filter((item) => item !== value))
+                  setSaved(false)
+                }}
+              />
+            </ChannelDetailRow>
           </div>
         </div>
       </div>

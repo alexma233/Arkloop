@@ -407,12 +407,7 @@ export function DesktopWeixinSettingsPanel({
                 <SettingsSwitch checked={enabled} onChange={(next) => { setEnabled(next); setSaved(false) }} />
               </div>
             </ChannelDetailRow>
-            {/* QR Code Login */}
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium text-[var(--c-text-secondary)]">
-                {ct.botToken}
-              </label>
-
+            <ChannelDetailRow label={ct.botToken}>
               {channelHasToken && !botToken ? (
                 <div className="flex items-center gap-3">
                   <span
@@ -505,12 +500,10 @@ export function DesktopWeixinSettingsPanel({
                   <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.weixinBotTokenHint}</p>
                 </div>
               )}
-            </div>
+            </ChannelDetailRow>
 
-            {/* Private chat access */}
-            <div className="md:col-span-2">
-              <div className="text-sm font-medium text-[var(--c-text-heading)]">{ct.telegramPrivateChatAccess}</div>
-              <div className="mt-3">
+            <ChannelDetailRow label={ct.telegramPrivateChatAccess}>
+              <div className="flex w-full flex-col items-end">
                 <ModelDropdown
                   value={privateRestrict ? 'restrict' : 'all'}
                   options={[
@@ -523,31 +516,29 @@ export function DesktopWeixinSettingsPanel({
                     setSaved(false)
                   }}
                 />
+                {privateRestrict && (
+                  <div className="mt-3 w-full">
+                    <ListField
+                      label={ct.allowedUsers}
+                      values={privateIDs}
+                      inputValue={privateInput}
+                      placeholder={ct.allowedUsersPlaceholder}
+                      addLabel={t.skills.add}
+                      onInputChange={setPrivateInput}
+                      onAdd={handleAddPrivate}
+                      onRemove={(value) => {
+                        setPrivateIDs((current) => current.filter((item) => item !== value))
+                        setSaved(false)
+                      }}
+                    />
+                    <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.weixinAllowedUsersHint}</p>
+                  </div>
+                )}
               </div>
-              {privateRestrict && (
-                <div className="mt-3">
-                  <ListField
-                    label={ct.allowedUsers}
-                    values={privateIDs}
-                    inputValue={privateInput}
-                    placeholder={ct.allowedUsersPlaceholder}
-                    addLabel={t.skills.add}
-                    onInputChange={setPrivateInput}
-                    onAdd={handleAddPrivate}
-                    onRemove={(value) => {
-                      setPrivateIDs((current) => current.filter((item) => item !== value))
-                      setSaved(false)
-                    }}
-                  />
-                  <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.weixinAllowedUsersHint}</p>
-                </div>
-              )}
-            </div>
+            </ChannelDetailRow>
 
-            {/* Group chat access */}
-            <div className="md:col-span-2">
-              <div className="text-sm font-medium text-[var(--c-text-heading)]">{ct.telegramGroupChatAccess}</div>
-              <div className="mt-3">
+            <ChannelDetailRow label={ct.telegramGroupChatAccess}>
+              <div className="flex w-full flex-col items-end">
                 <ModelDropdown
                   value={groupRestrict ? 'restrict' : 'all'}
                   options={[
@@ -560,32 +551,28 @@ export function DesktopWeixinSettingsPanel({
                     setSaved(false)
                   }}
                 />
+                {groupRestrict && (
+                  <div className="mt-3 w-full">
+                    <ListField
+                      label={ct.telegramAllowedGroupsLabel}
+                      values={groupIDs}
+                      inputValue={groupInput}
+                      placeholder={ct.telegramAllowedGroupsPlaceholder}
+                      addLabel={t.skills.add}
+                      onInputChange={setGroupInput}
+                      onAdd={handleAddGroup}
+                      onRemove={(value) => {
+                        setGroupIDs((current) => current.filter((item) => item !== value))
+                        setSaved(false)
+                      }}
+                    />
+                    <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.weixinAllowedGroupsHint}</p>
+                  </div>
+                )}
               </div>
-              {groupRestrict && (
-                <div className="mt-3">
-                  <ListField
-                    label={ct.telegramAllowedGroupsLabel}
-                    values={groupIDs}
-                    inputValue={groupInput}
-                    placeholder={ct.telegramAllowedGroupsPlaceholder}
-                    addLabel={t.skills.add}
-                    onInputChange={setGroupInput}
-                    onAdd={handleAddGroup}
-                    onRemove={(value) => {
-                      setGroupIDs((current) => current.filter((item) => item !== value))
-                      setSaved(false)
-                    }}
-                  />
-                  <p className="mt-1.5 text-xs text-[var(--c-text-muted)]">{ct.weixinAllowedGroupsHint}</p>
-                </div>
-              )}
-            </div>
+            </ChannelDetailRow>
 
-            {/* Persona */}
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium text-[var(--c-text-secondary)]">
-                {ct.persona}
-              </label>
+            <ChannelDetailRow label={ct.persona}>
               <ModelDropdown
                 value={personaID}
                 options={personaOptions}
@@ -596,7 +583,7 @@ export function DesktopWeixinSettingsPanel({
                   setSaved(false)
                 }}
               />
-            </div>
+            </ChannelDetailRow>
 
           </div>
         </div>

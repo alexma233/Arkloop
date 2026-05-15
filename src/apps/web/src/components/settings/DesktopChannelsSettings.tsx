@@ -286,7 +286,7 @@ export function DesktopChannelsSettings({ accessToken }: Props) {
           open
           title={selectedItem.label}
           onClose={() => setActiveTab(null)}
-          width={760}
+          width={640}
         >
           <div className="mt-6 max-h-[min(78vh,820px)] overflow-y-auto pr-1">
             {detailPanel}

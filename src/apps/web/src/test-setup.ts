@@ -1,3 +1,40 @@
+import React from 'react'
+import { vi } from 'vitest'
+
+// jsdom 不模拟 layout，Virtuoso 真实实现下视口高度为 0 不会渲染任何 item。
+// 测试关心的是消息渲染结果，不是虚拟化行为本身，因此 mock 成全量渲染的简单 stub。
+vi.mock('react-virtuoso', () => {
+  type StubProps = {
+    data?: readonly unknown[]
+    itemContent?: (idx: number, item: unknown) => React.ReactNode
+    computeItemKey?: (idx: number, item: unknown) => React.Key
+  }
+  const Virtuoso = React.forwardRef<unknown, StubProps>(function VirtuosoStub(
+    { data, itemContent, computeItemKey },
+    ref,
+  ) {
+    React.useImperativeHandle(ref, () => ({
+      scrollToIndex: () => {},
+      scrollIntoView: () => {},
+      scrollTo: () => {},
+      scrollBy: () => {},
+    }))
+    if (!data || !itemContent) return null
+    return React.createElement(
+      React.Fragment,
+      null,
+      data.map((item, idx) =>
+        React.createElement(
+          React.Fragment,
+          { key: computeItemKey ? computeItemKey(idx, item) : idx },
+          itemContent(idx, item),
+        ),
+      ),
+    )
+  })
+  return { Virtuoso }
+})
+
 // jsdom 未实现 Blob URL；ArtifactIframe 等依赖此方法。
 if (typeof URL.createObjectURL !== 'function') {
   Object.defineProperty(URL, 'createObjectURL', {
