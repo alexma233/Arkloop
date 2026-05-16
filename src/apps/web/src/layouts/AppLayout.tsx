@@ -409,9 +409,8 @@ export function AppLayout() {
     (appUpdateState?.phase === 'available' ||
       appUpdateState?.phase === 'downloaded')
   const collapseWorkSidebar = desktop && activeAppMode === 'work' && sidebarCollapsed
-  const mainContentAxisPaddingLeft = desktop && sidebarCollapsed && activeAppMode === 'work'
-    ? `${SIDEBAR_COLLAPSED_WIDTH / 2}px`
-    : '0px'
+  const keepWorkSidebarLayoutWidth = desktop && activeAppMode === 'work'
+  const mainContentAxisPaddingLeft = '0px'
   const mainContentAxisPaddingRight = desktop && sidebarCollapsed && activeAppMode !== 'work'
     ? `${SIDEBAR_COLLAPSED_WIDTH / 2}px`
     : '0px'
@@ -468,7 +467,7 @@ export function AppLayout() {
                 visibility: collapsedSidebarEnterVisible ? 'hidden' : undefined,
               }}
             >
-              <div style={{ width: collapseWorkSidebar ? sidebarWidth : '100%', height: '100%' }}>
+              <div style={{ width: keepWorkSidebarLayoutWidth ? sidebarWidth : '100%', height: '100%' }}>
                 <Sidebar
                   threads={filteredThreads}
                   onNewThread={handleNewThread}
@@ -477,15 +476,20 @@ export function AppLayout() {
                   beforeNavigateToThread={handleBeforeNavigateToThread}
                 />
               </div>
-              {!sidebarCollapsed && (
-                <div
-                  role="separator"
-                  aria-orientation="vertical"
-                  title="Resize history"
-                  onPointerDown={handleSidebarResizeStart}
-                  className="absolute inset-y-0 right-0 z-20 w-2 cursor-col-resize"
-                />
-              )}
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 z-10 bg-[var(--c-border)]"
+                style={{ width: '0.5px' }}
+              />
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                title="Resize history"
+                onPointerDown={sidebarCollapsed ? undefined : handleSidebarResizeStart}
+                className={[
+                  'absolute inset-y-0 right-0 z-20 w-2',
+                  sidebarCollapsed ? 'pointer-events-none' : 'cursor-col-resize',
+                ].join(' ')}
+              />
             </div>
           )}
 

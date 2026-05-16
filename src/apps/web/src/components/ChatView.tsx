@@ -234,8 +234,15 @@ function resourcePanelIcon(resource: ResourceRef) {
   return undefined
 }
 
+function sameBrowserResource(left: BrowserResourceRef | null, right: BrowserResourceRef): boolean {
+  return left?.url === right.url
+    && left?.title === right.title
+    && left?.faviconUrl === right.faviconUrl
+}
+
 function clampRightPanelWidth(width: number, containerWidth: number): number {
-  const maxWidth = Math.max(rightPanelMinWidth, containerWidth - chatViewMinWidth)
+  const maxWidth = Math.max(0, containerWidth - chatViewMinWidth)
+  if (maxWidth <= rightPanelMinWidth) return maxWidth
   return Math.min(Math.max(width, rightPanelMinWidth), maxWidth)
 }
 
@@ -892,7 +899,10 @@ export const ChatView = memo(function ChatView() {
   const learningModeRequestSeqRef = useRef(0)
   const [rightPanelVisible, setRightPanelVisible] = useState(false)
   const chatViewRootRef = useRef<HTMLDivElement>(null)
+  const rightPanelShellRef = useRef<HTMLDivElement>(null)
+  const rightPanelContentRef = useRef<HTMLDivElement>(null)
   const rightPanelRatioRef = useRef(0)
+  const [rightPanelResizing, setRightPanelResizing] = useState(false)
   const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelMinWidth)
   const [rightPanelTabs, setRightPanelTabs] = useState<RightPanelStoredTab[]>([])
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null)
@@ -2468,25 +2478,49 @@ export const ChatView = memo(function ChatView() {
     event.preventDefault()
     const root = chatViewRootRef.current
     if (!root) return
+    setRightPanelResizing(true)
     const pointerId = event.pointerId
     event.currentTarget.setPointerCapture(pointerId)
     const rect = root.getBoundingClientRect()
+    const shell = rightPanelShellRef.current
+    const content = rightPanelContentRef.current
+    let frame = 0
+    let nextWidth = rightPanelWidth
+
+    if (shell) shell.style.transition = 'none'
+    if (content) content.style.transition = 'none'
+
+    const applyWidth = () => {
+      frame = 0
+      if (shell) shell.style.width = `${nextWidth}px`
+      if (content) content.style.width = `${nextWidth}px`
+    }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const next = clampRightPanelWidth(rect.right - moveEvent.clientX, rect.width)
-      rightPanelRatioRef.current = next / Math.max(rect.width, 1)
-      setRightPanelWidth(next)
+      nextWidth = clampRightPanelWidth(rect.right - moveEvent.clientX, rect.width)
+      rightPanelRatioRef.current = nextWidth / Math.max(rect.width, 1)
+      if (frame === 0) frame = requestAnimationFrame(applyWidth)
     }
     const stopResize = () => {
+      if (frame !== 0) {
+        cancelAnimationFrame(frame)
+        applyWidth()
+      }
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', stopResize)
       window.removeEventListener('pointercancel', stopResize)
+      setRightPanelWidth(nextWidth)
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (shell) shell.style.transition = ''
+        if (content) content.style.transition = ''
+        setRightPanelResizing(false)
+      }))
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', stopResize)
     window.addEventListener('pointercancel', stopResize)
-  }, [])
+  }, [rightPanelWidth])
 
   const upsertRightPanelTab = useCallback((tab: RightPanelStoredTab) => {
     setRightPanelTabs((current) => {
@@ -2545,12 +2579,12 @@ export const ChatView = memo(function ChatView() {
     const activeId = effectiveRightPanelTabIdRef.current
     if (activeId?.startsWith('web:')) {
       setExtraBrowserTabs((current) => current.map((tab) => (
-        tab.id === activeId ? { ...tab, resource } : tab
+        tab.id === activeId && !sameBrowserResource(tab.resource, resource) ? { ...tab, resource } : tab
       )))
       setActiveRightPanelTabId(activeId)
       return
     }
-    setWebPanelResource(resource)
+    setWebPanelResource((current) => sameBrowserResource(current, resource) ? current : resource)
     setActiveRightPanelTabId('web')
   }, [])
 
@@ -2695,6 +2729,17 @@ export const ChatView = memo(function ChatView() {
     }
   }, [accessToken, closeRightPanelTab, handleBuildPlan, onOpenSettings, resolvedMessageSources, workPanelFolder])
 
+  const handleWebPanelResourceChange = useCallback((resource: ResourceRef) => {
+    if (resource.kind !== 'browser') return
+    setWebPanelResource((current) => sameBrowserResource(current, resource) ? current : resource)
+  }, [])
+
+  const updateExtraBrowserTabResource = useCallback((id: string, resource: BrowserResourceRef) => {
+    setExtraBrowserTabs((current) => current.map((tab) => (
+      tab.id === id && !sameBrowserResource(tab.resource, resource) ? { ...tab, resource } : tab
+    )))
+  }, [])
+
   // Individual tab memos — when only one dep changes, other tabs stay stable.
   // This prevents e.g. adding a document tab from rebuilding the files tab (incl. LocalFileTree).
   const webPanelTab = useMemo<RightPanelTab>(() => ({
@@ -2708,12 +2753,10 @@ export const ChatView = memo(function ChatView() {
       <ResourcePreviewPanel
         resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
         accessToken={accessToken}
-        onResourceChange={(resource) => {
-          if (resource.kind === 'browser') setWebPanelResource(resource)
-        }}
+        onResourceChange={handleWebPanelResourceChange}
       />
     ),
-  }), [webPanelResource, accessToken, t.rightPanel.browser])
+  }), [webPanelResource, accessToken, handleWebPanelResourceChange, t.rightPanel.browser])
 
   const extraBrowserPanelTabs = useMemo<RightPanelTab[]>(() =>
     extraBrowserTabs.map((browserTab) => ({
@@ -2729,14 +2772,12 @@ export const ChatView = memo(function ChatView() {
           accessToken={accessToken}
           onResourceChange={(resource) => {
             if (resource.kind !== 'browser') return
-            setExtraBrowserTabs((current) => current.map((tab) => (
-              tab.id === browserTab.id ? { ...tab, resource } : tab
-            )))
+            updateExtraBrowserTabResource(browserTab.id, resource)
           }}
         />
       ),
     })),
-  [extraBrowserTabs, accessToken, t.rightPanel.browser])
+  [extraBrowserTabs, accessToken, t.rightPanel.browser, updateExtraBrowserTabResource])
 
   const filesPanelTab = useMemo<RightPanelTab | null>(() => {
     if (!workPanelFolder?.trim()) return null
@@ -3572,6 +3613,7 @@ export const ChatView = memo(function ChatView() {
         </div>
 
       <motion.div
+        ref={rightPanelShellRef}
         className="relative flex-shrink-0 overflow-hidden bg-[var(--c-bg-page)]"
         initial={false}
         animate={{
@@ -3579,30 +3621,32 @@ export const ChatView = memo(function ChatView() {
           opacity: isPanelOpen ? 1 : 0,
           pointerEvents: isPanelOpen ? 'auto' : 'none',
         }}
-        transition={rightPanelLayoutTransition}
+        transition={rightPanelResizing ? { duration: 0 } : rightPanelLayoutTransition}
         style={{
           borderLeft: isPanelOpen ? '0.5px solid var(--c-border-subtle)' : 'none',
           willChange: 'width, opacity',
         }}
       >
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          title="Resize"
-          onPointerDown={handleRightPanelResizeStart}
-          className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize"
-        />
-        <RightPanel
-          tabs={rightPanelRenderedTabs}
-          activeTabId={effectiveRightPanelTabId}
-          onSelectTab={setActiveRightPanelTabId}
-          onCloseTab={closeRightPanelTab}
-          tabOrder={rightPanelTabOrder}
-          onTabOrderChange={setRightPanelTabOrder}
-          addOptions={rightPanelAddOptions}
-          addLabel={t.rightPanel.newTab}
-          emptyLabel={t.rightPanel.empty}
-        />
+        <div ref={rightPanelContentRef} style={{ width: rightPanelWidth, height: '100%' }}>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Resize"
+            onPointerDown={handleRightPanelResizeStart}
+            className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize"
+          />
+          <RightPanel
+            tabs={rightPanelRenderedTabs}
+            activeTabId={effectiveRightPanelTabId}
+            onSelectTab={setActiveRightPanelTabId}
+            onCloseTab={closeRightPanelTab}
+            tabOrder={rightPanelTabOrder}
+            onTabOrderChange={setRightPanelTabOrder}
+            addOptions={rightPanelAddOptions}
+            addLabel={t.rightPanel.newTab}
+            emptyLabel={t.rightPanel.empty}
+          />
+        </div>
       </motion.div>
       </div>
 

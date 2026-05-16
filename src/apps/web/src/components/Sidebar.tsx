@@ -29,7 +29,7 @@ import { ShareModal } from './ShareModal'
 import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
 import { useAuth } from '../contexts/auth'
 import { useThreadList, useThreadLiveState } from '../contexts/thread-list'
-import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarUI } from '../contexts/app-ui'
+import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarCollapseUI } from '../contexts/app-ui'
 import { SHORTCUTS } from '../shortcuts'
 import { ActionIconButton } from './ActionIconButton'
 import {
@@ -269,7 +269,7 @@ export const Sidebar = memo(function Sidebar({
     markCompletionRead,
   } = useThreadList()
   const { runningThreadIds, completedUnreadThreadIds } = useThreadLiveState()
-  const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarUI()
+  const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarCollapseUI()
   const visualCollapsed = preserveExpandedLayout ? false : collapsed
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
@@ -1514,7 +1514,6 @@ export const Sidebar = memo(function Sidebar({
       ].join(' ')}
       style={{
         contain: 'layout paint style',
-        borderRight: '0.5px solid var(--c-border)',
       }}
     >
       {/* Desktop title bar spacer */}
@@ -1576,8 +1575,15 @@ export const Sidebar = memo(function Sidebar({
         )
       )}
 
-      {!(visualCollapsed && isWorkMode) && (
-        <nav className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1">
+      <nav
+        className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1"
+        style={{
+          opacity: visualCollapsed && isWorkMode ? 0 : 1,
+          pointerEvents: visualCollapsed && isWorkMode ? 'none' : 'auto',
+          transition: 'opacity 120ms ease',
+        }}
+        aria-hidden={visualCollapsed && isWorkMode ? true : undefined}
+      >
           <button
             onClick={onNewThread}
             aria-label={newThreadNavLabel}
@@ -1636,8 +1642,7 @@ export const Sidebar = memo(function Sidebar({
             </span>
             <span className={navLabelClass}>{t.scheduledJobs}</span>
           </button>
-        </nav>
-      )}
+      </nav>
 
       {/* Thread list — hidden when collapsed */}
       <div
@@ -1747,7 +1752,7 @@ export const Sidebar = memo(function Sidebar({
       <div
         className="mt-auto px-2 pb-2 pt-1"
         style={{
-          borderTop: '1px solid var(--c-border)',
+          borderTop: '0.5px solid var(--c-border)',
           borderTopColor: visualCollapsed ? 'transparent' : 'var(--c-border)',
           transition: 'border-top-color 280ms cubic-bezier(0.16,1,0.3,1)',
         }}
