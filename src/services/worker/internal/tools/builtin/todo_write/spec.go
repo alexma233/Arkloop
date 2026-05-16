@@ -42,7 +42,7 @@ var LlmSpec = llm.ToolSpec{
 			},
 			"plan_path": map[string]any{
 				"type":        "string",
-				"description": "Path to a .plan.md file. When provided, omit todos and update the plan file's front matter todos through updates.",
+				"description": "Path to a .plan.md file. When executing an approved plan, use this for every plan todo status change. When provided, omit todos and update the plan file's front matter todos through updates.",
 			},
 			"updates": map[string]any{
 				"type":        "array",
