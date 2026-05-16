@@ -661,48 +661,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function C
     const editable = wrapper.querySelector<HTMLElement>('.arkloop-composer-editor')
     if (!editable) return
 
-    let compactWidth: number | null = null
-
-    const probeAtCompactWidth = (): boolean => {
-      if (compactWidth === null) return false
-      const style = window.getComputedStyle(editable)
-      const probe = document.createElement('div')
-      probe.style.position = 'fixed'
-      probe.style.left = '-99999px'
-      probe.style.top = '0'
-      probe.style.width = compactWidth + 'px'
-      probe.style.visibility = 'hidden'
-      probe.style.pointerEvents = 'none'
-      probe.style.fontFamily = style.fontFamily
-      probe.style.fontSize = style.fontSize
-      probe.style.fontWeight = style.fontWeight
-      probe.style.lineHeight = style.lineHeight
-      probe.style.letterSpacing = style.letterSpacing
-      probe.style.whiteSpace = 'pre-wrap'
-      probe.style.overflowWrap = 'break-word'
-      probe.style.boxSizing = 'content-box'
-      probe.textContent = editable.textContent || ''
-      document.body.appendChild(probe)
-      const probeWraps = probe.scrollHeight > 26
-      document.body.removeChild(probe)
-      return probeWraps
-    }
-
     const measure = () => {
       const lineHeight = 24
-      const wrapsNow = editable.scrollHeight > lineHeight + 2
-      if (wrapsNow) {
-        onLayoutChangeRef.current?.({ isSingleLine: false })
-        return
-      }
-      const currentWidth = editable.clientWidth
-      if (compactWidth === null || currentWidth <= compactWidth + 1) {
-        compactWidth = currentWidth
-        onLayoutChangeRef.current?.({ isSingleLine: true })
-        return
-      }
-      const wrapsAtCompact = probeAtCompactWidth()
-      onLayoutChangeRef.current?.({ isSingleLine: !wrapsAtCompact })
+      const isSingleLine = editable.scrollHeight <= lineHeight + 2
+      onLayoutChangeRef.current?.({ isSingleLine })
     }
 
     measure()
