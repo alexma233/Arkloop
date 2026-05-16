@@ -112,8 +112,10 @@ class SetupCommandNode extends DecoratorNode<ReactNode> {
 
   createDOM(_config: EditorConfig): HTMLElement {
     const element = document.createElement('span')
-    element.style.display = 'inline-flex'
+    element.style.display = 'inline-block'
     element.style.verticalAlign = 'middle'
+    element.style.lineHeight = '24px'
+    element.style.height = '24px'
     element.contentEditable = 'false'
     return element
   }
@@ -190,8 +192,10 @@ class ResourceReferenceNode extends DecoratorNode<ReactNode> {
 
   createDOM(_config: EditorConfig): HTMLElement {
     const element = document.createElement('span')
-    element.style.display = 'inline-flex'
+    element.style.display = 'inline-block'
     element.style.verticalAlign = 'middle'
+    element.style.lineHeight = '24px'
+    element.style.height = '24px'
     element.contentEditable = 'false'
     return element
   }
@@ -298,7 +302,7 @@ function readComposerText(node: LexicalNode): string {
   if ($isResourceReferenceNode(node)) return ''
   const maybeParent = node as LexicalNode & { getChildren?: () => LexicalNode[] }
   const children = maybeParent.getChildren?.()
-  if (!children) return node.getTextContent()
+  if (!children) return node.getTextContent().replace(/​/g, '')
   return children.map(readComposerText).join('')
 }
 
@@ -379,19 +383,24 @@ function appendTextWithSetupTokens(paragraph: ReturnType<typeof $createParagraph
   SETUP_COMMAND_TEXT_PATTERN.lastIndex = 0
 }
 
+const ZWSP = '​'
+
+function appendChipWithSentinels(paragraph: ReturnType<typeof $createParagraphNode>, chip: LexicalNode, leadingSpace: boolean) {
+  if (leadingSpace) paragraph.append($createTextNode(' '))
+  paragraph.append($createTextNode(ZWSP))
+  paragraph.append(chip)
+  paragraph.append($createTextNode(ZWSP + ' '))
+}
+
 function deserializeToEditorContent(text: string) {
   const parts = splitMessageResourceReferences(text)
   const paragraph = $createParagraphNode()
-  let needsSeparator = false
   for (const part of parts) {
-    if (needsSeparator && part.type === 'text') needsSeparator = false
     if (part.type === 'text') {
       if (part.text) appendTextWithSetupTokens(paragraph, part.text)
     } else if (part.type === 'reference' && part.resource) {
-      if (paragraph.getLastChild()) paragraph.append($createTextNode(' '))
-      paragraph.append($createResourceReferenceNode(part.resource))
-      paragraph.append($createTextNode(' '))
-      needsSeparator = true
+      const hasContent = !!paragraph.getLastChild()
+      appendChipWithSentinels(paragraph, $createResourceReferenceNode(part.resource), hasContent)
     }
   }
   return paragraph
@@ -622,7 +631,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function C
         if (!$isRangeSelection(selection)) return
         const nodes: LexicalNode[] = []
         if ($selectionNeedsLeadingSpace()) nodes.push($createTextNode(' '))
-        nodes.push($createSetupCommandNode(), $createTextNode(' '))
+        nodes.push(
+          $createTextNode(ZWSP),
+          $createSetupCommandNode(),
+          $createTextNode(ZWSP + ' '),
+        )
         selection.insertNodes(nodes)
       })
     },
@@ -634,7 +647,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function C
         if (!$isRangeSelection(selection)) return
         const nodes: LexicalNode[] = []
         if ($selectionNeedsLeadingSpace()) nodes.push($createTextNode(' '))
-        nodes.push($createResourceReferenceNode(resource), $createTextNode(' '))
+        nodes.push(
+          $createTextNode(ZWSP),
+          $createResourceReferenceNode(resource),
+          $createTextNode(ZWSP + ' '),
+        )
         selection.insertNodes(nodes)
       })
     },
@@ -654,6 +671,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function C
     }
     if (value === readEditorValue(editor.getEditorState()).text) return
   }, [setValue, value])
+
+  const compactRef = useRef(compact)
+  useEffect(() => { compactRef.current = compact }, [compact])
 
   useEffect(() => {
     const wrapper = contentRef.current
@@ -691,16 +711,23 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, Props>(function C
     const measure = () => {
       const lineHeight = 24
       const wrapsNow = editable.scrollHeight > lineHeight + 2
+
+      if (compactRef.current) {
+        compactWidth = editable.clientWidth
+        onLayoutChangeRef.current?.({ isSingleLine: !wrapsNow })
+        return
+      }
+
       if (wrapsNow) {
         onLayoutChangeRef.current?.({ isSingleLine: false })
         return
       }
-      const currentWidth = editable.clientWidth
-      if (compactWidth === null || currentWidth <= compactWidth + 1) {
-        compactWidth = currentWidth
-        onLayoutChangeRef.current?.({ isSingleLine: true })
+
+      if (compactWidth === null) {
+        onLayoutChangeRef.current?.({ isSingleLine: false })
         return
       }
+
       const wrapsAtCompact = probeAtCompactWidth()
       onLayoutChangeRef.current?.({ isSingleLine: !wrapsAtCompact })
     }
