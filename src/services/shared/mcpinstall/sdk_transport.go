@@ -2,6 +2,7 @@ package mcpinstall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,6 +32,22 @@ func BuildCommandTransport(server ServerConfig) *sdkmcp.CommandTransport {
 	}
 	cmd.Env = buildInheritedEnv(server.Env)
 	return &sdkmcp.CommandTransport{Command: cmd}
+}
+
+// BuildSSETransport creates an SDK SSEClientTransport from ServerConfig (legacy 2024-11-05 protocol).
+// httpClient may be nil (defaults to http.DefaultClient).
+func BuildSSETransport(server ServerConfig, httpClient *http.Client) *sdkmcp.SSEClientTransport {
+	client := httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	if len(server.Headers) > 0 {
+		client = injectHeaders(client, server.Headers)
+	}
+	return &sdkmcp.SSEClientTransport{
+		Endpoint:   server.URL,
+		HTTPClient: client,
+	}
 }
 
 // BuildStreamableTransport creates an SDK StreamableClientTransport from ServerConfig.
@@ -143,7 +160,7 @@ func (h *ArkloopOAuthHandler) TokenSource(ctx context.Context) (oauth2.TokenSour
 
 	refreshed, err := sharedmcpoauth.RefreshAuthorization(ctx, h.HTTPDoer, h.OAuth.Discovery, h.OAuth.Client, tokens.RefreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("mcp oauth: refresh failed: %w", err)
+		return nil, fmt.Errorf("mcp oauth: refresh failed: %w", ErrOAuthRefreshFailed)
 	}
 
 	h.OAuth.Tokens = refreshed
@@ -162,7 +179,7 @@ func (h *ArkloopOAuthHandler) Authorize(ctx context.Context, req *http.Request, 
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
-	return fmt.Errorf("mcp oauth: authorization required (flow not available on worker)")
+	return fmt.Errorf("mcp oauth: authorization required: %w", ErrOAuthAuthRequired)
 }
 
 // NewSafeHTTPClient creates an HTTP client with SSRF protection via DNS-level IP filtering.
@@ -182,6 +199,9 @@ func NewSafeHTTPClient() *http.Client {
 		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		if err != nil {
 			return nil, fmt.Errorf("mcp: ssrf: resolve %q: %w", host, err)
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("mcp: ssrf: no IPs for host %q", host)
 		}
 		for _, ip := range ips {
 			if IsDeniedIP(ip.Unmap(), policy) {
@@ -244,3 +264,12 @@ func IsDeniedIP(ip netip.Addr, policy sharedoutbound.Policy) bool {
 	}
 	return policy.EnsureIPAllowed(ip.Unmap()) != nil
 }
+
+var (
+	// ErrOAuthAuthRequired is returned when the OAuth Authorize callback is invoked,
+	// meaning the server requires user intervention to complete authorization.
+	ErrOAuthAuthRequired = errors.New("oauth authorization required")
+
+	// ErrOAuthRefreshFailed is returned when the OAuth token refresh fails.
+	ErrOAuthRefreshFailed = errors.New("oauth refresh failed")
+)

@@ -346,7 +346,9 @@ func listEffectiveMCPToolsWithSDK(ctx context.Context, server effectiveMCPServer
 	switch server.Transport {
 	case "stdio", "":
 		transport = sharedmcpinstall.BuildCommandTransport(server)
-	case "http_sse", "streamable_http":
+	case "http_sse":
+		transport = sharedmcpinstall.BuildSSETransport(server, sharedmcpinstall.NewSafeHTTPClient())
+	case "streamable_http":
 		transport = sharedmcpinstall.BuildStreamableTransport(server, sharedmcpinstall.NewSafeHTTPClient(), nil)
 	default:
 		return nil, fmt.Errorf("mcp effective catalog: unsupported transport: %s", server.Transport)
