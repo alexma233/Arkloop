@@ -14,9 +14,11 @@
   },
   "dependencies": {
     "@arkloop/shared": "workspace:*",
+    "@lexical/react": "^0.44.0",
     "framer-motion": "^12.34.3",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.28",
+    "lexical": "^0.44.0",
     "lucide-react": "^0.575.0",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",

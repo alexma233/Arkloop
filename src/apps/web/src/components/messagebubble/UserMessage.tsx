@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type CSSProperties } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from 'react'
 import { Pencil, Paperclip } from 'lucide-react'
 import type { AgentMessage } from '../../agent-ui'
 import type { ArtifactRef } from '../../storage'
@@ -12,6 +12,9 @@ import { AutoResizeTextarea, normalizeChannelEnvelopeText } from '@arkloop/share
 import { CopyIconButton } from '../CopyIconButton'
 import { ActionIconButton } from '../ActionIconButton'
 import { RefreshIconButton } from '../RefreshIconButton'
+import { ResourceReferenceChip } from '../ResourceReferenceChip'
+import type { ResourceRef } from '../resource-preview/types'
+import { splitMessageResourceReferences } from '../../resourceReferences'
 import {
   getUserPromptEnterScale,
   USER_PROMPT_ENTER_BASE_SCALE,
@@ -36,9 +39,11 @@ type Props = {
   onEdit?: (newContent: string) => void
   accessToken?: string
   isWorkMode?: boolean
+  workFolder?: string | null
+  onOpenResource?: (resource: ResourceRef, options?: { trigger?: HTMLElement | null; artifacts?: ArtifactRef[]; runId?: string }) => void
 }
 
-export function UserMessage({ message, onRetry, onEdit, accessToken, animateEnter, onEnterAnimationEnd, isWorkMode = false }: Props) {
+export function UserMessage({ message, onRetry, onEdit, accessToken, animateEnter, onEnterAnimationEnd, isWorkMode = false, workFolder, onOpenResource }: Props) {
   const { t } = useLocale()
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -113,6 +118,7 @@ export function UserMessage({ message, onRetry, onEdit, accessToken, animateEnte
   const fileAttachments = allFileAttachments.filter((p) => !isPastedFile(p.attachment.filename))
   const text = normalizeChannelEnvelopeText(messageTextContent(message))
   const displayText = !accessToken && attachmentParts.length > 0 ? message.content : text
+  const displayParts = useMemo(() => splitMessageResourceReferences(displayText, workFolder), [displayText, workFolder])
   const userTextOverflows = userTextFullHeight !== null
   const deliveryStatus = messageDeliveryStatus(message)
   const pendingKey = deliveryStatus === 'pending' ? `${message.id}:${message.metadata?.clientMessageId ?? ''}` : null
@@ -182,7 +188,7 @@ export function UserMessage({ message, onRetry, onEdit, accessToken, animateEnte
       ro.disconnect()
       roRef.current = null
     }
-  }, [displayText, measureFullHeight])
+  }, [displayParts, displayText, measureFullHeight])
 
   if (editing) {
     return (
@@ -386,11 +392,25 @@ export function UserMessage({ message, onRetry, onEdit, accessToken, animateEnte
                       }),
                 }}
               >
-                {displayText.split(/(\n{2,})/).map((part, i) =>
-                  /^\n{2,}$/.test(part)
-                    ? <div key={i} style={{ height: '0.3em' }} />
-                    : <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>
-                )}
+                {displayParts.map((part, index) => {
+                  if (part.type === 'reference') {
+                    return (
+                      <div key={`reference-${index}`} style={{ margin: index === 0 ? '0' : '0.32em 0 0' }}>
+                        <ResourceReferenceChip
+                          resource={part.resource}
+                          label={part.label}
+                          title={part.value}
+                          onClick={part.resource ? () => onOpenResource?.(part.resource!, { trigger: null }) : undefined}
+                        />
+                      </div>
+                    )
+                  }
+                  return part.text.split(/(\n{2,})/).map((textPart, textIndex) =>
+                    /^\n{2,}$/.test(textPart)
+                      ? <div key={`text-gap-${index}-${textIndex}`} style={{ height: '0.3em' }} />
+                      : <span key={`text-${index}-${textIndex}`} style={{ whiteSpace: 'pre-wrap' }}>{textPart}</span>
+                  )
+                })}
               </div>
               {userTextOverflows && (
                 <button

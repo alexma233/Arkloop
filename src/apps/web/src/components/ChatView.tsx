@@ -3098,6 +3098,12 @@ export const ChatView = memo(function ChatView() {
     ? chatInputPadding.work
     : (isPanelOpen ? chatInputPadding.panelOpen : chatInputPadding.panelClosed)
   const messageHorizontalPadding = isPanelOpen ? chatContentPadding.panelOpen : chatContentPadding.panelClosed
+  const slashReferenceResource = useMemo<ResourceRef | null>(() => {
+    if (effectiveRightPanelTabId === 'files') return filesPreviewResource
+    const tab = rightPanelTabs.find((item) => item.id === effectiveRightPanelTabId)
+    if (tab?.kind === 'resource') return tab.resource
+    return null
+  }, [effectiveRightPanelTabId, filesPreviewResource, rightPanelTabs])
 
   const chatInputEl = useMemo(() => (
     <ChatInput
@@ -3130,8 +3136,9 @@ export const ChatView = memo(function ChatView() {
       onTogglePlanMode={handleTogglePlanMode}
       learningModeEnabled={!!currentThread?.learning_mode_enabled}
       onToggleLearningMode={handleToggleLearningMode}
+      referenceResource={slashReferenceResource}
     />
-  ), [attachments, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, handleTogglePlanMode, handleToggleLearningMode])
+  ), [attachments, isStreaming, canCancel, cancelSubmitting, effectiveAppMode, isSearchThread, hasMessages, messagesLoading, threadId, accessToken, me?.id, t.followUpPlaceholder, t.replyPlaceholder, handleSend, handleCancel, handleAttachFiles, handlePasteContent, handleRemoveAttachment, handleAsrError, handlePersonaChange, onOpenSettings, editingQueuedPromptId, cancelQueuedPromptEdit, currentThread?.collaboration_mode, currentThread?.learning_mode_enabled, handleTogglePlanMode, handleToggleLearningMode, slashReferenceResource])
 
   const renderLiveCopItems = useCallback((
     seg: Extract<AssistantTurnSegment, { type: 'cop' }>,

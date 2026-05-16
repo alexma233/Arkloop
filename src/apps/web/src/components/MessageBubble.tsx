@@ -50,6 +50,8 @@ export const MessageBubble = memo(function MessageBubble({ message, streamAssist
         onEdit={onEdit}
         accessToken={accessToken}
         isWorkMode={isWorkMode}
+        workFolder={workFolder}
+        onOpenResource={onOpenResource}
       />
     )
   }
