@@ -1,6 +1,6 @@
-import { useRef, useEffect, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react'
+import { useRef, useEffect, useCallback, useMemo, useState, forwardRef, useImperativeHandle, useLayoutEffect } from 'react'
 import { ArrowUp, Mic, X, Check, Loader2, Pencil } from 'lucide-react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent, ClipboardEvent as ReactClipboardEvent, ReactNode } from 'react'
 import { type UploadedThreadAttachment } from '../api'
 import { useLocale } from '../contexts/LocaleContext'
 import { PastedContentModal } from './PastedContentModal'
@@ -25,16 +25,22 @@ import {
   appendInputHistory,
 } from '../storage'
 import type { AppMode } from '../storage'
-import { AttachmentCard, PastedContentCard, SlashCommandPopup } from './chat-input'
+import {
+  AttachmentCard,
+  PastedContentCard,
+  SlashCommandPopup,
+  hasTransferFiles,
+} from './chat-input'
 import type { SlashCommandGroup, SlashCommandItem } from './chat-input'
 import { useAudioRecorder } from './chat-input/useAudioRecorder'
 import { useAttachments } from './chat-input/useAttachments'
 import { PersonaModelBar } from './chat-input/PersonaModelBar'
 import { ModelPicker } from './ModelPicker'
+import { AutoResizeTextarea, measureTextareaHeight } from '@arkloop/shared'
+import { useLatest } from '../hooks/useLatest'
+import { useInputPerfDebug } from '../hooks/useInputPerfDebug'
 import { ActionIconButton } from './ActionIconButton'
 import { SHORTCUTS } from '../shortcuts'
-import type { ResourceRef } from './resource-preview/types'
-import { ComposerEditor, type ComposerEditorHandle, type ComposerSlashState } from './chat-input/ComposerEditor'
 
 export type ChatInputHandle = {
   clear: () => void
@@ -83,16 +89,163 @@ type Props = {
   onTogglePlanMode?: (currentMode: boolean) => Promise<void>
   learningModeEnabled?: boolean
   onToggleLearningMode?: (currentMode: boolean) => Promise<void>
-  referenceResource?: ResourceRef | null
+}
+
+type TextareaSelection = {
+  start: number
+  end: number
+  direction: 'forward' | 'backward' | 'none'
+}
+
+type SlashCaretRect = {
+  x: number
+  top: number
+}
+
+type SlashCommandRange = {
+  start: number
+  end: number
+  query: string
 }
 
 const SLASH_POPUP_WIDTH = 300
 const SLASH_POPUP_VIEWPORT_MARGIN = 8
+const SETUP_COMMAND_HEAD_COLOR = 'rgb(159, 186, 231)'
+const SETUP_COMMAND_TEXT_COLOR = 'rgb(64, 117, 208)'
+const SETUP_COMMAND_HOVER_BG = 'rgb(231, 239, 251)'
+const INLINE_SLASH_COMMAND_PATTERN = /\/[A-Za-z][\w-]*(?=\s|$)/g
+const SETUP_COMMAND_PATTERN = /\/setup(?=\s|$)/g
 
+function getSlashCommandRange(value: string, cursor: number): SlashCommandRange | null {
+  if (cursor < 1) return null
+  const start = value.lastIndexOf('/', cursor - 1)
+  if (start < 0) return null
+  const query = value.slice(start + 1, cursor)
+  if (/[\s\n]/.test(query)) return null
+  return { start, end: cursor, query }
+}
+
+function getInlineTokenDeletionRange(value: string, cursor: number): { start: number; end: number } | null {
+  INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = INLINE_SLASH_COMMAND_PATTERN.exec(value)) !== null) {
+    const start = match.index
+    const commandEnd = start + match[0].length
+    const end = value[commandEnd] === ' ' ? commandEnd + 1 : commandEnd
+    if (cursor > start && cursor <= end) {
+      INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+      return { start, end }
+    }
+  }
+  INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+  return null
+}
+
+function getInlineTokenTextRange(value: string, cursor: number): { start: number; end: number } | null {
+  INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = INLINE_SLASH_COMMAND_PATTERN.exec(value)) !== null) {
+    const start = match.index
+    const end = start + match[0].length
+    if (cursor >= start && cursor <= end) {
+      INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+      return { start, end }
+    }
+  }
+  INLINE_SLASH_COMMAND_PATTERN.lastIndex = 0
+  return null
+}
+
+function nearestInlineTokenBoundary(value: string, cursor: number): number | null {
+  const range = getInlineTokenTextRange(value, cursor)
+  if (!range || cursor === range.start || cursor === range.end) return null
+  return cursor - range.start < range.end - cursor ? range.start : range.end
+}
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function countLinesWithinLimit(text: string, limit: number) {
+  let lines = 1
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) !== 10) continue
+    lines += 1
+    if (lines >= limit) return lines
+  }
+  return lines
+}
+
+function readStyleNumber(style: CSSStyleDeclaration, key: string) {
+  const value = Number.parseFloat(style.getPropertyValue(key))
+  return Number.isFinite(value) ? value : 0
+}
+
+function readTextareaLineHeight(style: CSSStyleDeclaration) {
+  const explicit = Number.parseFloat(style.lineHeight)
+  if (Number.isFinite(explicit)) return explicit
+  const fontSize = Number.parseFloat(style.fontSize)
+  return Number.isFinite(fontSize) ? fontSize * 1.5 : 20
+}
+
+function readTextareaFont(style: CSSStyleDeclaration) {
+  if (style.font) return style.font
+  return [
+    style.fontStyle,
+    style.fontVariant,
+    style.fontWeight,
+    style.fontSize,
+    style.fontFamily,
+  ].filter(Boolean).join(' ')
+}
+
+function measureTextareaContentWidth(element: HTMLTextAreaElement, style: CSSStyleDeclaration) {
+  const horizontalPadding = readStyleNumber(style, 'padding-left') + readStyleNumber(style, 'padding-right')
+  const horizontalBorder = readStyleNumber(style, 'border-left-width') + readStyleNumber(style, 'border-right-width')
+  return Math.max(
+    element.clientWidth - horizontalPadding,
+    element.offsetWidth - horizontalPadding - horizontalBorder,
+    1,
+  )
+}
+
+function getTextareaCaretClientRect(textarea: HTMLTextAreaElement): SlashCaretRect {
+  const style = window.getComputedStyle(textarea)
+  const rect = textarea.getBoundingClientRect()
+  const mirror = document.createElement('div')
+  const marker = document.createElement('span')
+  const selectionEnd = textarea.selectionEnd
+
+  mirror.style.position = 'fixed'
+  mirror.style.left = `${rect.left}px`
+  mirror.style.top = `${rect.top}px`
+  mirror.style.width = `${textarea.clientWidth}px`
+  mirror.style.minHeight = `${textarea.clientHeight}px`
+  mirror.style.visibility = 'hidden'
+  mirror.style.pointerEvents = 'none'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.style.boxSizing = style.boxSizing
+  mirror.style.font = readTextareaFont(style)
+  mirror.style.letterSpacing = style.letterSpacing
+  mirror.style.lineHeight = style.lineHeight
+  mirror.style.padding = style.padding
+  mirror.style.border = style.border
+  mirror.style.overflow = 'hidden'
+
+  mirror.append(document.createTextNode(textarea.value.slice(0, selectionEnd)))
+  marker.textContent = '\u200b'
+  mirror.append(marker)
+  mirror.append(document.createTextNode(textarea.value.slice(selectionEnd) || '\u200b'))
+  document.body.append(mirror)
+  const markerRect = marker.getBoundingClientRect()
+  mirror.remove()
+
+  return {
+    x: markerRect.right,
+    top: rect.top,
+  }
 }
 
 function isSameDraftDomain(left: InputDraftScope | null, right: InputDraftScope): boolean {
@@ -101,12 +254,6 @@ function isSameDraftDomain(left: InputDraftScope | null, right: InputDraftScope)
     && (left.threadId ?? null) === (right.threadId ?? null)
     && left.appMode === right.appMode
     && !!left.searchMode === !!right.searchMode
-}
-
-function formatRecordingTime(secs: number) {
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
@@ -138,14 +285,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onTogglePlanMode,
   learningModeEnabled = false,
   onToggleLearningMode,
-  referenceResource = null,
 }, ref) {
-  const composerEditorRef = useRef<ComposerEditorHandle>(null)
-  const formRef = useRef<HTMLFormElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [draft, setDraft] = useState('')
-  const [resourceReferences, setResourceReferences] = useState<ResourceRef[]>([])
+  const draftRef = useLatest(draft)
 
   const historyRef = useRef<string[]>([])
   const historyCursorRef = useRef(-1)
@@ -160,28 +305,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clear: () => {
       resetHistoryCursor()
       setDraft('')
-      setResourceReferences([])
-      composerEditorRef.current?.clear()
     },
     setValue: (text: string) => {
       resetHistoryCursor()
       setDraft(text)
-      setResourceReferences([])
-      composerEditorRef.current?.setValue(text)
     },
-    getValue: () => composerEditorRef.current?.getValue() ?? '',
-  }), [resetHistoryCursor])
+    getValue: () => draftRef.current,
+  }))
 
-  const valueRef = useRef(draft)
-  useEffect(() => { valueRef.current = draft }, [draft])
-  const onChangeRef = useRef(setDraft)
-  onChangeRef.current = setDraft
-  const accessTokenRef = useRef(accessToken)
-  accessTokenRef.current = accessToken
-  const onAsrErrorRef = useRef(onAsrError)
-  onAsrErrorRef.current = onAsrError
-  const onVoiceNotConfiguredRef = useRef<(() => void) | undefined>(() => onOpenSettings?.('voice'))
-  onVoiceNotConfiguredRef.current = onOpenSettings ? () => onOpenSettings('voice') : undefined
+  const { wrapOnChange } = useInputPerfDebug()
+  const trackedSetDraft = useMemo(() => wrapOnChange(setDraft), [wrapOnChange])
+
+  const valueRef = useLatest(draft)
+  const onChangeRef = useLatest(setDraft)
+  const accessTokenRef = useLatest(accessToken)
+  const onAsrErrorRef = useLatest(onAsrError)
+  const onVoiceNotConfiguredRef = useLatest<(() => void) | undefined>(() => onOpenSettings?.('voice'))
 
   const { t } = useLocale()
 
@@ -191,11 +330,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [collapsingGrid, setCollapsingGrid] = useState(false)
   const [pastedModalAttachment, setPastedModalAttachment] = useState<Attachment | null>(null)
   const [typewriterText, setTypewriterText] = useState('')
+  const [workCompactInputWraps, setWorkCompactInputWraps] = useState(false)
+  const [textareaFocusRestoreTick, setTextareaFocusRestoreTick] = useState(0)
   const [selectedModel, setSelectedModel] = useState<string | null>(readSelectedModelFromStorage)
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
   const [slashPosition, setSlashPosition] = useState({ left: SLASH_POPUP_VIEWPORT_MARGIN, bottom: 0 })
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
+  const [slashRange, setSlashRange] = useState<SlashCommandRange | null>(null)
+  const [setupTextHovered, setSetupTextHovered] = useState(false)
+  const compactTextareaWidthRef = useRef<number | null>(null)
+  const pendingTextareaFocusRef = useRef<TextareaSelection | null>(null)
+  const inputLayoutChangingRef = useRef(false)
+  const isComposingRef = useRef(false)
+  const [isComposingInput, setIsComposingInput] = useState(false)
+  const composingWorkCompactInputRef = useRef<boolean | null>(null)
   const draftScope = useMemo<InputDraftScope>(() => ({
     ownerKey: draftOwnerKey,
     page: variant === 'welcome' ? 'welcome' : 'thread',
@@ -223,8 +372,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const { isRecording, isTranscribing, recordingSeconds, waveformBars, startRecording, stopAndTranscribe, cancelRecording } =
     useAudioRecorder({ accessTokenRef, valueRef, onChangeRef, onAsrErrorRef, onVoiceNotConfiguredRef })
 
-  const focusComposer = useCallback(() => composerEditorRef.current?.focus(), [])
-  const { isFileDragging } = useAttachments({ onAttachFiles, focusInput: focusComposer })
+  const { isFileDragging, handleAttachTransfer, pasteProcessingRef, lastPasteRef } =
+    useAttachments({ onAttachFiles, textareaRef })
 
   const persistSelectedPersona = useCallback((personaKey: string) => {
     setSelectedPersonaKey(personaKey)
@@ -262,10 +411,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const handleMenuOpenChange = useCallback((open: boolean) => {
     setChildMenuOpen(open)
-    if (open) composerEditorRef.current?.blur()
+    const el = textareaRef.current
+    if (!el) return
+    if (open) {
+      el.blur()
+    }
   }, [])
 
-  const showSendButton = draft.trim().length > 0 || attachments.length > 0 || resourceReferences.length > 0
+  const showSendButton = draft.trim().length > 0 || attachments.length > 0
   const resolvedPlaceholder = typewriterText
   const isWelcomeInput = variant === 'welcome'
   const isWorkChat = variant === 'chat' && appMode === 'work'
@@ -274,14 +427,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const showWelcomeAttachmentSpacer = isWelcomeInput && (!hasAttachments || collapsingGrid)
   const isPlainChatThread = variant === 'chat' && appMode !== 'work'
   const isEditingQueuedPrompt = !!queuedEditLabel
-
-  const [composerSingleLine, setComposerSingleLine] = useState(true)
-  const isWorkCompactInput = isWorkChat && composerSingleLine
-  const isWorkExpandedInput = isWorkChat && !composerSingleLine
-  const handleComposerLayoutChange = useCallback((state: { isSingleLine: boolean }) => {
-    setComposerSingleLine(state.isSingleLine)
-  }, [])
-
+  const isWorkSingleLogicalLine = countLinesWithinLimit(draft, 2) === 1
+  const measuredWorkCompactInput = isWorkChat && isWorkSingleLogicalLine && !workCompactInputWraps
+  const isWorkCompactInput = isWorkChat && isComposingInput && composingWorkCompactInputRef.current !== null
+    ? composingWorkCompactInputRef.current
+    : measuredWorkCompactInput
+  const isWorkExpandedInput = isWorkChat && !isWorkCompactInput
   const formPadding = isPlainChatThread
     ? '19px 12px 11px 20px'
     : isWelcomeInput
@@ -289,27 +440,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       : isWorkChat
         ? '8px 12px 8px 14px'
         : '6px 12px 11px 20px'
+  const textareaWrapperMarginBottom = isPlainChatThread
+    ? '1px'
+    : isWelcomeInput
+      ? '12px'
+      : isWorkExpandedInput
+        ? '6px'
+        : '9px'
   const canUseSlashCommands = appMode === 'work' && !!onTogglePlanMode
-
   const slashCommandGroups = useMemo<SlashCommandGroup[]>(() => {
     if (!canUseSlashCommands) return []
     return [
       {
         label: t.slashCommands.commandsLabel,
-        items: [
-          {
-            id: 'setup',
-            label: 'setup',
-            description: t.slashCommands.setupDesc,
-          },
-          ...(referenceResource
-            ? [{
-                id: 'file',
-                label: 'file',
-                description: '引用当前文件',
-              }]
-            : []),
-        ],
+        items: [{
+          id: 'setup',
+          label: 'setup',
+          description: t.slashCommands.setupDesc,
+        }],
       },
       {
         label: t.slashCommands.modesLabel,
@@ -322,14 +470,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ]
   }, [
     canUseSlashCommands,
-    referenceResource,
     t.planMode,
     t.slashCommands.commandsLabel,
     t.slashCommands.modesLabel,
     t.slashCommands.planDesc,
     t.slashCommands.setupDesc,
   ])
-
   const slashVisibleGroups = useMemo<SlashCommandGroup[]>(() => {
     const query = slashQuery.trim().toLowerCase()
     return slashCommandGroups
@@ -342,62 +488,207 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }))
       .filter((group) => group.items.length > 0)
   }, [slashCommandGroups, slashQuery])
-
   const slashVisibleItems = useMemo(
     () => slashVisibleGroups.flatMap((group) => group.items),
     [slashVisibleGroups],
   )
+  const shouldHighlightSetupCommand = SETUP_COMMAND_PATTERN.test(draft)
+  SETUP_COMMAND_PATTERN.lastIndex = 0
+  const setupHighlightStyle = useMemo(() => ({
+    position: 'absolute' as const,
+    inset: 0,
+    pointerEvents: 'none' as const,
+    overflow: 'visible',
+    whiteSpace: 'pre-wrap' as const,
+    overflowWrap: 'break-word' as const,
+    fontFamily: 'inherit',
+    fontSize: '16px',
+    fontWeight: 310,
+    lineHeight: variant === 'chat' ? 1.45 : undefined,
+    letterSpacing: '-0.16px',
+    color: 'var(--c-text-primary)',
+    zIndex: 1,
+  }), [variant])
 
-  const handleComposerSlashChange = useCallback((state: ComposerSlashState) => {
-    if (disabled || slashCommandGroups.length === 0) {
+  const readTextareaSelection = useCallback((textarea: HTMLTextAreaElement): TextareaSelection => ({
+    start: textarea.selectionStart,
+    end: textarea.selectionEnd,
+    direction: textarea.selectionDirection as TextareaSelection['direction'],
+  }), [])
+
+  const restoreTextareaFocus = useCallback((selection?: TextareaSelection | null) => {
+    const textarea = textareaRef.current
+    if (!textarea || disabled) return
+    textarea.focus({ preventScroll: true })
+    setFocused(true)
+    if (!selection) return
+    const start = Math.min(selection.start, textarea.value.length)
+    const end = Math.min(selection.end, textarea.value.length)
+    textarea.setSelectionRange(start, end, selection.direction)
+  }, [disabled])
+
+  const requestTextareaFocusRestore = useCallback((selection: TextareaSelection) => {
+    pendingTextareaFocusRef.current = selection
+    setTextareaFocusRestoreTick((tick) => tick + 1)
+  }, [])
+
+  const updateSlashState = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea || disabled || document.activeElement !== textarea || slashCommandGroups.length === 0) {
       setSlashOpen(false)
       return
     }
-    if (!state.open) {
+
+    const cursor = textarea.selectionEnd
+    const value = textarea.value
+    const range = getSlashCommandRange(value, cursor)
+    if (!range) {
       setSlashOpen(false)
+      setSlashRange(null)
       return
     }
-    const normalizedQuery = state.query.trim().toLowerCase()
+
+    const normalizedQuery = range.query.trim().toLowerCase()
     const exactCommand = normalizedQuery.length > 0 && slashCommandGroups.some((group) => (
       group.items.some((item) => (
-        item.id !== 'file' && (item.id.toLowerCase() === normalizedQuery || item.label.toLowerCase() === normalizedQuery)
+        item.id.toLowerCase() === normalizedQuery || item.label.toLowerCase() === normalizedQuery
       ))
     ))
     if (exactCommand) {
       setSlashOpen(false)
+      setSlashRange(null)
       return
     }
+
     const visibleCount = slashCommandGroups.reduce((count, group) => (
       count + group.items.filter((item) => {
         if (!normalizedQuery) return true
         return item.id.toLowerCase().startsWith(normalizedQuery) || item.label.toLowerCase().startsWith(normalizedQuery)
       }).length
     ), 0)
+
     if (visibleCount === 0) {
       setSlashOpen(false)
+      setSlashRange(null)
       return
     }
+
+    const caret = getTextareaCaretClientRect(textarea)
     const maxLeft = window.innerWidth - SLASH_POPUP_WIDTH - SLASH_POPUP_VIEWPORT_MARGIN
     setSlashPosition({
-      left: Math.max(SLASH_POPUP_VIEWPORT_MARGIN, Math.min(state.position.left, maxLeft)),
-      bottom: state.position.bottom,
+      left: Math.max(SLASH_POPUP_VIEWPORT_MARGIN, Math.min(caret.x, maxLeft)),
+      bottom: caret.top,
     })
-    setSlashQuery(state.query)
+    setSlashRange(range)
+    setSlashQuery(range.query)
     setSlashSelectedIndex((index) => Math.min(index, visibleCount - 1))
     setSlashOpen(true)
   }, [disabled, slashCommandGroups])
 
   const selectSlashItem = useCallback((item: SlashCommandItem) => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const cursor = textarea.selectionEnd
+    const value = draftRef.current
+    const range = slashRange ?? getSlashCommandRange(value, cursor)
+    if (!range) return
+    const before = value.slice(0, range.start)
+    const after = value.slice(range.end)
+    const leadingSpace = item.id === 'setup' && before.length > 0 && !/\s$/.test(before) ? ' ' : ''
+    const insert = item.id === 'setup' ? `${leadingSpace}/setup ` : ''
+    const nextDraft = before + insert + after.replace(/^\s+/, '')
+    const nextCursor = before.length + insert.length
+
     resetHistoryCursor()
     setSlashOpen(false)
+    setSlashRange(null)
     setSlashSelectedIndex(0)
+    trackedSetDraft(nextDraft)
     if (item.id === 'plan' && !planMode) void onTogglePlanMode?.(planMode)
-    if (item.id === 'setup') composerEditorRef.current?.replaceSlashWithSetupCommand()
-    if (item.id === 'file' && referenceResource) {
-      composerEditorRef.current?.replaceSlashWithResource(referenceResource)
+
+    requestAnimationFrame(() => {
+      const target = textareaRef.current
+      if (!target) return
+      target.focus({ preventScroll: true })
+      target.setSelectionRange(nextCursor, nextCursor)
+    })
+  }, [draftRef, onTogglePlanMode, planMode, resetHistoryCursor, slashRange, trackedSetDraft])
+
+  const measureWorkInputWraps = useCallback((value: string, textarea: HTMLTextAreaElement) => {
+    const style = window.getComputedStyle(textarea)
+    const measuredWidth = measureTextareaContentWidth(textarea, style)
+    if (isWorkCompactInput) compactTextareaWidthRef.current = measuredWidth
+    const compactWidth = compactTextareaWidthRef.current ?? measuredWidth
+    const lineHeight = readTextareaLineHeight(style)
+    const visualHeight = measureTextareaHeight({
+      value,
+      width: compactWidth,
+      font: readTextareaFont(style),
+      lineHeight,
+      minRows: 1,
+    })
+    return visualHeight > lineHeight + 0.5
+  }, [isWorkCompactInput])
+
+  const willWorkInputLayoutChange = useCallback((value: string, textarea: HTMLTextAreaElement) => {
+    if (!isWorkChat) return false
+    const nextSingleLogicalLine = countLinesWithinLimit(value, 2) === 1
+    const nextWraps = nextSingleLogicalLine ? measureWorkInputWraps(value, textarea) : false
+    const nextCompactInput = nextSingleLogicalLine && !nextWraps
+    return nextCompactInput !== isWorkCompactInput
+  }, [isWorkChat, isWorkCompactInput, measureWorkInputWraps])
+
+  useLayoutEffect(() => {
+    if (isComposingInput) return
+    if (!isWorkChat) {
+      compactTextareaWidthRef.current = null
+      if (workCompactInputWraps) setWorkCompactInputWraps(false)
+      return
     }
-    requestAnimationFrame(() => composerEditorRef.current?.focus())
-  }, [onTogglePlanMode, planMode, referenceResource, resetHistoryCursor])
+    if (!isWorkSingleLogicalLine) {
+      if (workCompactInputWraps) setWorkCompactInputWraps(false)
+      return
+    }
+
+    const textarea = textareaRef.current
+    if (!textarea) return
+    const style = window.getComputedStyle(textarea)
+    const measuredWidth = measureTextareaContentWidth(textarea, style)
+    if (isWorkCompactInput) compactTextareaWidthRef.current = measuredWidth
+
+    const compactWidth = compactTextareaWidthRef.current ?? measuredWidth
+    const lineHeight = readTextareaLineHeight(style)
+    const visualHeight = measureTextareaHeight({
+      value: draft,
+      width: compactWidth,
+      font: readTextareaFont(style),
+      lineHeight,
+      minRows: 1,
+    })
+    const nextWraps = visualHeight > lineHeight + 0.5
+    if (nextWraps !== workCompactInputWraps) {
+      inputLayoutChangingRef.current = true
+      setWorkCompactInputWraps(nextWraps)
+    }
+  }, [draft, isComposingInput, isWorkChat, isWorkCompactInput, isWorkSingleLogicalLine, workCompactInputWraps])
+
+  useLayoutEffect(() => {
+    if (!pendingTextareaFocusRef.current) return
+    if (inputLayoutChangingRef.current) {
+      inputLayoutChangingRef.current = false
+      setTextareaFocusRestoreTick((tick) => tick + 1)
+      return
+    }
+    const selection = pendingTextareaFocusRef.current
+    pendingTextareaFocusRef.current = null
+    restoreTextareaFocus(selection)
+  }, [draft, isWorkCompactInput, isWorkExpandedInput, restoreTextareaFocus, textareaFocusRestoreTick])
+
+  useLayoutEffect(() => {
+    if (disabled || isRecording || isTranscribing) return
+    const frame = requestAnimationFrame(() => restoreTextareaFocus(null))
+    return () => cancelAnimationFrame(frame)
+  }, [disabled, draftScopeKey, isRecording, isTranscribing, restoreTextareaFocus])
 
   useEffect(() => {
     const prevScope = prevDraftScopeRef.current
@@ -407,9 +698,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       isSameDraftDomain(prevScope, draftScope)
       && prevScope?.ownerKey !== draftScope.ownerKey
       && !nextStored
-      && valueRef.current.trim()
+      && draftRef.current.trim()
     ) {
-      nextDraft = valueRef.current
+      nextDraft = draftRef.current
       writeInputDraftText(draftScope, nextDraft)
     }
     prevDraftScopeRef.current = draftScope
@@ -417,7 +708,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     resetHistoryCursor()
     skipDraftPersistRef.current = true
     setDraft(nextDraft)
-    composerEditorRef.current?.setValue(nextDraft)
   }, [draftScope, draftScopeKey, resetHistoryCursor])
 
   useEffect(() => {
@@ -425,9 +715,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       skipDraftPersistRef.current = false
       return
     }
-    const serialized = composerEditorRef.current?.getValue() ?? draft
-    writeInputDraftText(draftScope, serialized)
-  }, [draft, resourceReferences, draftScope, draftScopeKey])
+    writeInputDraftText(draftScope, draft)
+  }, [draft, draftScope, draftScopeKey])
+
+  useEffect(() => {
+    updateSlashState()
+  }, [draft, updateSlashState])
+
+  useEffect(() => {
+    if (!slashOpen) return
+    const handleResize = () => updateSlashState()
+    const handleScroll = () => updateSlashState()
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [slashOpen, updateSlashState])
+
+  useEffect(() => {
+    if (!slashOpen) return
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (textareaRef.current?.contains(target)) return
+      if ((target as Element).closest?.('[data-slash-popup]')) return
+      setSlashOpen(false)
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [slashOpen])
 
   useEffect(() => {
     if (!slashOpen) return
@@ -437,6 +754,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
     setSlashSelectedIndex((index) => Math.min(index, slashVisibleItems.length - 1))
   }, [slashOpen, slashVisibleItems.length])
+
+  const formatRecordingTime = (secs: number) => {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
@@ -449,6 +772,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => cancelAnimationFrame(id)
   }, [persistSelectedPersona, searchMode, selectedPersonaKey])
 
+  // sync persona when appMode changes
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       if (appMode === 'work' && selectedPersonaKey !== WORK_PERSONA_KEY) {
@@ -460,9 +784,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => cancelAnimationFrame(id)
   }, [persistSelectedPersona, appMode, selectedPersonaKey])
 
+  const typewriterTarget = placeholder
+
+  // typewriter: clears text, then types out target one char every 45ms
   const typewriterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    const target = placeholder
+    const target = typewriterTarget
     if (!target) {
       setTypewriterText('')
       return
@@ -482,42 +809,142 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         typewriterTimerRef.current = null
       }
     }
-  }, [placeholder])
+  }, [typewriterTarget])
 
-  const applyHistoryValue = useCallback((value: string) => {
+  const applyHistoryValue = (value: string, cursor: 'start' | 'end') => {
     skipDraftPersistRef.current = true
     setDraft(value)
-    composerEditorRef.current?.setValue(value)
-    requestAnimationFrame(() => composerEditorRef.current?.focus())
-  }, [])
+    requestAnimationFrame(() => {
+      const target = textareaRef.current
+      if (!target) return
+      const position = cursor === 'start' ? 0 : target.value.length
+      target.setSelectionRange(position, position)
+    })
+  }
 
-  const handleHistoryNavigate = useCallback((direction: 'up' | 'down'): boolean => {
+  const handleHistoryNavigation = (direction: 'up' | 'down', target: HTMLTextAreaElement): boolean => {
+    if (direction === 'up' && target.selectionStart !== 0) return false
+    if (direction === 'down' && target.selectionEnd !== target.value.length) return false
+
     const history = historyRef.current
     if (history.length === 0) return false
-    const currentText = composerEditorRef.current?.getValue() ?? valueRef.current
 
     if (direction === 'up') {
-      if (historyCursorRef.current < 0) historyDraftRef.current = currentText
+      if (historyCursorRef.current < 0) historyDraftRef.current = target.value
       const nextCursor = historyCursorRef.current < 0
         ? 0
         : Math.min(historyCursorRef.current + 1, history.length - 1)
       if (nextCursor === historyCursorRef.current) return false
       historyCursorRef.current = nextCursor
-      applyHistoryValue(history[history.length - 1 - nextCursor] ?? '')
+      applyHistoryValue(history[history.length - 1 - nextCursor] ?? '', 'start')
       return true
     }
 
     if (historyCursorRef.current < 0) return false
     if (historyCursorRef.current === 0) {
       historyCursorRef.current = -1
-      applyHistoryValue(historyDraftRef.current)
+      applyHistoryValue(historyDraftRef.current, 'end')
       historyDraftRef.current = ''
       return true
     }
     historyCursorRef.current -= 1
-    applyHistoryValue(history[history.length - 1 - historyCursorRef.current] ?? '')
+    applyHistoryValue(history[history.length - 1 - historyCursorRef.current] ?? '', 'end')
     return true
-  }, [applyHistoryValue])
+  }
+
+  const isComposingEvent = (event: KeyboardEvent<HTMLTextAreaElement>['nativeEvent']) => (
+    isComposingRef.current || event.isComposing || event.keyCode === 229
+  )
+
+  const moveInlineTokenCursor = (target: HTMLTextAreaElement, cursor: number) => {
+    target.setSelectionRange(cursor, cursor)
+    requestAnimationFrame(updateSlashState)
+  }
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const isComposing = isComposingEvent(e.nativeEvent)
+    const target = e.currentTarget
+    const collapsedSelection = target.selectionStart === target.selectionEnd
+    if (!isComposing && collapsedSelection) {
+      const inlineTokenRange = getInlineTokenTextRange(target.value, target.selectionStart)
+      if (inlineTokenRange) {
+        if (e.key === 'ArrowLeft' && target.selectionStart === inlineTokenRange.end) {
+          e.preventDefault()
+          moveInlineTokenCursor(target, inlineTokenRange.start)
+          return
+        }
+        if (e.key === 'ArrowRight' && target.selectionStart === inlineTokenRange.start) {
+          e.preventDefault()
+          moveInlineTokenCursor(target, inlineTokenRange.end)
+          return
+        }
+        const boundary = nearestInlineTokenBoundary(target.value, target.selectionStart)
+        if (boundary !== null) {
+          moveInlineTokenCursor(target, boundary)
+        }
+      }
+    }
+    if (!isComposing && e.key === 'Backspace') {
+      if (collapsedSelection) {
+        const deletionRange = getInlineTokenDeletionRange(target.value, target.selectionStart)
+        if (deletionRange) {
+          e.preventDefault()
+          const nextDraft = target.value.slice(0, deletionRange.start) + target.value.slice(deletionRange.end)
+          resetHistoryCursor()
+          trackedSetDraft(nextDraft)
+          setSlashOpen(false)
+          setSlashRange(null)
+          requestAnimationFrame(() => {
+            const textarea = textareaRef.current
+            if (!textarea) return
+            textarea.setSelectionRange(deletionRange.start, deletionRange.start)
+          })
+          return
+        }
+      }
+    }
+    if (!isComposing && slashOpen) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashSelectedIndex((index) => (
+          slashVisibleItems.length === 0 ? 0 : (index - 1 + slashVisibleItems.length) % slashVisibleItems.length
+        ))
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashSelectedIndex((index) => (
+          slashVisibleItems.length === 0 ? 0 : (index + 1) % slashVisibleItems.length
+        ))
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const item = slashVisibleItems[slashSelectedIndex]
+        if (item) selectSlashItem(item)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashOpen(false)
+        return
+      }
+    }
+    if (!isComposing && e.key === 'ArrowUp' && handleHistoryNavigation('up', e.currentTarget)) {
+      e.preventDefault()
+      return
+    }
+    if (!isComposing && e.key === 'ArrowDown' && handleHistoryNavigation('down', e.currentTarget)) {
+      e.preventDefault()
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+      e.preventDefault()
+      if (!disabled && (draft.trim() || attachments.length > 0)) {
+        e.currentTarget.form?.requestSubmit()
+      }
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -525,8 +952,141 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     e.target.value = ''
   }
 
+  const PASTE_LINE_THRESHOLD = 20
+
+  const handleTextareaPaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    if (hasTransferFiles(e.clipboardData)) {
+      if (pasteProcessingRef.current) { e.preventDefault(); return }
+      const now = Date.now()
+      if (now - lastPasteRef.current < 1000) { e.preventDefault(); return }
+      lastPasteRef.current = now
+      if (handleAttachTransfer(e.clipboardData)) { e.preventDefault(); return }
+    }
+    const text = e.clipboardData.getData('text/plain')
+    if (!text) return
+
+    const lineCount = countLinesWithinLimit(text, PASTE_LINE_THRESHOLD)
+    if (lineCount >= PASTE_LINE_THRESHOLD && onPasteContent) {
+      e.preventDefault()
+      onPasteContent(text)
+      return
+    }
+
+    if (/\n{2,}/.test(text)) {
+      e.preventDefault()
+      const cleaned = text.replace(/\n{2,}/g, '\n')
+      const el = e.currentTarget
+      const start = el.selectionStart
+      const end = el.selectionEnd
+      const before = draft.slice(0, start)
+      const after = draft.slice(end)
+      const nextDraft = before + cleaned + after
+      const pos = start + cleaned.length
+      pendingTextareaFocusRef.current = { start: pos, end: pos, direction: 'none' }
+      trackedSetDraft(nextDraft)
+      requestAnimationFrame(() => {
+        const target = textareaRef.current
+        if (!target) return
+        target.selectionStart = target.selectionEnd = pos
+      })
+    }
+  }
+
+  const handleDraftChange = (target: HTMLTextAreaElement) => {
+    resetHistoryCursor()
+    if (!isComposingRef.current && document.activeElement === target && willWorkInputLayoutChange(target.value, target)) {
+      pendingTextareaFocusRef.current = readTextareaSelection(target)
+    }
+    trackedSetDraft(target.value)
+  }
+
+  const handleTextareaFocus = () => {
+    setFocused(true)
+    requestAnimationFrame(updateSlashState)
+  }
+
+  const handleTextareaBlur = () => {
+    setFocused(false)
+    window.setTimeout(() => setSlashOpen(false), 150)
+  }
+
+  const handleTextareaCursorChange = (target?: HTMLTextAreaElement) => {
+    requestAnimationFrame(() => {
+      const textarea = target ?? textareaRef.current
+      if (!textarea) return
+      if (textarea.selectionStart === textarea.selectionEnd) {
+        const boundary = nearestInlineTokenBoundary(textarea.value, textarea.selectionStart)
+        if (boundary !== null) {
+          textarea.setSelectionRange(boundary, boundary)
+        }
+      }
+      updateSlashState()
+    })
+  }
+
+  const handleCompositionStart = () => {
+    isComposingRef.current = true
+    composingWorkCompactInputRef.current = isWorkChat ? isWorkCompactInput : null
+    setIsComposingInput(true)
+    pendingTextareaFocusRef.current = null
+  }
+
+  const handleCompositionEnd = (target: HTMLTextAreaElement) => {
+    isComposingRef.current = false
+    composingWorkCompactInputRef.current = null
+    setIsComposingInput(false)
+    resetHistoryCursor()
+    requestTextareaFocusRestore(readTextareaSelection(target))
+    trackedSetDraft(target.value)
+  }
+
+  const renderSetupHighlightedText = () => {
+    if (!shouldHighlightSetupCommand) return null
+    const nodes: ReactNode[] = []
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    SETUP_COMMAND_PATTERN.lastIndex = 0
+    while ((match = SETUP_COMMAND_PATTERN.exec(draft)) !== null) {
+      if (match.index > lastIndex) {
+        nodes.push(draft.slice(lastIndex, match.index))
+      }
+      nodes.push(
+        <span
+          key={`setup-${match.index}`}
+          style={{
+            position: 'relative',
+          }}
+        >
+          {setupTextHovered && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: '-5px',
+                right: '-4px',
+                top: '-1px',
+                bottom: '-2px',
+                borderRadius: '5px',
+                background: SETUP_COMMAND_HOVER_BG,
+                zIndex: 0,
+              }}
+            />
+          )}
+          <span style={{ color: SETUP_COMMAND_HEAD_COLOR, position: 'relative', zIndex: 1 }}>/</span>
+          <span style={{ color: SETUP_COMMAND_TEXT_COLOR, position: 'relative', zIndex: 1 }}>setup</span>
+        </span>,
+      )
+      lastIndex = match.index + match[0].length
+    }
+    if (lastIndex < draft.length) {
+      nodes.push(draft.slice(lastIndex))
+    }
+    SETUP_COMMAND_PATTERN.lastIndex = 0
+    return nodes
+  }
+
   const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
-    const text = (composerEditorRef.current?.getValue() ?? '').trim()
+    const text = (textareaRef.current?.value ?? draft).trim()
     if (text) {
       appendInputHistory(draftScope, text)
       historyRef.current = readInputHistory(draftScope)
@@ -652,389 +1212,397 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             ? 'border-color 0.2s ease, box-shadow 0.2s ease, border-radius 180ms cubic-bezier(0.16, 1, 0.3, 1)'
             : 'border-color 0.2s ease, box-shadow 0.2s ease',
           cursor: 'default',
-          position: 'relative',
         }}
         onClick={(e) => {
           const tag = (e.target as HTMLElement).tagName
-          if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SVG' && tag !== 'PATH') {
-            composerEditorRef.current?.focus()
+          if (tag !== 'BUTTON' && tag !== 'TEXTAREA' && tag !== 'INPUT' && tag !== 'SVG' && tag !== 'PATH') {
+            textareaRef.current?.focus()
           }
         }}
       >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: showAttachmentGrid ? '1fr' : '0fr',
+          transition: 'grid-template-rows 0.3s ease',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '14px 16px 8px' }}>
+            {attachments.map((att) => {
+              const removeHandler = () => {
+                if (attachments.length === 1) {
+                  setCollapsingGrid(true)
+                  setTimeout(() => {
+                    onRemoveAttachment?.(att.id)
+                    setCollapsingGrid(false)
+                  }, 350)
+                } else {
+                  onRemoveAttachment?.(att.id)
+                }
+              }
+              if (att.pasted) {
+                return (
+                  <PastedContentCard
+                    key={att.id}
+                    attachment={att}
+                    onRemove={removeHandler}
+                    onClick={() => setPastedModalAttachment(att)}
+                  />
+                )
+              }
+              return (
+                <AttachmentCard
+                  key={att.id}
+                  attachment={att}
+                  onRemove={removeHandler}
+                  accessToken={accessToken}
+                />
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      {isWelcomeInput && (
         <div
           style={{
             display: 'grid',
-            gridTemplateRows: showAttachmentGrid ? '1fr' : '0fr',
+            gridTemplateRows: showWelcomeAttachmentSpacer ? '1fr' : '0fr',
             transition: 'grid-template-rows 0.3s ease',
             overflow: 'hidden',
           }}
         >
           <div style={{ minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '14px 16px 8px' }}>
-              {attachments.map((att) => {
-                const removeHandler = () => {
-                  if (attachments.length === 1) {
-                    setCollapsingGrid(true)
-                    setTimeout(() => {
-                      onRemoveAttachment?.(att.id)
-                      setCollapsingGrid(false)
-                    }, 350)
-                  } else {
-                    onRemoveAttachment?.(att.id)
-                  }
-                }
-                if (att.pasted) {
-                  return (
-                    <PastedContentCard
-                      key={att.id}
-                      attachment={att}
-                      onRemove={removeHandler}
-                      onClick={() => setPastedModalAttachment(att)}
-                    />
-                  )
-                }
-                return (
-                  <AttachmentCard
-                    key={att.id}
-                    attachment={att}
-                    onRemove={removeHandler}
-                    accessToken={accessToken}
-                  />
-                )
-              })}
-            </div>
+            <div style={{ height: '14px' }} />
           </div>
         </div>
-
-        {isWelcomeInput && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateRows: showWelcomeAttachmentSpacer ? '1fr' : '0fr',
-              transition: 'grid-template-rows 0.3s ease',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ minHeight: 0, overflow: 'hidden' }}>
-              <div style={{ height: '14px' }} />
-            </div>
-          </div>
-        )}
-
-        <form
-          ref={formRef}
-          onSubmit={handleFormSubmit}
-          style={{ padding: formPadding }}
+      )}
+      <form
+        onSubmit={handleFormSubmit}
+        style={{
+          padding: formPadding,
+        }}
+      >
+        <div
+          className="flex items-center"
+          style={{
+            gap: '2px',
+            minHeight: isWorkChat ? '34.5px' : '32px',
+            width: '100%',
+            minWidth: 0,
+            flexWrap: isWorkCompactInput ? 'nowrap' : 'wrap',
+          }}
         >
-          <div
-            className="flex items-center"
-            style={{
-              gap: '2px',
-              minHeight: isWorkChat ? '34.5px' : '32px',
-              width: '100%',
-              minWidth: 0,
-              flexWrap: isWorkCompactInput ? 'nowrap' : 'wrap',
-            }}
-          >
-            <PersonaModelBar
-              selectedModel={selectedModel}
-              onModelChange={handleModelChange}
-              thinkingEnabled={reasoningMode}
-              onThinkingChange={handleReasoningModeChange}
-              onOpenSettings={onOpenSettings}
-              onFileInputClick={() => fileInputRef.current?.click()}
-              accessToken={accessToken}
-              variant={variant}
-              appMode={appMode}
-              threadHasMessages={hasMessages}
-              threadMessagesLoading={messagesLoading}
-              workThreadId={workThreadId}
-              hideWorkFolderPicker={isWorkCompactInput}
-              hideModelPicker={isWorkCompactInput}
-              onMenuOpenChange={handleMenuOpenChange}
-              planMode={planMode}
-              onTogglePlanMode={onTogglePlanMode}
-              learningModeEnabled={learningModeEnabled}
-              onToggleLearningMode={onToggleLearningMode}
-            />
+          <PersonaModelBar
+            selectedModel={selectedModel}
+            onModelChange={handleModelChange}
+            thinkingEnabled={reasoningMode}
+            onThinkingChange={handleReasoningModeChange}
+            onOpenSettings={onOpenSettings}
+            onFileInputClick={() => fileInputRef.current?.click()}
+            accessToken={accessToken}
+            variant={variant}
+            appMode={appMode}
+            threadHasMessages={hasMessages}
+            threadMessagesLoading={messagesLoading}
+            workThreadId={workThreadId}
+            hideWorkFolderPicker={isWorkCompactInput}
+            hideModelPicker={isWorkCompactInput}
+            onMenuOpenChange={handleMenuOpenChange}
+            planMode={planMode}
+            onTogglePlanMode={onTogglePlanMode}
+            learningModeEnabled={learningModeEnabled}
+            onToggleLearningMode={onToggleLearningMode}
+          />
 
-            {isEditingQueuedPrompt && (
-              <div
-                className="flex shrink-0 items-center gap-1"
-                style={{
-                  height: '33.5px',
-                  padding: '0 4px 0 9px',
-                  borderRadius: '8px',
-                  background: 'color-mix(in srgb, var(--c-bg-sub) 82%, transparent)',
-                  border: '0.5px solid var(--c-border-subtle)',
-                }}
-              >
-                <Pencil size={14} style={{ color: 'var(--c-text-secondary)', flexShrink: 0 }} />
-                <span style={{
-                  fontSize: '14px',
-                  color: 'var(--c-text-secondary)',
-                  fontWeight: 375,
-                  whiteSpace: 'nowrap',
-                  margin: '0 2px',
-                }}>
-                  {queuedEditLabel}
-                </span>
-                <button
-                  type="button"
-                  onClick={onCancelQueuedEdit}
-                  className="bg-transparent hover:bg-[rgba(0,0,0,0.05)]"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '5px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: 0,
-                    flexShrink: 0,
-                  }}
-                >
-                  <X size={14} strokeWidth={2} style={{ color: 'var(--c-text-secondary)', opacity: 0.7 }} />
-                </button>
-              </div>
-            )}
-
-            <ComposerEditor
-              ref={composerEditorRef}
-              value={draft}
-              placeholder={resolvedPlaceholder}
-              disabled={disabled}
-              variant={variant}
-              compact={isWorkCompactInput}
-              expanded={isWorkExpandedInput}
-              onLayoutChange={handleComposerLayoutChange}
-              onHistoryNavigate={handleHistoryNavigate}
-              onPasteFile={(files) => onAttachFiles?.(files)}
-              onPasteLongContent={(text) => onPasteContent?.(text)}
-              onChange={({ text, references }) => {
-                resetHistoryCursor()
-                setDraft(text)
-                setResourceReferences(references)
-              }}
-              onSlashChange={handleComposerSlashChange}
-              onFocus={() => setFocused(true)}
-              onBlur={() => {
-                setFocused(false)
-                window.setTimeout(() => setSlashOpen(false), 150)
-              }}
-              onKeyDown={(e) => {
-                if (!slashOpen) return
-                if (e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setSlashSelectedIndex((index) => (
-                    slashVisibleItems.length === 0 ? 0 : (index - 1 + slashVisibleItems.length) % slashVisibleItems.length
-                  ))
-                  return
-                }
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setSlashSelectedIndex((index) => (
-                    slashVisibleItems.length === 0 ? 0 : (index + 1) % slashVisibleItems.length
-                  ))
-                  return
-                }
-                if (e.key === 'Enter' || e.key === 'Tab') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  const item = slashVisibleItems[slashSelectedIndex]
-                  if (item) selectSlashItem(item)
-                  return
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setSlashOpen(false)
-                }
-              }}
-              onSubmit={() => {
-                if (!disabled && (draft.trim() || attachments.length > 0 || resourceReferences.length > 0)) {
-                  formRef.current?.requestSubmit()
-                }
-              }}
-            />
-
-            {isWorkCompactInput && (
-              <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
-                <ModelPicker
-                  accessToken={accessToken}
-                  value={selectedModel}
-                  onChange={handleModelChange}
-                  onAddModel={() => onOpenSettings?.('models')}
-                  variant={variant}
-                  thinkingEnabled={reasoningMode}
-                  onThinkingChange={handleReasoningModeChange}
-                  onOpenChange={handleMenuOpenChange}
-                />
-              </div>
-            )}
-
+          {isEditingQueuedPrompt && (
             <div
+              className="flex shrink-0 items-center gap-1"
               style={{
-                position: 'relative',
-                width: '31.5px',
-                height: '31.5px',
-                flexShrink: 0,
+                height: '33.5px',
+                padding: '0 4px 0 9px',
+                borderRadius: '8px',
+                background: 'color-mix(in srgb, var(--c-bg-sub) 82%, transparent)',
+                border: '0.5px solid var(--c-border-subtle)',
               }}
             >
-              {disabled ? (
-                <div className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)]" style={{ opacity: 0.5 }}>
-                  <Loader2 size={14} className="animate-spin" style={{ color: 'var(--c-accent-send-text)' }} />
-                </div>
-              ) : isStreaming && canCancel && !isEditingQueuedPrompt ? (
-                showSendButton ? (
-                  <ActionIconButton
-                    type="submit"
-                    disabled={!draft.trim() && attachments.length === 0 && resourceReferences.length === 0}
-                    tooltip={t.sendAction}
-                    shortcut={SHORTCUTS.sendMessage.binding}
-                    className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
-                    wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-                    style={{ position: 'absolute', inset: 0 }}
-                  >
-                    <ArrowUp size={17} />
-                  </ActionIconButton>
-                ) : (
-                  <ActionIconButton
-                    type="button"
-                    onClick={onCancel}
-                    disabled={cancelSubmitting}
-                    tooltip={t.stopAction}
-                    className="flex h-full w-full items-center justify-center rounded-lg border border-[var(--c-border)] bg-[var(--c-bg-input)] transition-[opacity,transform,background-color] duration-[140ms] hover:bg-[var(--c-bg-sub)] active:scale-[0.97] active:opacity-[0.82] disabled:cursor-not-allowed disabled:opacity-50"
-                    wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-                    style={{ position: 'absolute', inset: 0 }}
+              <Pencil size={14} style={{ color: 'var(--c-text-secondary)', flexShrink: 0 }} />
+              <span style={{
+                fontSize: '14px',
+                color: 'var(--c-text-secondary)',
+                fontWeight: 375,
+                whiteSpace: 'nowrap',
+                margin: '0 2px',
+              }}>
+                {queuedEditLabel}
+              </span>
+              <button
+                type="button"
+                onClick={onCancelQueuedEdit}
+                className="bg-transparent hover:bg-[rgba(0,0,0,0.05)]"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <X size={14} strokeWidth={2} style={{ color: 'var(--c-text-secondary)', opacity: 0.7 }} />
+              </button>
+            </div>
+          )}
+
+          <div
+            onMouseEnter={() => setSetupTextHovered(true)}
+            onMouseLeave={() => setSetupTextHovered(false)}
+            style={{
+              position: 'relative',
+              minWidth: 0,
+              ...(isWorkCompactInput
+                ? {
+                    flex: '1 1 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 8px 0 4px',
+                  }
+                : {
+                    order: -1,
+                    flex: '0 0 100%',
+                    width: '100%',
+                    marginBottom: textareaWrapperMarginBottom,
+                    ...(isWorkExpandedInput
+                      ? { marginLeft: '3.5px', padding: '10px 0 0' }
+                      : {}),
+                  }),
+            }}
+          >
+            {shouldHighlightSetupCommand && (
+              <div aria-hidden="true" style={setupHighlightStyle}>
+                {renderSetupHighlightedText()}
+              </div>
+            )}
+            <AutoResizeTextarea
+              ref={textareaRef}
+              rows={1}
+              className="w-full resize-none bg-transparent outline-none placeholder:text-[var(--c-placeholder)] placeholder:font-[360] disabled:cursor-not-allowed"
+              value={draft}
+              onChange={(e) => handleDraftChange(e.currentTarget)}
+              onKeyDown={handleKeyDown}
+              onKeyUp={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onClick={(e) => handleTextareaCursorChange(e.currentTarget)}
+              onCompositionStart={handleCompositionStart}
+              onCompositionEnd={(e) => handleCompositionEnd(e.currentTarget)}
+              onPaste={handleTextareaPaste}
+              onFocus={handleTextareaFocus}
+              onBlur={handleTextareaBlur}
+              placeholder={resolvedPlaceholder}
+              disabled={disabled}
+              minRows={1}
+              maxHeight={300}
+              style={{
+                fontFamily: 'inherit',
+                fontSize: '16px',
+                fontWeight: 310,
+                ...(variant === 'chat' ? { lineHeight: 1.45 as const } : {}),
+                color: shouldHighlightSetupCommand ? 'transparent' : 'var(--c-text-primary)',
+                caretColor: 'var(--c-text-primary)',
+                marginTop: '0px',
+                marginBottom: '0px',
+                position: 'relative',
+                zIndex: 2,
+                ...(isWorkChat ? { display: 'block', padding: 0, border: 'none' } : {}),
+                ...(isWorkCompactInput ? { flex: '1 1 auto', minWidth: 0 } : {}),
+                letterSpacing: '-0.16px',
+              }}
+            />
+          </div>
+
+          {isWorkCompactInput && (
+            <div style={{ flexShrink: 0, marginRight: '4px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+              <ModelPicker
+                accessToken={accessToken}
+                value={selectedModel}
+                onChange={handleModelChange}
+                onAddModel={() => onOpenSettings?.('models')}
+                variant={variant}
+                thinkingEnabled={reasoningMode}
+                onThinkingChange={handleReasoningModeChange}
+                onOpenChange={handleMenuOpenChange}
+              />
+            </div>
+          )}
+
+          {/* mic + send 共用同一位置，disabled 时显示 spinner */}
+          <div
+            style={{
+              position: 'relative',
+              width: '31.5px',
+              height: '31.5px',
+              flexShrink: 0,
+            }}
+          >
+            {disabled ? (
+              <div className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)]" style={{ opacity: 0.5 }}>
+                <Loader2 size={14} className="animate-spin" style={{ color: 'var(--c-accent-send-text)' }} />
+              </div>
+            ) : isStreaming && canCancel && !isEditingQueuedPrompt ? (
+              showSendButton ? (
+                <ActionIconButton
+                  type="submit"
+                  disabled={!draft.trim() && attachments.length === 0}
+                  tooltip={t.sendAction}
+                  shortcut={SHORTCUTS.sendMessage.binding}
+                  className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
+                  wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                  }}
+                >
+                  <ArrowUp size={17} />
+                </ActionIconButton>
+              ) : (
+                <ActionIconButton
+                  type="button"
+                  onClick={onCancel}
+                  disabled={cancelSubmitting}
+                  tooltip={t.stopAction}
+                  className="flex h-full w-full items-center justify-center rounded-lg border border-[var(--c-border)] bg-[var(--c-bg-input)] transition-[opacity,transform,background-color] duration-[140ms] hover:bg-[var(--c-bg-sub)] active:scale-[0.97] active:opacity-[0.82] disabled:cursor-not-allowed disabled:opacity-50"
+                  wrapperStyle={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '999px',
+                      border: '1.3px solid var(--c-text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
                   >
                     <span
-                      aria-hidden="true"
                       style={{
-                        width: '14px',
-                        height: '14px',
-                        borderRadius: '999px',
-                        border: '1.3px solid var(--c-text-primary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        width: '5px',
+                        height: '5px',
+                        borderRadius: '1px',
+                        background: 'var(--c-text-primary)',
                         flexShrink: 0,
                       }}
-                    >
-                      <span
-                        style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '1px',
-                          background: 'var(--c-text-primary)',
-                          flexShrink: 0,
-                        }}
-                      />
-                    </span>
-                  </ActionIconButton>
-                )
-              ) : (
-                <>
-                  <ActionIconButton
-                    type="button"
-                    onClick={startRecording}
-                    disabled={isRecording || isTranscribing || !accessToken}
-                    tooltip={t.recordVoiceAction}
-                    className="flex h-full w-full items-center justify-center rounded-lg text-[var(--c-text-secondary)] hover:bg-[var(--c-bg-deep)] disabled:cursor-not-allowed disabled:opacity-30"
-                    wrapperStyle={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      pointerEvents: showSendButton ? 'none' : 'auto',
-                    }}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      opacity: showSendButton ? 0 : 0.65,
-                      transform: showSendButton ? 'scale(0.7)' : 'scale(1)',
-                      transition: 'opacity 188ms ease, transform 188ms ease',
-                      pointerEvents: showSendButton ? 'none' : 'auto',
-                    }}
-                  >
-                    <Mic size={19} />
-                  </ActionIconButton>
-                  <ActionIconButton
-                    type="submit"
-                    disabled={(!isEditingQueuedPrompt && isStreaming) || (!draft.trim() && attachments.length === 0 && resourceReferences.length === 0)}
-                    tooltip={t.sendAction}
-                    shortcut={SHORTCUTS.sendMessage.binding}
-                    className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
-                    wrapperStyle={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      pointerEvents: showSendButton ? 'auto' : 'none',
-                    }}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      transform: showSendButton ? 'scale(1)' : 'scale(0)',
-                      opacity: showSendButton ? 1 : 0,
-                      transition: 'transform 281ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease, background-color 60ms ease',
-                      pointerEvents: showSendButton ? 'auto' : 'none',
-                    }}
-                  >
-                    <ArrowUp size={17} />
-                  </ActionIconButton>
-                </>
-              )}
-            </div>
+                    />
+                  </span>
+                </ActionIconButton>
+              )
+            ) : (
+              <>
+                <ActionIconButton
+                  type="button"
+                  onClick={startRecording}
+                  disabled={isRecording || isTranscribing || !accessToken}
+                  tooltip={t.recordVoiceAction}
+                  className="flex h-full w-full items-center justify-center rounded-lg text-[var(--c-text-secondary)] hover:bg-[var(--c-bg-deep)] disabled:cursor-not-allowed disabled:opacity-30"
+                  wrapperStyle={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: showSendButton ? 'none' : 'auto',
+                  }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: showSendButton ? 0 : 0.65,
+                    transform: showSendButton ? 'scale(0.7)' : 'scale(1)',
+                    transition: 'opacity 188ms ease, transform 188ms ease',
+                    pointerEvents: showSendButton ? 'none' : 'auto',
+                  }}
+                >
+                  <Mic size={19} />
+                </ActionIconButton>
+                <ActionIconButton
+                  type="submit"
+                  disabled={(!isEditingQueuedPrompt && isStreaming) || (!draft.trim() && attachments.length === 0)}
+                  tooltip={t.sendAction}
+                  shortcut={SHORTCUTS.sendMessage.binding}
+                  className="flex h-full w-full items-center justify-center rounded-lg bg-[var(--c-accent-send)] text-[var(--c-accent-send-text)] hover:bg-[var(--c-accent-send-hover)] active:opacity-[0.75] active:scale-[0.93] disabled:cursor-not-allowed"
+                  wrapperStyle={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: showSendButton ? 'auto' : 'none',
+                  }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    transform: showSendButton ? 'scale(1)' : 'scale(0)',
+                    opacity: showSendButton ? 1 : 0,
+                    transition: 'transform 281ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease, background-color 60ms ease',
+                    pointerEvents: showSendButton ? 'auto' : 'none',
+                  }}
+                >
+                  <ArrowUp size={17} />
+                </ActionIconButton>
+              </>
+            )}
           </div>
-        </form>
+        </div>
+      </form>
 
-        {slashOpen && slashVisibleGroups.length > 0 && (
-          <SlashCommandPopup
-            groups={slashVisibleGroups}
-            selectedIndex={slashSelectedIndex}
-            position={slashPosition}
-            onSelect={selectSlashItem}
-            onMouseEnter={setSlashSelectedIndex}
-          />
-        )}
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
+      {slashOpen && slashVisibleGroups.length > 0 && (
+        <SlashCommandPopup
+          groups={slashVisibleGroups}
+          selectedIndex={slashSelectedIndex}
+          position={slashPosition}
+          onSelect={selectSlashItem}
+          onMouseEnter={setSlashSelectedIndex}
         />
+      )}
 
-        {disabled && (
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      {disabled && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: isWorkChat ? (isWorkCompactInput ? '12px' : '16px') : '20px',
+            background: 'rgba(0,0,0,0.06)',
+            overflow: 'hidden',
+            pointerEvents: 'none',
+            animation: 'freeze-overlay-in 1.8s ease forwards',
+          }}
+        >
           <div
             style={{
               position: 'absolute',
-              inset: 0,
-              borderRadius: isWorkChat ? (isWorkCompactInput ? '12px' : '16px') : '20px',
-              background: 'rgba(0,0,0,0.06)',
-              overflow: 'hidden',
-              pointerEvents: 'none',
-              animation: 'freeze-overlay-in 1.8s ease forwards',
+              top: 0,
+              bottom: 0,
+              width: '35%',
+              background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.05), transparent)',
+              animation: 'input-sweep 1.4s linear infinite',
             }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                width: '35%',
-                background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.05), transparent)',
-                animation: 'input-sweep 1.4s linear infinite',
-              }}
-            />
-          </div>
-        )}
+          />
+        </div>
+      )}
       </div>
 
       {pastedModalAttachment?.pasted && (
@@ -1048,4 +1616,3 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     </div>
   )
 })
-

@@ -3,10 +3,10 @@ import { hasTransferFiles, extractFilesFromTransfer, isEditableElement } from '.
 
 export function useAttachments({
   onAttachFiles,
-  focusInput,
+  textareaRef,
 }: {
   onAttachFiles?: (files: File[]) => void
-  focusInput?: () => void
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>
 }) {
   const dragDepthRef = useRef(0)
   const lastPasteRef = useRef(0)
@@ -19,11 +19,12 @@ export function useAttachments({
     if (files.length === 0 || !onAttachFiles) return false
     pasteProcessingRef.current = true
     onAttachFiles(files)
-    focusInput?.()
+    textareaRef.current?.focus()
     requestAnimationFrame(() => { pasteProcessingRef.current = false })
     return true
-  }, [onAttachFiles, focusInput])
+  }, [onAttachFiles, textareaRef])
 
+  // window-level drag/drop
   useEffect(() => {
     if (!onAttachFiles) return
 
@@ -82,9 +83,11 @@ export function useAttachments({
     }
   }, [handleAttachTransfer, onAttachFiles])
 
+  // document-level paste for files (outside textarea)
   useEffect(() => {
     if (!onAttachFiles) return
     const handlePaste = (e: ClipboardEvent) => {
+      if (e.target === textareaRef.current) return
       if (isEditableElement(e.target)) return
       if (!hasTransferFiles(e.clipboardData)) return
       if (pasteProcessingRef.current) { e.preventDefault(); return }
@@ -96,7 +99,7 @@ export function useAttachments({
     }
     document.addEventListener('paste', handlePaste)
     return () => document.removeEventListener('paste', handlePaste)
-  }, [handleAttachTransfer, onAttachFiles])
+  }, [handleAttachTransfer, onAttachFiles, textareaRef])
 
   return { isFileDragging, handleAttachTransfer, pasteProcessingRef, lastPasteRef }
 }
