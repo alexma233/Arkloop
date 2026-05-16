@@ -93,6 +93,7 @@ export function DesktopTitleBar({
   const pinnedMenuAnchorRef = useRef<HTMLDivElement>(null)
   const pinnedMenuOpenTimerRef = useRef<number | null>(null)
   const pinnedMenuCloseTimerRef = useRef<number | null>(null)
+  const pinnedMenuSuppressedRef = useRef(false)
   const [updatePopoverOpen, setUpdatePopoverOpen] = useState(false)
   const [updatePopoverPosition, setUpdatePopoverPosition] = useState<{ top: number; right: number }>({ top: 50, right: 12 })
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState(false)
@@ -153,8 +154,19 @@ export function DesktopTitleBar({
   const newThreadLabel = appMode === 'work' ? t.newTask : t.newChat
   const showPinnedSidebarPicker = sidebarCollapsed && pinnedThreads.length > 0
 
+  const clearPinnedMenuTimers = useCallback(() => {
+    if (pinnedMenuOpenTimerRef.current !== null) {
+      window.clearTimeout(pinnedMenuOpenTimerRef.current)
+      pinnedMenuOpenTimerRef.current = null
+    }
+    if (pinnedMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(pinnedMenuCloseTimerRef.current)
+      pinnedMenuCloseTimerRef.current = null
+    }
+  }, [])
+
   const openPinnedMenu = useCallback(() => {
-    if (!showPinnedSidebarPicker) return
+    if (!showPinnedSidebarPicker || pinnedMenuSuppressedRef.current) return
     if (pinnedMenuOpenTimerRef.current !== null) window.clearTimeout(pinnedMenuOpenTimerRef.current)
     if (pinnedMenuCloseTimerRef.current !== null) {
       window.clearTimeout(pinnedMenuCloseTimerRef.current)
@@ -168,24 +180,30 @@ export function DesktopTitleBar({
     }, PINNED_MENU_OPEN_DELAY_MS)
   }, [showPinnedSidebarPicker])
 
+  const handlePinnedMenuAnchorEnter = useCallback(() => {
+    pinnedMenuSuppressedRef.current = false
+    openPinnedMenu()
+  }, [openPinnedMenu])
+
   const schedulePinnedMenuClose = useCallback(() => {
-    if (pinnedMenuOpenTimerRef.current !== null) {
-      window.clearTimeout(pinnedMenuOpenTimerRef.current)
-      pinnedMenuOpenTimerRef.current = null
-    }
-    if (pinnedMenuCloseTimerRef.current !== null) window.clearTimeout(pinnedMenuCloseTimerRef.current)
+    clearPinnedMenuTimers()
     pinnedMenuCloseTimerRef.current = window.setTimeout(() => {
       pinnedMenuCloseTimerRef.current = null
       setPinnedMenuOpen(false)
     }, 120)
-  }, [])
+  }, [clearPinnedMenuTimers])
+
+  const suppressPinnedMenuForHoverCycle = useCallback(() => {
+    pinnedMenuSuppressedRef.current = true
+    clearPinnedMenuTimers()
+    setPinnedMenuOpen(false)
+  }, [clearPinnedMenuTimers])
 
   useEffect(() => {
     return () => {
-      if (pinnedMenuOpenTimerRef.current !== null) window.clearTimeout(pinnedMenuOpenTimerRef.current)
-      if (pinnedMenuCloseTimerRef.current !== null) window.clearTimeout(pinnedMenuCloseTimerRef.current)
+      clearPinnedMenuTimers()
     }
-  }, [])
+  }, [clearPinnedMenuTimers])
 
   const togglePopover = useCallback(() => {
     setUpdatePopoverOpen((prev) => {
@@ -253,11 +271,12 @@ export function DesktopTitleBar({
         <div
           ref={pinnedMenuAnchorRef}
           className="relative inline-flex"
-          onMouseEnter={openPinnedMenu}
+          onMouseEnter={handlePinnedMenuAnchorEnter}
           onMouseLeave={schedulePinnedMenuClose}
         >
           <ActionIconButton
             onClick={() => {
+              suppressPinnedMenuForHoverCycle()
               endPerfTrace(sidebarToggleTrace.current, {
                 phase: 'click',
                 collapsed: sidebarCollapsed,
