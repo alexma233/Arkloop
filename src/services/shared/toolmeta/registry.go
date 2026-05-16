@@ -626,9 +626,11 @@ var registry = []ToolMeta{
 		Name:      "todo_write",
 		Group:     GroupOrchestration,
 		Label:     "Todo write",
-		ShortDesc: "manage a structured todo list for the current run",
-		LLMDescription: "create and update a structured todo list for the current run. " +
-			"Each call fully replaces the list — include ALL items, not just new ones. " +
+		ShortDesc: "manage a structured todo list for the current run or a plan file",
+		LLMDescription: "create and update a structured todo list. " +
+			"Use either per-run mode or plan-bound mode. " +
+			"Per-run mode: pass todos; each call fully replaces the list, so include ALL items, not just new ones. " +
+			"Plan-bound mode: pass plan_path and updates; omit todos. The tool updates matching todos in the .plan.md front matter and emits the plan file's todo list as the current run todo state. " +
 			"Use proactively for complex multi-step tasks (3+ distinct steps), non-trivial tasks requiring planning, or when the user provides multiple tasks. " +
 			"Do NOT use for single straightforward tasks, trivial one-step operations, or purely conversational questions. " +
 			"Start with all items as pending, mark one as in_progress before beginning work on it, mark it completed when done. " +

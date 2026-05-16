@@ -12,7 +12,7 @@ import { BrowserResourcePanel } from './BrowserResourcePanel'
 import { loadPreviewResource } from './loader'
 import { PreviewResourceView } from './PreviewResourceView'
 import type { PreviewResource, ResourceRef } from './types'
-import { extractPlanNameFromMarkdown, isPlanMarkdownPath, parsePlanMarkdown, resolvePlanBuildState } from '../../planMetadata'
+import { extractPlanNameFromMarkdown, isPlanMarkdownPath, parsePlanMarkdown, PLAN_TODOS_UPDATED_EVENT, resolvePlanBuildState } from '../../planMetadata'
 import { useLocale } from '../../contexts/LocaleContext'
 import { ModelPicker } from '../ModelPicker'
 
@@ -71,6 +71,10 @@ function buildPlanMessage(locale: 'zh' | 'en', path: string): string {
   return `Start executing this plan.\n\nPlan file: ${path}`
 }
 
+function normalizePlanPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/g, '')
+}
+
 function BreadcrumbPart({ children }: { children: string }) {
   return (
     <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -95,6 +99,7 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
   const [mode, setMode] = useState<ViewMode>('preview')
   const [selectedModel, setSelectedModel] = useState<string | null>(readSelectedModelFromStorage)
   const [buildRequestedPath, setBuildRequestedPath] = useState<string | null>(null)
+  const [refreshNonce, setRefreshNonce] = useState(0)
   const [state, setState] = useState<{
     resource: ResourceRef | null
     loaded: PreviewResource | null
@@ -130,13 +135,27 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
       controller.abort()
       releaseResource(created)
     }
-  }, [resource, accessToken, onPlanTitleChange])
+  }, [resource, accessToken, onPlanTitleChange, refreshNonce])
 
   useEffect(() => {
     const syncSelectedModel = () => setSelectedModel(readSelectedModelFromStorage())
     window.addEventListener(SELECTED_MODEL_CHANGED_EVENT, syncSelectedModel)
     return () => window.removeEventListener(SELECTED_MODEL_CHANGED_EVENT, syncSelectedModel)
   }, [])
+
+  useEffect(() => {
+    const loaded = state.resource === resource ? state.loaded : null
+    if (!loaded?.text || !isPlanMarkdownPath(loaded.filename)) return
+    const currentPath = normalizePlanPath(planReferencePath(resource, loaded))
+    const handlePlanTodosUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ planPath?: unknown }>).detail
+      if (typeof detail?.planPath !== 'string') return
+      if (normalizePlanPath(detail.planPath) !== currentPath) return
+      setRefreshNonce((value) => value + 1)
+    }
+    window.addEventListener(PLAN_TODOS_UPDATED_EVENT, handlePlanTodosUpdated)
+    return () => window.removeEventListener(PLAN_TODOS_UPDATED_EVENT, handlePlanTodosUpdated)
+  }, [resource, state])
 
   const handleModelChange = useCallback((model: string | null) => {
     setSelectedModel(model)

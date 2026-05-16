@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { MarkdownRenderer } from '../MarkdownRenderer'
+import { TodoListCard } from '../TodoListCard'
 import type { ArtifactRef } from '../../storage'
 import { isPlanTodoCompleted, parsePlanMarkdown, type PlanMetadata, type PlanTodo } from '../../planMetadata'
+import type { TodoItemRef, TodoWriteRef } from '../../copSegmentTimeline'
 
 type Props = {
   content: string
@@ -37,53 +39,39 @@ export function MarkdownDocumentRenderer({ content, accessToken = '', artifacts 
   )
 }
 
-function TodoStatusIcon({ todo }: { todo: PlanTodo }) {
-  const completed = isPlanTodoCompleted(todo.status)
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: 16,
-        height: 16,
-        borderRadius: '50%',
-        border: completed ? '0.5px solid var(--c-accent)' : '1.4px solid var(--c-border-mid)',
-        background: completed ? 'var(--c-accent)' : 'transparent',
-        boxShadow: completed ? 'inset 0 0 0 3px var(--c-bg-page)' : 'none',
-        flexShrink: 0,
-        marginTop: 3,
-      }}
-    />
-  )
+function planTodoStatus(status: string | undefined): TodoItemRef['status'] {
+  if (isPlanTodoCompleted(status)) return 'completed'
+  if (status === 'in_progress' || status === 'cancelled') return status
+  return 'pending'
+}
+
+function planTodosAsTodoWrite(todos: PlanTodo[]): TodoWriteRef | null {
+  const items = todos
+    .filter((todo) => todo.content.trim() !== '')
+    .map((todo, index) => ({
+      id: todo.id || `plan-todo-${index + 1}`,
+      content: todo.content,
+      status: planTodoStatus(todo.status),
+    }))
+  if (items.length === 0) return null
+
+  return {
+    id: 'plan-todos',
+    toolName: 'todo_write',
+    todos: items,
+    completedCount: items.filter((item) => item.status === 'completed').length,
+    totalCount: items.length,
+    status: 'success',
+  }
 }
 
 function PlanTodoList({ todos }: { todos: PlanTodo[] }) {
-  const visibleTodos = todos.filter((todo) => todo.content.trim() !== '')
-  if (visibleTodos.length === 0) return null
+  const todoWrite = planTodosAsTodoWrite(todos)
+  if (!todoWrite) return null
 
   return (
     <section style={{ marginTop: 44, paddingTop: 20, borderTop: '0.5px solid var(--c-border-subtle)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-        <h2 style={{ margin: 0, fontSize: 15, lineHeight: '22px', fontWeight: 520, color: 'var(--c-text-secondary)' }}>
-          {visibleTodos.length} To-dos
-        </h2>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {visibleTodos.map((todo, index) => (
-          <div key={todo.id || `${todo.content}-${index}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <TodoStatusIcon todo={todo} />
-            <div style={{
-              minWidth: 0,
-              color: isPlanTodoCompleted(todo.status) ? 'var(--c-text-muted)' : 'var(--c-text-primary)',
-              fontSize: 14,
-              lineHeight: '21px',
-              textDecoration: isPlanTodoCompleted(todo.status) ? 'line-through' : 'none',
-              textDecorationColor: 'var(--c-border-mid)',
-            }}>
-              {todo.content}
-            </div>
-          </div>
-        ))}
-      </div>
+      <TodoListCard todo={todoWrite} />
     </section>
   )
 }

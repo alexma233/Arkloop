@@ -16,6 +16,8 @@ export type PlanMetadata = {
 
 export type PlanBuildState = 'ready' | 'building' | 'built'
 
+export const PLAN_TODOS_UPDATED_EVENT = 'arkloop:plan-todos-updated'
+
 function unquoteYamlScalar(value: string): string {
   const trimmed = value.trim()
   if (trimmed.length >= 2) {
