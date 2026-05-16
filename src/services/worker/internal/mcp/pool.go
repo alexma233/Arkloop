@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -66,18 +65,11 @@ func (p *Pool) BorrowWithMeta(ctx context.Context, server ServerConfig) (Client,
 	}
 
 	var client Client
-	switch server.Transport {
-	case "stdio", "":
-		client = NewStdioClient(server)
-	case "http_sse", "streamable_http":
-		var err error
-		client, err = NewHTTPClient(server, WithHTTPAuthStore(p.authStore))
-		if err != nil {
-			return nil, BorrowMeta{}, err
-		}
-	default:
-		return nil, BorrowMeta{}, fmt.Errorf("mcp: unsupported transport: %s", server.Transport)
+	c, err := newSDKClient(ctx, server, p.authStore)
+	if err != nil {
+		return nil, BorrowMeta{}, err
 	}
+	client = c
 
 	p.clients[key] = client
 	return client, BorrowMeta{}, nil
