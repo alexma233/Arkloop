@@ -23,6 +23,7 @@ import { useActiveArtifactKey } from '../contexts/panels'
 import { recordPerfCount, recordPerfValue } from '../perfDebug'
 import { handleExternalAnchorClick } from '../openExternal'
 import { StreamingMarkdown } from './streaming-markdown/StreamingMarkdown'
+import { useLocale } from '../contexts/LocaleContext'
 import type { ResourceRef } from './resource-preview/types'
 import {
   ARTIFACT_URI_PREFIX,
@@ -585,6 +586,7 @@ function extractTextFromChildren(node: ReactNode): string {
 }
 
 function CodeBlockWrapper({ children, compact = false }: { children: React.ReactNode; compact?: boolean }) {
+  const { t } = useLocale()
   const preRef = useRef<HTMLPreElement>(null)
   const languageLabel = normalizeCodeLanguageLabel(extractCodeLanguage(children))
   const frameRadius = 10
@@ -655,6 +657,7 @@ function CodeBlockWrapper({ children, compact = false }: { children: React.React
         <CopyIconButton
           onCopy={handleCopy}
           size={13}
+          tooltip={t.copyAction}
           hoverBackground="var(--c-bg-card-hover)"
           style={{
             display: 'flex',

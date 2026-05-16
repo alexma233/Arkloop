@@ -564,6 +564,13 @@ export interface LocaleStrings {
   // message actions
   copyAction: string
   editAction: string
+  cancelAction: string
+  doneAction: string
+  forkAction: string
+  showMoreAction: string
+  showLessAction: string
+  sourceCount: (count: number) => string
+  diffAddedRemoved: (added: number, removed: number) => string
   assistantCopDefaultTitle: string
   /** Enter 后、首条可见输出前，流式区占位（与 COP 默认标题区分） */
   assistantStreamThinkingPlaceholder: string
