@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, memo, Fragment, type ComponentProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, CornerDownLeft, Globe2, Pencil, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, ClipboardList, CornerDownLeft, Globe2, Pencil, Trash2 } from 'lucide-react'
 import { AutoResizeTextarea, DebugTrigger } from '@arkloop/shared'
 import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
 import { RunDetailPanel } from './RunDetailPanel'
@@ -32,6 +32,7 @@ import { ResourcePreviewPanel } from './resource-preview/ResourcePreviewPanel'
 import { BrowserSiteIcon } from './resource-preview/BrowserSiteIcon'
 import type { BrowserResourceRef, LocalFileResourceRef, ResourceRef } from './resource-preview/types'
 import { resourceTitle } from './resource-preview/resourceUri'
+import { isPlanMarkdownPath } from '../planMetadata'
 import { ChatTitleMenu } from './ChatTitleMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
 import { CopSegmentBlocks } from './CopSegmentBlocks'
@@ -211,6 +212,9 @@ function resourceTabId(resource: ResourceRef): string {
 
 function localFileTabIcon(resource: LocalFileResourceRef | null) {
   if (!resource) return undefined
+  if (isPlanMarkdownPath(resource.path)) {
+    return <ClipboardList size={rightPanelIconSize} strokeWidth={1.8} style={{ color: 'var(--c-text-icon)', flexShrink: 0 }} />
+  }
   const iconUrl = resolveLocalFileIconUrl({
     name: resource.name ?? resource.filename ?? resource.path.split('/').filter(Boolean).at(-1) ?? resource.path,
     path: resource.path,
@@ -218,6 +222,16 @@ function localFileTabIcon(resource: LocalFileResourceRef | null) {
     size: resource.size,
   })
   return iconUrl ? <img src={iconUrl} alt="" aria-hidden="true" draggable={false} style={{ width: rightPanelIconSize, height: rightPanelIconSize, flexShrink: 0 }} /> : undefined
+}
+
+function resourcePanelIcon(resource: ResourceRef) {
+  const planPath = 'path' in resource ? resource.path : 'filename' in resource ? resource.filename : undefined
+  if (isPlanMarkdownPath(planPath)) {
+    return <ClipboardList size={rightPanelIconSize} strokeWidth={1.8} style={{ color: 'var(--c-text-icon)', flexShrink: 0 }} />
+  }
+  if (resource.kind === 'local-file') return localFileTabIcon(resource)
+  if (resource.kind === 'browser') return <BrowserSiteIcon url={resource.url} faviconUrl={resource.faviconUrl} size={rightPanelIconSize} />
+  return undefined
 }
 
 function clampRightPanelWidth(width: number, containerWidth: number): number {
@@ -1185,7 +1199,9 @@ export const ChatView = memo(function ChatView() {
     handleAsrError,
     handleArtifactAction,
   } = useChatActions({ scrollToBottom: activateAnchor })
-  void sendMessage
+  const handleBuildPlan = useCallback((message: string) => {
+    void sendMessage(message)
+  }, [sendMessage])
 
   // 加载 thread 数据
   useEffect(() => {
@@ -2593,7 +2609,7 @@ export const ChatView = memo(function ChatView() {
         const nextTab: RightPanelStoredTab = {
           id: tabId,
           kind: 'resource',
-          title: resourceTitle(resourcePanelResource),
+          title: previous?.kind === 'resource' ? previous.title : resourceTitle(resourcePanelResource),
           resource: resourcePanelResource,
           artifacts: previous?.kind === 'resource' ? previous.artifacts : undefined,
           runId: previous?.kind === 'resource' ? previous.runId : undefined,
@@ -2651,22 +2667,30 @@ export const ChatView = memo(function ChatView() {
       id: tab.id,
       kind: tab.kind,
       title: tab.title,
-      icon: tab.resource.kind === 'local-file'
-        ? localFileTabIcon(tab.resource)
-        : tab.resource.kind === 'browser'
-          ? <BrowserSiteIcon url={tab.resource.url} faviconUrl={tab.resource.faviconUrl} size={rightPanelIconSize} />
-          : undefined,
+      icon: resourcePanelIcon(tab.resource),
       content: (
         <ResourcePreviewPanel
           resource={tab.resource}
           accessToken={accessToken}
           artifacts={tab.artifacts}
           runId={tab.runId}
+          workFolder={workPanelFolder}
           onClose={() => closeRightPanelTab(tab.id)}
+          onBuildPlan={handleBuildPlan}
+          onOpenModelSettings={() => onOpenSettings('models')}
+          onPlanTitleChange={(title) => {
+            setRightPanelTabs((current) => {
+              const target = current.find((item) => item.id === tab.id && item.kind === 'resource')
+              if (!target || target.title === title) return current
+              return current.map((item) => (
+                item.id === tab.id && item.kind === 'resource' ? { ...item, title } : item
+              ))
+            })
+          }}
         />
       ),
     }
-  }, [accessToken, closeRightPanelTab, resolvedMessageSources])
+  }, [accessToken, closeRightPanelTab, handleBuildPlan, onOpenSettings, resolvedMessageSources, workPanelFolder])
 
   // Individual tab memos — when only one dep changes, other tabs stay stable.
   // This prevents e.g. adding a document tab from rebuilding the files tab (incl. LocalFileTree).

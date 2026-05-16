@@ -33,6 +33,7 @@ import {
   resourceTitle,
   resourceUriToResourceRef,
 } from './resource-preview/resourceUri'
+import { isPlanMarkdownPath } from '../planMetadata'
 
 type ArtifactsContextValue = {
   artifacts: ArtifactRef[]
@@ -320,10 +321,12 @@ function ResourceDocumentCard({
   onOpen: (trigger: HTMLButtonElement) => void
 }) {
   const title = childText(children) || resourceTitle(resource)
+  const resourcePath = 'path' in resource ? resource.path : 'filename' in resource ? resource.filename : title
   return (
     <div style={{ margin: '8px 0' }}>
       <DocumentResourceCard
         title={title}
+        isPlan={isPlanMarkdownPath(resourcePath)}
         onClick={onOpen}
       />
     </div>

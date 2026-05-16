@@ -1,13 +1,20 @@
-import { memo, useEffect, useState } from 'react'
-import { Code, Eye, FileText, X } from 'lucide-react'
+import { memo, useCallback, useEffect, useState } from 'react'
+import { ChevronRight, Code, Eye, FileText, X } from 'lucide-react'
+import { Button } from '@arkloop/shared'
 import { SettingsSegmentedControl } from '../settings/_SettingsSegmentedControl'
 import type { ArtifactRef } from '../../storage'
+import {
+  readSelectedModelFromStorage,
+  SELECTED_MODEL_CHANGED_EVENT,
+  writeSelectedModelToStorage,
+} from '../../storage'
 import { BrowserResourcePanel } from './BrowserResourcePanel'
 import { loadPreviewResource } from './loader'
 import { PreviewResourceView } from './PreviewResourceView'
 import type { PreviewResource, ResourceRef } from './types'
-import { extractPlanNameFromMarkdown, isPlanMarkdownPath } from '../../planMetadata'
+import { extractPlanNameFromMarkdown, isPlanMarkdownPath, parsePlanMarkdown, resolvePlanBuildState } from '../../planMetadata'
 import { useLocale } from '../../contexts/LocaleContext'
+import { ModelPicker } from '../ModelPicker'
 
 type ViewMode = 'preview' | 'source'
 
@@ -16,8 +23,12 @@ type Props = {
   accessToken: string
   artifacts?: ArtifactRef[]
   runId?: string
+  workFolder?: string | null
   onClose?: () => void
   onResourceChange?: (resource: ResourceRef) => void
+  onBuildPlan?: (message: string) => void
+  onOpenModelSettings?: () => void
+  onPlanTitleChange?: (title: string) => void
 }
 
 function releaseResource(resource: PreviewResource | null): void {
@@ -36,9 +47,54 @@ function getResourceFilename(resource: ResourceRef): string {
   return ('filename' in resource ? resource.filename : undefined) ?? ('name' in resource ? resource.name : undefined) ?? ('title' in resource ? resource.title : undefined) ?? pathName ?? 'Preview'
 }
 
-export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({ resource, accessToken, artifacts, runId, onClose, onResourceChange }: Props) {
+function basename(path: string | undefined | null): string {
+  const normalized = (path ?? '').replace(/\\/g, '/').replace(/\/+$/g, '')
+  return normalized.split('/').filter(Boolean).at(-1) ?? ''
+}
+
+function workspaceLabel(resource: ResourceRef, workFolder?: string | null): string {
+  if (workFolder) return basename(workFolder) || 'Arkloop'
+  if (resource.kind === 'local-file') return basename(resource.rootPath) || 'Arkloop'
+  return 'Arkloop'
+}
+
+function planReferencePath(resource: ResourceRef, loaded: PreviewResource): string {
+  const ref = loaded.ref ?? resource
+  if (ref.kind === 'local-file') return ref.path.replace(/\\/g, '/')
+  if (ref.kind === 'workspace-file') return ref.path.replace(/^\/+/, '')
+  if (ref.kind === 'artifact') return ref.filename ?? loaded.filename
+  return loaded.filename
+}
+
+function buildPlanMessage(locale: 'zh' | 'en', path: string): string {
+  if (locale === 'zh') return `开始执行这个计划。\n\n计划文件：${path}`
+  return `Start executing this plan.\n\nPlan file: ${path}`
+}
+
+function BreadcrumbPart({ children }: { children: string }) {
+  return (
+    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {children}
+    </span>
+  )
+}
+
+export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
+  resource,
+  accessToken,
+  artifacts,
+  runId,
+  workFolder,
+  onClose,
+  onResourceChange,
+  onBuildPlan,
+  onOpenModelSettings,
+  onPlanTitleChange,
+}: Props) {
   const { locale } = useLocale()
   const [mode, setMode] = useState<ViewMode>('preview')
+  const [selectedModel, setSelectedModel] = useState<string | null>(readSelectedModelFromStorage)
+  const [buildRequestedPath, setBuildRequestedPath] = useState<string | null>(null)
   const [state, setState] = useState<{
     resource: ResourceRef | null
     loaded: PreviewResource | null
@@ -57,6 +113,10 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({ resourc
           return
         }
         created = next
+        if (next.text && isPlanMarkdownPath(next.filename)) {
+          const plan = parsePlanMarkdown(next.text)
+          if (plan?.name) onPlanTitleChange?.(plan.name)
+        }
         setMode('preview')
         setState({ resource, loaded: next, error: null })
       })
@@ -70,7 +130,18 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({ resourc
       controller.abort()
       releaseResource(created)
     }
-  }, [resource, accessToken])
+  }, [resource, accessToken, onPlanTitleChange])
+
+  useEffect(() => {
+    const syncSelectedModel = () => setSelectedModel(readSelectedModelFromStorage())
+    window.addEventListener(SELECTED_MODEL_CHANGED_EVENT, syncSelectedModel)
+    return () => window.removeEventListener(SELECTED_MODEL_CHANGED_EVENT, syncSelectedModel)
+  }, [])
+
+  const handleModelChange = useCallback((model: string | null) => {
+    setSelectedModel(model)
+    writeSelectedModelToStorage(model)
+  }, [])
 
   if (resource.kind === 'browser') {
     return <BrowserResourcePanel resource={resource} onClose={onClose} onResourceChange={onResourceChange} />
@@ -78,15 +149,83 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({ resourc
 
   const current = state.resource === resource ? state : { resource, loaded: null, error: null }
   const loaded = current.loaded
-  const canToggleSource = loaded?.text !== undefined
   const rawFilename = loaded?.filename ?? getResourceFilename(resource)
-  const filename = loaded?.text && isPlanMarkdownPath(rawFilename)
+  const plan = loaded?.text && isPlanMarkdownPath(rawFilename) ? parsePlanMarkdown(loaded.text) : null
+  const isPlan = Boolean(plan)
+  const filename = plan?.name ?? (loaded?.text && isPlanMarkdownPath(rawFilename)
     ? extractPlanNameFromMarkdown(loaded.text) ?? rawFilename
-    : rawFilename
+    : rawFilename)
+  const canToggleSource = loaded?.text !== undefined && !isPlan
   const meta = loaded ? [loaded.mimeType, formatSize(loaded.size)].filter(Boolean).join(' · ') : ''
   const previewLabel = locale === 'zh' ? '预览' : 'Preview'
   const sourceLabel = locale === 'zh' ? '源码' : 'Source'
   const closeLabel = locale === 'zh' ? '关闭' : 'Close'
+  const buildLabel = 'Build'
+  const plansLabel = 'Plans'
+
+  if (isPlan && loaded && plan) {
+    const path = planReferencePath(resource, loaded)
+    const title = plan.name ?? filename
+    const buildState = resolvePlanBuildState(plan, buildRequestedPath === path)
+    const handleBuild = () => {
+      setBuildRequestedPath(path)
+      onBuildPlan?.(buildPlanMessage(locale, path))
+    }
+    const buildButtonLabel = buildState === 'building' ? 'Building...' : buildLabel
+
+    return (
+      <div style={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--c-bg-page)' }}>
+        <div style={{ minHeight: 44, flexShrink: 0, borderBottom: '0.5px solid var(--c-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '5px 18px', minWidth: 0 }}>
+          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--c-text-secondary)', fontSize: 14 }}>
+            <BreadcrumbPart>{workspaceLabel(resource, workFolder)}</BreadcrumbPart>
+            <ChevronRight size={14} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
+            <BreadcrumbPart>{plansLabel}</BreadcrumbPart>
+            <ChevronRight size={14} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--c-text-primary)', fontWeight: 520 }}>
+              {title}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <ModelPicker
+              accessToken={accessToken}
+              value={selectedModel}
+              onChange={handleModelChange}
+              onAddModel={() => onOpenModelSettings?.()}
+              thinkingEnabled="off"
+              onThinkingChange={() => {}}
+              showReasoningOptions={false}
+              controlHeight={30}
+            />
+            {buildState === 'built' ? (
+              <span style={{ height: 30, display: 'inline-flex', alignItems: 'center', color: 'var(--c-status-success-text)', fontSize: 14, fontWeight: 560, padding: '0 4px' }}>
+                Built
+              </span>
+            ) : onBuildPlan ? (
+              <Button type="button" size="sm" className="px-3" style={{ height: 30 }} disabled={buildState === 'building'} onClick={handleBuild}>
+                {buildButtonLabel}
+              </Button>
+            ) : null}
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                title={closeLabel}
+                aria-label={closeLabel}
+                style={{ width: 30, height: 30, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--c-text-secondary)', cursor: 'pointer' }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = 'var(--c-bg-deep)' }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent' }}
+              >
+                <X size={16} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <PreviewResourceView resource={loaded} accessToken={accessToken} artifacts={artifacts} runId={runId} mode="preview" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--c-bg-page)' }}>
