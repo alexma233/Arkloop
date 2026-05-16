@@ -2447,10 +2447,13 @@ export const ChatView = memo(function ChatView() {
 
     const adaptToContainer = () => {
       const containerWidth = root.clientWidth
-      setRightPanelWidth(() => {
-        const ratio = rightPanelRatioRef.current || rightPanelDefaultRatio
-        const next = clampRightPanelWidth(containerWidth * ratio, containerWidth)
+      setRightPanelWidth((current) => {
+        const target = rightPanelRatioRef.current === 0
+          ? containerWidth * rightPanelDefaultRatio
+          : current
+        const next = clampRightPanelWidth(target, containerWidth)
         rightPanelRatioRef.current = next / Math.max(containerWidth, 1)
+        if (Math.abs(current - next) < 1) return current
         return next
       })
     }
