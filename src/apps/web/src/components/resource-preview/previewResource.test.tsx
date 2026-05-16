@@ -106,12 +106,16 @@ isProject: false
 ## 实施范围
 先处理后端结构，再处理前端入口。`
 
-    const html = renderToStaticMarkup(<PreviewResourceView resource={resource} />)
+    const html = renderToStaticMarkup(
+      <LocaleProvider>
+        <PreviewResourceView resource={resource} />
+      </LocaleProvider>,
+    )
 
     expect(html).toContain('data-preview-renderer="plan"')
     expect(html).toContain('Channel Phase 1 Implementation')
     expect(html).toContain('实现 Channel Integration Phase 1A')
-    expect(html.indexOf('实施范围')).toBeLessThan(html.indexOf('To-dos'))
+    expect(html.indexOf('实施范围')).toBeLessThan(html.indexOf('Todos'))
     expect(html).toContain('创建 00130_channels.sql migration')
     expect(html).toContain('新建 ChannelsSettingsContent.tsx')
     expect(html).not.toContain('isProject')

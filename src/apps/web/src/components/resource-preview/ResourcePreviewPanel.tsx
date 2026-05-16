@@ -200,7 +200,7 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
             <ChevronRight size={14} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
             <BreadcrumbPart>{plansLabel}</BreadcrumbPart>
             <ChevronRight size={14} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--c-text-primary)', fontWeight: 520 }}>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--c-text-primary)', fontWeight: 'var(--c-fw-425)' }}>
               {title}
             </span>
           </div>
@@ -216,7 +216,7 @@ export const ResourcePreviewPanel = memo(function ResourcePreviewPanel({
               controlHeight={30}
             />
             {buildState === 'built' ? (
-              <span style={{ height: 30, display: 'inline-flex', alignItems: 'center', color: 'var(--c-status-success-text)', fontSize: 14, fontWeight: 560, padding: '0 4px' }}>
+              <span style={{ height: 30, display: 'inline-flex', alignItems: 'center', color: 'var(--c-status-success-text)', fontSize: 14, fontWeight: 'var(--c-fw-450)', padding: '0 4px' }}>
                 Built
               </span>
             ) : onBuildPlan ? (

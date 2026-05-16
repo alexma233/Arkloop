@@ -99,7 +99,7 @@ function PlanDocumentRenderer({
       }}
     >
       {plan.name ? (
-        <h1 style={{ margin: '0 0 12px', color: 'var(--c-text-primary)', fontSize: 30, lineHeight: '38px', fontWeight: 680 }}>
+        <h1 style={{ margin: '0 0 12px', color: 'var(--c-text-primary)', fontSize: 30, lineHeight: '38px', fontWeight: 'var(--c-fw-500)' }}>
           {plan.name}
         </h1>
       ) : null}
