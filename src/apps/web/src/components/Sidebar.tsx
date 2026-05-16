@@ -47,6 +47,7 @@ type Props = {
   threads: ThreadResponse[]
   onNewThread: () => void
   onThreadDeleted: (threadId: string) => void
+  preserveExpandedLayout?: boolean
   /** 点到历史会话时先收起设置等全屏层；否则同 URL 的 navigate 不会触发，桌面端无法回到聊天 */
   beforeNavigateToThread?: () => void
 }
@@ -252,10 +253,11 @@ const SidebarThreadItem = memo(function SidebarThreadItem({
   )
 })
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   threads,
   onNewThread,
   onThreadDeleted,
+  preserveExpandedLayout = false,
   beforeNavigateToThread,
 }: Props) {
   const { me, accessToken } = useAuth()
@@ -268,6 +270,7 @@ export function Sidebar({
   } = useThreadList()
   const { runningThreadIds, completedUnreadThreadIds } = useThreadLiveState()
   const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarUI()
+  const visualCollapsed = preserveExpandedLayout ? false : collapsed
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
   const { appMode } = useAppModeUI()
@@ -548,7 +551,7 @@ export function Sidebar({
 
   // -- 视图组件 --
 
-  const ProjectSidebarView = (
+  const ProjectSidebarView = useMemo(() => (
     <>
       {projectGroups.map(group => {
         const isExpanded = expandedPaths.has(group.path)
@@ -633,9 +636,18 @@ export function Sidebar({
         )
       })}
     </>
-  )
+  ), [
+    dragOverProjectPath,
+    expandedLimits,
+    expandedPaths,
+    onNewThread,
+    projectGroups,
+    renderThread,
+    setProjectGroupNode,
+    t.folderMore,
+  ])
 
-  const GtdSidebarView = (
+  const GtdSidebarView = useMemo(() => (
     <>
       {gtdGroups.map(group => {
         const isExpanded = expandedGtdBuckets.has(group.bucket)
@@ -695,7 +707,15 @@ export function Sidebar({
         )
       })}
     </>
-  )
+  ), [
+    dragOverGtdBucket,
+    expandedGtdBuckets,
+    gtdExpandedLimits,
+    gtdGroups,
+    renderThread,
+    setGtdGroupNode,
+    t.folderMore,
+  ])
 
   // GTD / Pin 操作
   const applyGtdBucketLocal = useCallback((id: string, bucket: GtdBucket | null) => {
@@ -1502,7 +1522,7 @@ export function Sidebar({
 
       {/* Non-desktop title bar or spacer */}
       {!desktopMode && (
-        collapsed ? (
+        visualCollapsed ? (
           <div className="h-3" />
         ) : (
           <div className="flex min-h-[56px] items-center justify-between px-4 py-3">
@@ -1556,7 +1576,7 @@ export function Sidebar({
         )
       )}
 
-      {!(collapsed && isWorkMode) && (
+      {!(visualCollapsed && isWorkMode) && (
         <nav className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1">
           <button
             onClick={onNewThread}
@@ -1623,10 +1643,10 @@ export function Sidebar({
       <div
         className={[
           'mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto px-2',
-          collapsed ? 'opacity-0' : 'opacity-100',
+          visualCollapsed ? 'opacity-0' : 'opacity-100',
         ].join(' ')}
         style={{ transition: 'opacity 150ms ease' }}
-        inert={collapsed || undefined}
+        inert={visualCollapsed || undefined}
       >
           {!isWorkMode && !gtdEnabled && (
             <div className="mb-[12px] mt-1 flex shrink-0 items-center gap-2 px-2">
@@ -1728,11 +1748,11 @@ export function Sidebar({
         className="mt-auto px-2 pb-2 pt-1"
         style={{
           borderTop: '1px solid var(--c-border)',
-          borderTopColor: collapsed ? 'transparent' : 'var(--c-border)',
+          borderTopColor: visualCollapsed ? 'transparent' : 'var(--c-border)',
           transition: 'border-top-color 280ms cubic-bezier(0.16,1,0.3,1)',
         }}
       >
-        {!collapsed && !isLocalMode() && (
+        {!visualCollapsed && !isLocalMode() && (
           <button
             onClick={() => onOpenSettings('account')}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-[10px] transition-[background-color] duration-[60ms] hover:bg-[var(--c-bg-deep)]"
@@ -1801,4 +1821,4 @@ export function Sidebar({
       {dragPortal}
     </>
   )
-}
+})

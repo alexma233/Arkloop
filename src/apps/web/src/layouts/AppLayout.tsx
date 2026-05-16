@@ -395,7 +395,7 @@ export function AppLayout() {
     productUpdateNotifications &&
     (appUpdateState?.phase === 'available' ||
       appUpdateState?.phase === 'downloaded')
-  const hideCollapsedWorkSidebar = desktop && activeAppMode === 'work' && sidebarCollapsed
+  const collapseWorkSidebar = desktop && activeAppMode === 'work' && sidebarCollapsed
   const mainContentAxisPaddingLeft = desktop && sidebarCollapsed && activeAppMode === 'work'
     ? `${SIDEBAR_COLLAPSED_WIDTH / 2}px`
     : '0px'
@@ -447,19 +447,20 @@ export function AppLayout() {
             <div
               className="relative h-full shrink-0 overflow-hidden"
               style={{
-                width: hideCollapsedWorkSidebar ? 0 : sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth,
+                width: collapseWorkSidebar ? 0 : sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth,
                 transition: sidebarResizing || modeSwitchingCollapsedSidebar ? undefined : `width ${SIDEBAR_WIDTH_TRANSITION}`,
                 visibility: collapsedSidebarEnterVisible ? 'hidden' : undefined,
               }}
             >
-              {!hideCollapsedWorkSidebar && (
+              <div style={{ width: collapseWorkSidebar ? sidebarWidth : '100%', height: '100%' }}>
                 <Sidebar
                   threads={filteredThreads}
                   onNewThread={handleNewThread}
                   onThreadDeleted={handleThreadDeleted}
+                  preserveExpandedLayout={collapseWorkSidebar}
                   beforeNavigateToThread={handleBeforeNavigateToThread}
                 />
-              )}
+              </div>
               {!sidebarCollapsed && (
                 <div
                   role="separator"
