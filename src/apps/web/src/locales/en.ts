@@ -64,6 +64,8 @@ export const en: LocaleStrings = {
     search: 'Search',
     noHistory: 'No history',
     clear: 'Clear',
+    frameBlockedTitle: 'Cannot open in panel',
+    frameBlockedDetail: 'This site only allows top-level windows',
   },
   nav: {
     account: "Account",

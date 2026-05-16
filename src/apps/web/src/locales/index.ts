@@ -74,6 +74,8 @@ export interface LocaleStrings {
     search: string;
     noHistory: string;
     clear: string;
+    frameBlockedTitle: string;
+    frameBlockedDetail: string;
   };
   // settings nav
   nav: {

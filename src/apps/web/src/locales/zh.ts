@@ -64,6 +64,8 @@ export const zh: LocaleStrings = {
     search: '搜索',
     noHistory: '暂无历史记录',
     clear: '清除',
+    frameBlockedTitle: '无法在面板中打开',
+    frameBlockedDetail: '这个网站只允许在顶层窗口显示',
   },
   nav: {
     account: "账户",

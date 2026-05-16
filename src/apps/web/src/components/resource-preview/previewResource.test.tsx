@@ -365,6 +365,39 @@ todos:
     }
   })
 
+  it('browser 显示被站点嵌入策略拒绝的错误态', async () => {
+    const host = globalThis as typeof globalThis & { __desktopApi?: unknown }
+    host.__desktopApi = {
+      app: {
+        fetchPageMetadata: vi.fn().mockResolvedValue({ title: 'Google', xFrameOptions: 'SAMEORIGIN' }),
+      },
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    try {
+      await act(async () => {
+        root.render(
+          <LocalizedResourcePreviewPanel
+            accessToken="token"
+            resource={{ kind: 'browser', url: 'https://www.google.com/', title: 'Google' }}
+          />,
+        )
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(container.querySelector('iframe.browser-panel__frame')).toBeNull()
+      expect(container.querySelector('.browser-panel__blocked')?.textContent).toContain('无法在面板中打开')
+      expect(container.querySelector('.browser-panel__blocked')?.textContent).toContain('在外部打开')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
   it('browser history 持久化到前端状态', async () => {
     const first = document.createElement('div')
     document.body.appendChild(first)
