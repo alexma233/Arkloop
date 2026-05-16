@@ -1493,8 +1493,7 @@ export function Sidebar({
         'theme-surface-sidebar flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--c-bg-sidebar)]',
       ].join(' ')}
       style={{
-        transition: 'width 280ms cubic-bezier(0.16,1,0.3,1)',
-        willChange: 'width',
+        contain: 'layout paint style',
         borderRight: '0.5px solid var(--c-border)',
       }}
     >
