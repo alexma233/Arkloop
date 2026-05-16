@@ -279,6 +279,33 @@ type ItemResolver = {
   render: (toolCallId: string) => React.ReactNode
 }
 
+function relatedSearchSteps(toolCallId: string, pool: ResolvedPool) {
+  return [...pool.steps.values()]
+    .filter((step) => step.id === toolCallId || step.id.startsWith(`${toolCallId}::`))
+    .sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0))
+}
+
+function renderSearchStep(
+  step: ReturnType<typeof relatedSearchSteps>[number],
+  pool: ResolvedPool,
+  live: boolean,
+  locale: Locale,
+) {
+  return (
+    <div>
+      <div style={{ fontSize: 'var(--c-cop-row-font-size)', color: 'var(--c-cop-row-fg)', lineHeight: 'var(--c-cop-row-line-height)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <TypewriterText text={renderTimelineText(timelineStepText(step), locale)} className={step.status === 'active' ? 'thinking-shimmer-dim' : undefined} live={live} />
+      </div>
+      {step.kind === 'searching' && step.queries && step.queries.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+          {step.queries.map((q, index) => <QueryPill key={`${step.id}:query:${index}`} text={q} live={live} />)}
+        </div>
+      )}
+      {step.kind === 'reviewing' && <SourceListCard sources={step.sources ?? pool.sources} />}
+    </div>
+  )
+}
+
 function renderItem(
   item: CopSubSegment['items'][number],
   pool: ResolvedPool,
@@ -357,20 +384,16 @@ function renderItem(
       },
     },
     {
-      check: (id) => pool.steps.has(id),
+      check: (id) => relatedSearchSteps(id, pool).length > 0,
       render: (id) => {
-        const step = pool.steps.get(id)!
+        const steps = relatedSearchSteps(id, pool)
         return (
-          <div>
-            <div style={{ fontSize: 'var(--c-cop-row-font-size)', color: 'var(--c-cop-row-fg)', lineHeight: 'var(--c-cop-row-line-height)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <TypewriterText text={renderTimelineText(timelineStepText(step), locale)} className={step.status === 'active' ? 'thinking-shimmer-dim' : undefined} live={live} />
-            </div>
-            {step.kind === 'searching' && step.queries && step.queries.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                {step.queries.map((q, index) => <QueryPill key={`${step.id}:query:${index}`} text={q} live={live} />)}
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {steps.map((step) => (
+              <div key={step.id}>
+                {renderSearchStep(step, pool, live, locale)}
               </div>
-            )}
-            {step.kind === 'reviewing' && <SourceListCard sources={step.sources ?? pool.sources} />}
+            ))}
           </div>
         )
       },

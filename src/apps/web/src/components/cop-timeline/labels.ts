@@ -45,6 +45,7 @@ export function localizeTimelineLabel(label: string, locale: Locale): string {
     'Search completed': '搜索完成',
     'Searching': '搜索中',
     'Reviewing sources': '正在检查来源',
+    'Sources checked': '已检查来源',
     'Enter Plan Mode': '进入计划模式',
     'Exit Plan Mode': '退出计划模式',
     enter_plan_mode: '进入计划模式',
