@@ -1288,7 +1288,7 @@ func (c telegramConnector) HandleUpdate(
 					ChatID: incoming.PlatformChatID,
 					Text:   "当前账号未被授权使用这个机器人。",
 				}); err != nil {
-					slog.WarnContext(ctx, "telegram_send_failed", "chat_id", "", "error", err)
+					slog.WarnContext(ctx, "telegram_send_failed", "chat_id", incoming.PlatformChatID, "error", err)
 				}
 				sendCancel()
 			}
@@ -2056,7 +2056,7 @@ func (c telegramConnector) HandleUpdateForPoll(
 					ChatID: incoming.PlatformChatID,
 					Text:   "当前账号未被授权使用这个机器人。",
 				}); err != nil {
-					slog.WarnContext(ctx, "telegram_send_failed", "chat_id", "", "error", err)
+					slog.WarnContext(ctx, "telegram_send_failed", "chat_id", incoming.PlatformChatID, "error", err)
 				}
 				sendCancel()
 			}
@@ -2157,7 +2157,9 @@ func (c telegramConnector) handleTelegramCallbackQuery(
 	if cbData == "dismiss" {
 		if c.telegramClient != nil && strings.TrimSpace(token) != "" {
 			editCtx, editCancel := context.WithTimeout(ctx, telegramRemoteRequestTimeout)
-			_ = c.telegramClient.EditMessageReplyMarkup(editCtx, token, fmt.Sprintf("%d", cb.Message.Chat.ID), cb.Message.MessageID, nil)
+			if err := c.telegramClient.EditMessageReplyMarkup(editCtx, token, fmt.Sprintf("%d", cb.Message.Chat.ID), cb.Message.MessageID, nil); err != nil {
+				slog.WarnContext(ctx, "telegram_edit_reply_markup_failed", "chat_id", cb.Message.Chat.ID, "error", err)
+			}
 			editCancel()
 		}
 		return nil
@@ -2174,7 +2176,9 @@ func (c telegramConnector) handleTelegramCallbackQuery(
 			return
 		}
 		editCtx, editCancel := context.WithTimeout(ctx, telegramRemoteRequestTimeout)
-		_ = c.telegramClient.EditMessageReplyMarkup(editCtx, token, fmt.Sprintf("%d", cb.Message.Chat.ID), cb.Message.MessageID, kb)
+		if err := c.telegramClient.EditMessageReplyMarkup(editCtx, token, fmt.Sprintf("%d", cb.Message.Chat.ID), cb.Message.MessageID, kb); err != nil {
+			slog.WarnContext(ctx, "telegram_edit_reply_markup_failed", "chat_id", cb.Message.Chat.ID, "error", err)
+		}
 		editCancel()
 	}
 	editText := func(text string) {

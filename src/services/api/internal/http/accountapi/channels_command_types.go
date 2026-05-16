@@ -28,6 +28,7 @@ type ModelPickerData struct {
 	CurrentDisplay  string          // 当前模型的人类可读名
 	Providers       []ProviderGroup // 按 credential 分组的模型
 	AllowUserScoped bool
+	ShowQuickSwitch bool            // /model 无参数时为 true，显示快速切换键盘而非全量 provider 列表
 }
 
 func (ModelPickerData) interactiveData() {}

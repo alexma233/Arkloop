@@ -9,14 +9,13 @@ import (
 // Telegram callback_data 紧凑编码前缀。
 // 全部设计在 64 bytes 以内（Telegram 硬限制）。
 const (
-	cbModelProviders    = "mp"        // 显示 provider 列表
-	cbModelProviderFmt  = "mp_%d"     // 显示 provider[i] 的模型
-	cbModelPageFmt      = "mp_%d_%d"  // provider[i] 第 pg 页
-	cbModelSelectFmt    = "ms_%d"     // 选择 flat index 处的模型
-	cbThinkFmt          = "thk_%s"    // 设置思考模式
-	cbPersonaFmt        = "prs_%d"    // 选择 persona[i]
-	cbDismiss           = "dismiss"   // 关闭键盘
-	cbBack              = "mp"        // 返回 provider 列表
+	cbModelProviders   = "mp"       // 显示 provider 列表（也用于返回按钮）
+	cbModelProviderFmt = "mp_%d"    // 显示 provider[i] 的模型
+	cbModelPageFmt     = "mp_%d_%d" // provider[i] 第 pg 页
+	cbModelSelectFmt   = "ms_%d"    // 选择 flat index 处的模型
+	cbThinkFmt         = "thk_%s"   // 设置思考模式
+	cbPersonaFmt       = "prs_%d"   // 选择 persona[i]
+	cbDismiss          = "dismiss"  // 关闭键盘
 )
 
 const telegramModelsPerPage = 8
@@ -107,7 +106,7 @@ func BuildTelegramProviderModelsKeyboard(data ModelPickerData, providerIdx int, 
 	}
 
 	rows = append(rows, []telegrambot.InlineKeyboardButton{
-		{Text: "← 返回", CallbackData: cbBack},
+		{Text: "← 返回", CallbackData: cbModelProviders},
 		{Text: "✕", CallbackData: cbDismiss},
 	})
 
@@ -189,6 +188,9 @@ func BuildTelegramInteractive(reply *CommandReply) *telegrambot.InlineKeyboardMa
 	}
 	switch d := reply.Interactive.(type) {
 	case ModelPickerData:
+		if d.ShowQuickSwitch {
+			return BuildTelegramModelQuickKeyboard(d)
+		}
 		return BuildTelegramProvidersKeyboard(d)
 	case ThinkPickerData:
 		return BuildTelegramThinkKeyboard(d)
@@ -201,7 +203,7 @@ func BuildTelegramInteractive(reply *CommandReply) *telegrambot.InlineKeyboardMa
 
 // FlattenModelChoices 返回所有 provider 下 ModelChoice 的平铺列表。
 func FlattenModelChoices(data ModelPickerData) []ModelChoice {
-	var flat []ModelChoice
+	flat := make([]ModelChoice, 0)
 	for _, pg := range data.Providers {
 		flat = append(flat, pg.Models...)
 	}
@@ -254,7 +256,7 @@ func ParseCallbackData(data string) (ParsedCallback, bool) {
 	if data == cbDismiss {
 		return ParsedCallback{Kind: "dismiss"}, true
 	}
-	if data == cbBack || data == cbModelProviders {
+	if data == cbModelProviders {
 		return ParsedCallback{Kind: "providers"}, true
 	}
 	if strings.HasPrefix(data, "mp_") {

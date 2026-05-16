@@ -252,7 +252,12 @@ func DispatchChannelCommand(
 		if strings.TrimSpace(preferredModel) != "" {
 			modelDisplay = preferredModel
 		}
-		personaName := resolvePersonaName(ch, deps)
+		personaName := ""
+		if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
+			if p, err := deps.PersonasRepo.WithTx(tx).GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID); err == nil && p != nil {
+				personaName = p.DisplayName
+			}
+		}
 		runStatus := "空闲"
 		if resolveErr == nil && threadID != uuid.Nil {
 			activeRun, _ := deps.RunEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
@@ -355,7 +360,8 @@ func handlePreferenceCommand(
 				return nil, err
 			}
 			pickerData := GroupCandidatesByProvider(candidates, preferredModel, allowUserScoped)
-			modelDisplay := preferredModel
+				pickerData.ShowQuickSwitch = true
+				modelDisplay := preferredModel
 			if strings.TrimSpace(preferredModel) == "" {
 				modelDisplay = "跟随频道默认"
 			}
@@ -416,6 +422,7 @@ func handlePreferenceCommand(
 }
 
 // resolveNewSessionContext 获取 /new 和 /reset 回复所需的上下文信息。
+// /new 后 thread 已删除，model 取 channel 默认值（不存在则留空）。
 func resolveNewSessionContext(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -427,19 +434,8 @@ func resolveNewSessionContext(
 			personaName = p.DisplayName
 		}
 	}
-	// model 信息需要 thread，但 /new 之后 thread 已删除，所以不显示具体 model
-	// 仅当能从其他来源获取时才填充
-	return "", personaName
-}
-
-// resolvePersonaName 获取当前 channel 的 persona 显示名。
-func resolvePersonaName(ch data.Channel, deps ChannelCommandDeps) string {
-	if ch.PersonaID == nil || *ch.PersonaID == uuid.Nil {
-		return ""
-	}
-	// 注意：这里无法访问 repo（没有 ctx/tx），返回空
-	// /status 命令内已直接查 repo，此函数仅作降级
-	return ""
+	modelName = extractChannelDefaultModel(ch)
+	return modelName, personaName
 }
 
 func channelCommandRequiresAdmin(cmd string) bool {
