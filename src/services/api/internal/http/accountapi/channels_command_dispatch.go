@@ -163,7 +163,6 @@ func DispatchChannelCommand(
 				}
 			}
 		}
-		// 获取当前上下文信息用于回复
 		modelName, personaName := resolveNewSessionContext(ctx, tx, ch, deps)
 		return true, &CommandReply{Text: RenderNewSessionText(modelName, personaName)}, nil
 
@@ -252,12 +251,7 @@ func DispatchChannelCommand(
 		if strings.TrimSpace(preferredModel) != "" {
 			modelDisplay = preferredModel
 		}
-		personaName := ""
-		if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
-			if p, err := deps.PersonasRepo.WithTx(tx).GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID); err == nil && p != nil {
-				personaName = p.DisplayName
-			}
-		}
+		personaName := resolveChannelPersonaName(ctx, tx, ch, deps)
 		runStatus := "空闲"
 		if resolveErr == nil && threadID != uuid.Nil {
 			activeRun, _ := deps.RunEventRepo.WithTx(tx).GetActiveRootRunForThread(ctx, threadID)
@@ -360,8 +354,8 @@ func handlePreferenceCommand(
 				return nil, err
 			}
 			pickerData := GroupCandidatesByProvider(candidates, preferredModel, allowUserScoped)
-				pickerData.ShowQuickSwitch = true
-				modelDisplay := preferredModel
+			pickerData.ShowQuickSwitch = true
+			modelDisplay := preferredModel
 			if strings.TrimSpace(preferredModel) == "" {
 				modelDisplay = "跟随频道默认"
 			}
@@ -422,20 +416,25 @@ func handlePreferenceCommand(
 }
 
 // resolveNewSessionContext 获取 /new 和 /reset 回复所需的上下文信息。
-// /new 后 thread 已删除，model 取 channel 默认值（不存在则留空）。
+// /new 后 thread 已删除，model 退回到 channel 默认值。
 func resolveNewSessionContext(
 	ctx context.Context,
 	tx pgx.Tx,
 	ch data.Channel,
 	deps ChannelCommandDeps,
 ) (modelName, personaName string) {
-	if ch.PersonaID != nil && *ch.PersonaID != uuid.Nil {
-		if p, err := deps.PersonasRepo.WithTx(tx).GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID); err == nil && p != nil {
-			personaName = p.DisplayName
-		}
+	return extractChannelDefaultModel(ch), resolveChannelPersonaName(ctx, tx, ch, deps)
+}
+
+func resolveChannelPersonaName(ctx context.Context, tx pgx.Tx, ch data.Channel, deps ChannelCommandDeps) string {
+	if ch.PersonaID == nil || *ch.PersonaID == uuid.Nil {
+		return ""
 	}
-	modelName = extractChannelDefaultModel(ch)
-	return modelName, personaName
+	p, err := deps.PersonasRepo.WithTx(tx).GetByIDForAccount(ctx, ch.AccountID, *ch.PersonaID)
+	if err != nil || p == nil {
+		return ""
+	}
+	return p.DisplayName
 }
 
 func channelCommandRequiresAdmin(cmd string) bool {

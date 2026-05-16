@@ -2115,7 +2115,6 @@ func (c telegramConnector) HandleUpdateForPoll(
 	return nil
 }
 
-
 // handleTelegramCallbackQuery 处理 InlineKeyboard 按钮回调。
 func (c telegramConnector) handleTelegramCallbackQuery(
 	ctx context.Context,
