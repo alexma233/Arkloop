@@ -12,7 +12,7 @@ import { NotificationsPanel } from '../components/NotificationsPanel'
 import { EmailVerificationGate } from '../components/EmailVerificationGate'
 import { useLocale } from '../contexts/LocaleContext'
 import { getMe } from '../api'
-import { writeActiveThreadIdToStorage, writeSelectedPersonaKeyToStorage, DEFAULT_PERSONA_KEY } from '../storage'
+import { writeActiveThreadIdToStorage, writeSelectedPersonaKeyToStorage, DEFAULT_PERSONA_KEY, readPinnedThreadIds } from '../storage'
 import { useAuth } from '../contexts/auth'
 import { useThreadList } from '../contexts/thread-list'
 import {
@@ -208,6 +208,7 @@ export function AppLayout() {
     threads,
     isPrivateMode, pendingIncognitoMode,
     privateThreadIds, removeThread,
+    markCompletionRead,
     togglePrivateMode,
     getFilteredThreads,
   } = useThreadList()
@@ -324,6 +325,11 @@ export function AppLayout() {
   )
   const activeAppMode = currentThread?.mode === 'work' ? 'work' : currentThread?.mode === 'chat' ? 'chat' : appMode
   const filteredThreads = useMemo(() => getFilteredThreads(activeAppMode), [getFilteredThreads, activeAppMode])
+  const titleBarPinnedThreads = useMemo(() => {
+    if (activeAppMode !== 'work') return []
+    const pinnedIds = readPinnedThreadIds()
+    return filteredThreads.filter((thread) => thread.sidebar_pinned_at || pinnedIds.has(thread.id))
+  }, [activeAppMode, filteredThreads])
 
   const handleSetAppMode = useCallback((mode: import('../storage').AppMode) => {
     if (desktop && sidebarCollapsed && mode !== activeAppMode) {
@@ -373,6 +379,13 @@ export function AppLayout() {
   const handleBeforeNavigateToThread = useCallback(() => {
     closeSettings()
   }, [closeSettings])
+
+  const handleSelectTitleBarPinnedThread = useCallback((threadId: string) => {
+    markCompletionRead(threadId)
+    closeSettings()
+    closeNotifications()
+    navigate(`/t/${threadId}`)
+  }, [closeNotifications, closeSettings, markCompletionRead, navigate])
 
   if (!meLoaded) return <LoadingPage label={t.loading} />
 
@@ -427,6 +440,9 @@ export function AppLayout() {
             onDownloadApp={handleDownloadApp}
             onInstallApp={handleInstallApp}
             onOpenSettings={handleTitleBarOpenSettings}
+            pinnedThreads={titleBarPinnedThreads}
+            activeThreadId={currentThreadId}
+            onSelectPinnedThread={handleSelectTitleBarPinnedThread}
           />
         )}
 
