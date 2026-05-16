@@ -57,7 +57,7 @@ func TestListEffectiveMCPHTTPToolsInitializesBeforeList(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tools, err := listEffectiveMCPHTTPTools(t.Context(), effectiveMCPServerConfig{
+	tools, err := listEffectiveMCPServerTools(t.Context(), effectiveMCPServerConfig{
 		ServerID:      "demo",
 		Transport:     "streamable_http",
 		URL:           server.URL,
@@ -65,7 +65,7 @@ func TestListEffectiveMCPHTTPToolsInitializesBeforeList(t *testing.T) {
 		CallTimeoutMs: 5000,
 	})
 	if err != nil {
-		t.Fatalf("listEffectiveMCPHTTPTools failed: %v", err)
+		t.Fatalf("listEffectiveMCPServerTools failed: %v", err)
 	}
 	if len(tools) != 1 || tools[0].Name != "echo" {
 		t.Fatalf("unexpected tools: %#v", tools)
@@ -125,7 +125,7 @@ func TestListEffectiveMCPHTTPToolsUsesOAuthAccessToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tools, err := listEffectiveMCPHTTPTools(t.Context(), effectiveMCPServerConfig{
+	tools, err := listEffectiveMCPServerTools(t.Context(), effectiveMCPServerConfig{
 		ServerID:      "demo",
 		Transport:     "streamable_http",
 		URL:           server.URL,
@@ -136,7 +136,7 @@ func TestListEffectiveMCPHTTPToolsUsesOAuthAccessToken(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("listEffectiveMCPHTTPTools failed: %v", err)
+		t.Fatalf("listEffectiveMCPServerTools failed: %v", err)
 	}
 	if len(tools) != 1 || tools[0].Name != "echo" {
 		t.Fatalf("unexpected tools: %#v", tools)

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"testing"
 
+	sharedmcpinstall "arkloop/services/shared/mcpinstall"
 	sharedoutbound "arkloop/services/shared/outboundurl"
 )
 
@@ -34,9 +35,9 @@ func TestIsDeniedIP(t *testing.T) {
 
 	for _, tt := range tests {
 		ip := netip.MustParseAddr(tt.ip)
-		got := isDeniedIP(ip, policy)
+		got := sharedmcpinstall.IsDeniedIP(ip, policy)
 		if got != tt.deny {
-			t.Errorf("isDeniedIP(%s) = %v, want %v", tt.ip, got, tt.deny)
+			t.Errorf("IsDeniedIP(%s) = %v, want %v", tt.ip, got, tt.deny)
 		}
 	}
 }
@@ -68,9 +69,9 @@ func TestValidateURL(t *testing.T) {
 			}
 			continue
 		}
-		err = validateURL(u, policy)
+		err = sharedmcpinstall.ValidateURL(u, policy)
 		if (err != nil) != tt.wantErr {
-			t.Errorf("validateURL(%q) error=%v, wantErr=%v", tt.rawURL, err, tt.wantErr)
+			t.Errorf("ValidateURL(%q) error=%v, wantErr=%v", tt.rawURL, err, tt.wantErr)
 		}
 	}
 }
@@ -87,8 +88,8 @@ func TestValidateURLSkipsSafetyChecksByDefault(t *testing.T) {
 			if err != nil {
 				t.Fatalf("url.Parse(%q): %v", rawURL, err)
 			}
-			if err := validateURL(u, policy); err != nil {
-				t.Fatalf("validateURL(%q) error=%v", rawURL, err)
+			if err := sharedmcpinstall.ValidateURL(u, policy); err != nil {
+				t.Fatalf("ValidateURL(%q) error=%v", rawURL, err)
 			}
 		})
 	}
@@ -116,34 +117,9 @@ func TestNewSDKClientRejectsInternalURL(t *testing.T) {
 				URL:       tt.url,
 				Transport: "streamable_http",
 			}, nil)
-			// SSRF validation happens during DialContext when a request is made.
-			// newSDKClient connects to the server, so for public URLs it may fail
-			// with a connection error (not SSRF), and for blocked URLs it may fail
-			// before or during connect depending on DNS resolution.
-			// We verify that blocked URLs fail (regardless of error type).
 			if tt.wantErr && err == nil {
 				t.Errorf("newSDKClient(%q) expected error, got nil", tt.url)
 			}
 		})
-	}
-}
-
-func TestIsCloudMetadata(t *testing.T) {
-	tests := []struct {
-		ip   string
-		want bool
-	}{
-		{"169.254.169.254", true},
-		{"fd00:ec2::254", true},
-		{"169.254.1.1", false},
-		{"8.8.8.8", false},
-	}
-
-	for _, tt := range tests {
-		ip := netip.MustParseAddr(tt.ip)
-		got := isCloudMetadata(ip)
-		if got != tt.want {
-			t.Errorf("isCloudMetadata(%s) = %v, want %v", tt.ip, got, tt.want)
-		}
 	}
 }

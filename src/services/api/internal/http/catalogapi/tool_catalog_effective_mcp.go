@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -336,21 +335,6 @@ func discoverEffectiveMCPTools(ctx context.Context, servers []effectiveMCPServer
 }
 
 func listEffectiveMCPServerTools(ctx context.Context, server effectiveMCPServerConfig) ([]effectiveMCPTool, error) {
-	switch server.Transport {
-	case "http_sse", "streamable_http":
-		return listEffectiveMCPHTTPTools(ctx, server)
-	case "stdio":
-		return listEffectiveMCPStdioTools(ctx, server)
-	default:
-		return nil, fmt.Errorf("mcp effective catalog: transport not supported")
-	}
-}
-
-func listEffectiveMCPHTTPTools(ctx context.Context, server effectiveMCPServerConfig) ([]effectiveMCPTool, error) {
-	return listEffectiveMCPToolsWithSDK(ctx, server)
-}
-
-func listEffectiveMCPStdioTools(ctx context.Context, server effectiveMCPServerConfig) ([]effectiveMCPTool, error) {
 	return listEffectiveMCPToolsWithSDK(ctx, server)
 }
 
@@ -363,7 +347,7 @@ func listEffectiveMCPToolsWithSDK(ctx context.Context, server effectiveMCPServer
 	case "stdio", "":
 		transport = sharedmcpinstall.BuildCommandTransport(server)
 	case "http_sse", "streamable_http":
-		transport = sharedmcpinstall.BuildStreamableTransport(server, &http.Client{}, nil)
+		transport = sharedmcpinstall.BuildStreamableTransport(server, sharedmcpinstall.NewSafeHTTPClient(), nil)
 	default:
 		return nil, fmt.Errorf("mcp effective catalog: unsupported transport: %s", server.Transport)
 	}

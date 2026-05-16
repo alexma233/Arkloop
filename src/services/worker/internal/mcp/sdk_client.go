@@ -18,7 +18,6 @@ import (
 )
 
 type sdkClient struct {
-	client  *sdkmcp.Client
 	session *sdkmcp.ClientSession
 	server  sharedmcpinstall.ServerConfig
 	closed  atomic.Bool
@@ -33,11 +32,11 @@ func newSDKClient(ctx context.Context, server sharedmcpinstall.ServerConfig, aut
 	case "stdio", "":
 		transport = sharedmcpinstall.BuildCommandTransport(server)
 	case "http_sse", "streamable_http":
-		safeClient := newSafeHTTPClient()
+		safeClient := sharedmcpinstall.NewSafeHTTPClient()
 		var onRefresh func(updated *sharedmcpoauth.AuthState)
 		if authStore != nil && server.AuthSecretID != "" {
 			onRefresh = func(updated *sharedmcpoauth.AuthState) {
-				_ = persistOAuthRefresh(ctx, authStore, server, updated)
+				_ = persistOAuthRefresh(context.Background(), authStore, server, updated)
 			}
 		}
 		transport = sharedmcpinstall.BuildStreamableTransport(server, safeClient, onRefresh)
@@ -51,7 +50,6 @@ func newSDKClient(ctx context.Context, server sharedmcpinstall.ServerConfig, aut
 	}
 
 	return &sdkClient{
-		client:  client,
 		session: session,
 		server:  server,
 	}, nil
@@ -193,6 +191,11 @@ func classifySDKError(err error) error {
 
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return TimeoutError{Message: "MCP call timed out: " + err.Error()}
+	}
+
+	// OAuth authorization required — SDK's Authorize callback returns this
+	if strings.Contains(err.Error(), "authorization required") {
+		return AuthRequiredError{Reason: "oauth_required", Cause: err}
 	}
 
 	var rpcErr *jsonrpc.Error

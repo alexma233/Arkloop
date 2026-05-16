@@ -3,16 +3,21 @@ package mcpinstall
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
 
 	sharedmcpoauth "arkloop/services/shared/mcpoauth"
+	sharedoutbound "arkloop/services/shared/outboundurl"
 
 	"golang.org/x/oauth2"
 )
@@ -63,14 +68,14 @@ func buildInheritedEnv(overrides map[string]string) []string {
 	env := os.Environ()
 	for key, value := range overrides {
 		prefix := key + "="
-		// Remove existing entry for the key
-		filtered := env[:0]
+		filtered := make([]string, 0, len(env))
 		for _, entry := range env {
 			if !strings.HasPrefix(entry, prefix) {
 				filtered = append(filtered, entry)
 			}
 		}
-		env = append(filtered, fmt.Sprintf("%s=%s", key, value))
+		filtered = append(filtered, fmt.Sprintf("%s=%s", key, value))
+		env = filtered
 	}
 	return env
 }
@@ -123,7 +128,7 @@ func (h *ArkloopOAuthHandler) TokenSource(ctx context.Context) (oauth2.TokenSour
 
 	tokens := h.OAuth.Tokens
 	// If access token is valid, return it directly
-	if strings.TrimSpace(tokens.AccessToken) != "" && !sharedmcpoauth.TokenExpiredSoon(tokens, 0) {
+	if strings.TrimSpace(tokens.AccessToken) != "" && !sharedmcpoauth.TokenExpiredSoon(tokens, 5*time.Minute) {
 		return oauth2.StaticTokenSource(&oauth2.Token{
 			AccessToken: strings.TrimSpace(tokens.AccessToken),
 			TokenType:   "Bearer",
@@ -154,11 +159,88 @@ func (h *ArkloopOAuthHandler) TokenSource(ctx context.Context) (oauth2.TokenSour
 }
 
 func (h *ArkloopOAuthHandler) Authorize(ctx context.Context, req *http.Request, resp *http.Response) error {
-	// Close the response body as required by the interface contract
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
-	// Full OAuth authorization flow is handled on the API side.
-	// Worker returns an error to signal that user intervention is needed.
 	return fmt.Errorf("mcp oauth: authorization required (flow not available on worker)")
+}
+
+// NewSafeHTTPClient creates an HTTP client with SSRF protection via DNS-level IP filtering.
+// Both Worker and API services should use this for MCP HTTP transports.
+func NewSafeHTTPClient() *http.Client {
+	policy := sharedoutbound.DefaultPolicy()
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if !policy.ProtectionEnabled {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: ssrf: invalid addr %q: %w", addr, err)
+		}
+		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: ssrf: resolve %q: %w", host, err)
+		}
+		for _, ip := range ips {
+			if IsDeniedIP(ip.Unmap(), policy) {
+				return nil, SSRFError{Message: fmt.Sprintf("mcp: ssrf: denied ip %s for host %s", ip, host)}
+			}
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].Unmap().String(), port))
+	}
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("mcp: ssrf: too many redirects")
+			}
+			return ValidateURL(req.URL, policy)
+		},
+	}
+}
+
+type SSRFError struct {
+	Message string
+}
+
+func (e SSRFError) Error() string { return e.Message }
+
+func ValidateURL(u *url.URL, policy sharedoutbound.Policy) error {
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return SSRFError{Message: fmt.Sprintf("mcp: ssrf: unsupported scheme %q", scheme)}
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if host == "" {
+		return SSRFError{Message: "mcp: ssrf: empty hostname"}
+	}
+	if !policy.ProtectionEnabled {
+		return nil
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return SSRFError{Message: fmt.Sprintf("mcp: ssrf: denied hostname %q", host)}
+	}
+	if ip := sharedoutbound.ParseIP(host); ip.IsValid() {
+		if IsDeniedIP(ip, policy) {
+			return SSRFError{Message: fmt.Sprintf("mcp: ssrf: denied ip %s", ip)}
+		}
+	}
+	return nil
+}
+
+func IsDeniedIP(ip netip.Addr, policy sharedoutbound.Policy) bool {
+	if !policy.ProtectionEnabled {
+		return false
+	}
+	for _, m := range []netip.Addr{
+		netip.MustParseAddr("169.254.169.254"),
+		netip.MustParseAddr("fd00:ec2::254"),
+	} {
+		if ip == m {
+			return true
+		}
+	}
+	return policy.EnsureIPAllowed(ip.Unmap()) != nil
 }
