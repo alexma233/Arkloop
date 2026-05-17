@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	agentDirectorySegmentName = "agent_directory.context"
-	agentDirectoryMaxChars    = 24000
+	agentDirectorySegmentName      = "agent_directory.context"
+	agentDirectoryStartupSegment   = "agent_directory.startup"
+	agentDirectoryMaxChars         = 24000
+	agentDirectoryDailyMaxTotal    = 2800
+	agentDirectoryDailyMaxPerFile  = 1200
 )
 
 // NewAgentDirectoryMiddleware 将 agent work directory 内容注入 system prompt。
@@ -27,18 +30,30 @@ func NewAgentDirectoryMiddleware(provider agentdirectory.Provider) RunMiddleware
 		}
 
 		text := assembleAWDSegment(content)
-		if text == "" {
-			return next(ctx, rc)
+		if text != "" {
+			rc.UpsertPromptSegment(PromptSegment{
+				Name:          agentDirectorySegmentName,
+				Target:        PromptTargetSystemPrefix,
+				Role:          "system",
+				Text:          text,
+				Stability:     PromptStabilitySessionPrefix,
+				CacheEligible: true,
+			})
 		}
 
-		rc.UpsertPromptSegment(PromptSegment{
-			Name:          agentDirectorySegmentName,
-			Target:        PromptTargetSystemPrefix,
-			Role:          "system",
-			Text:          text,
-			Stability:     PromptStabilitySessionPrefix,
-			CacheEligible: false,
-		})
+		// Daily memory startup context: 注入最近日志作为会话启动上下文。
+		// 对齐 OpenClaw startup-context 机制，注入在 cache boundary 之后。
+		startupText := assembleStartupContext(content)
+		if startupText != "" {
+			rc.UpsertPromptSegment(PromptSegment{
+				Name:          agentDirectoryStartupSegment,
+				Target:        PromptTargetSystemPrefix,
+				Role:          "system",
+				Text:          startupText,
+				Stability:     PromptStabilityVolatileTail,
+				CacheEligible: false,
+			})
+		}
 
 		return next(ctx, rc)
 	}
@@ -100,6 +115,32 @@ func assembleAWDSegment(c *agentdirectory.Content) string {
 			continue
 		}
 		fmt.Fprintf(&sb, "\n<%s path=\"%s\">\n%s\n</%s>", e.xmlTag, e.name, e.content, e.xmlTag)
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
+// assembleStartupContext 读取最近的 daily memory 文件并格式化为启动上下文。
+// 对齐 OpenClaw startup-context 机制。
+func assembleStartupContext(c *agentdirectory.Content) string {
+	if len(c.DailyMemoryFiles) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Recent Daily Memory\n")
+	totalChars := 0
+
+	for _, f := range c.DailyMemoryFiles {
+		content := f.Content
+		if len(content) > agentDirectoryDailyMaxPerFile {
+			content = content[:agentDirectoryDailyMaxPerFile] + "\n...[truncated]..."
+		}
+		if totalChars+len(content) > agentDirectoryDailyMaxTotal {
+			break
+		}
+		fmt.Fprintf(&sb, "\n[daily memory: %s]\n%s\n", f.Path, content)
+		totalChars += len(content)
 	}
 
 	return strings.TrimSpace(sb.String())
