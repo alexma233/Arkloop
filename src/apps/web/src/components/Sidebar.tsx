@@ -387,6 +387,7 @@ export const Sidebar = memo(function Sidebar({
   // -- 分组逻辑 --
 
   const projectGroups = useMemo(() => {
+    if (!isWorkMode) return []
     void workFolderVersion
     const groups = new Map<string, ThreadResponse[]>()
 
@@ -417,7 +418,7 @@ export const Sidebar = memo(function Sidebar({
     })
 
     return result
-  }, [threads, effectivePinnedIds, starredIds, t, workFolderVersion])
+  }, [isWorkMode, threads, effectivePinnedIds, starredIds, t, workFolderVersion])
 
   const localGtdBucketForThread = useCallback((id: string): GtdBucket | null => {
     if (gtdInboxIds.has(id)) return 'inbox'
@@ -433,6 +434,7 @@ export const Sidebar = memo(function Sidebar({
   }, [localGtdBucketForThread])
 
   const gtdGroups = useMemo(() => {
+    if (isWorkMode || !gtdEnabled) return []
     const buckets: GtdGroup[] = [
       { bucket: 'inbox', label: t.gtdInbox, threads: [] },
       { bucket: 'todo', label: t.gtdTodo, threads: [] },
@@ -460,7 +462,7 @@ export const Sidebar = memo(function Sidebar({
     }
 
     return buckets
-  }, [threads, effectiveGtdBucketForThread, effectivePinnedIds, starredIds, t])
+  }, [isWorkMode, gtdEnabled, threads, effectiveGtdBucketForThread, effectivePinnedIds, starredIds, t])
 
   const openMenu = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -534,7 +536,7 @@ export const Sidebar = memo(function Sidebar({
     )
   }, [menuThreadId, editingThreadId, activeThreadId, starredSet, draggingThreadId, editingTitle, t.untitled, editInputRef, setEditingTitle, setEditingThreadId, commitRename, markCompletionRead, beforeNavigateToThread, navigate, openMenu])
 
-  const renderDropRow = (icon: React.ReactNode, label: string, active: boolean) => (
+  const renderDropRow = useCallback((icon: React.ReactNode, label: string, active: boolean) => (
     <div
       className={[
         'relative isolate flex h-[34px] w-full items-center gap-2 rounded-[6px] px-2 py-0 text-[13.5px] leading-[20px] before:pointer-events-none before:absolute before:inset-x-0 before:inset-y-px before:-z-10 before:rounded-[6px] before:content-[""]',
@@ -547,7 +549,7 @@ export const Sidebar = memo(function Sidebar({
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </div>
-  )
+  ), [])
 
   // -- 视图组件 --
 
@@ -715,6 +717,76 @@ export const Sidebar = memo(function Sidebar({
     renderThread,
     setGtdGroupNode,
     t.folderMore,
+  ])
+
+  const SidebarThreadListContent = useMemo(() => {
+    if (threads.length === 0) {
+      return <p className="overflow-hidden whitespace-nowrap px-2 py-1 text-[12px] text-[var(--c-text-muted)]">{t.recentsEmpty}</p>
+    }
+    if (isWorkMode) {
+      return (
+        <>
+          <div
+            ref={pinnedDropRef}
+            className={[
+              'rounded-[6px]',
+              dragOverPinned && draggingToPinned ? 'bg-[var(--c-bg-deep)]' : '',
+            ].join(' ')}
+          >
+            <div
+              className="group/pinned flex h-[34px] w-full cursor-pointer select-none items-center px-2 py-0"
+              onMouseDown={(e) => { if (e.detail > 1) e.preventDefault() }}
+              onClick={() => setPinnedExpanded(v => !v)}
+            >
+              <span
+                className="select-none text-[13.5px] leading-[20px] text-[var(--c-text-muted)] transition-colors duration-[80ms] group-hover/pinned:text-[var(--c-text-tertiary)]"
+                style={{ fontWeight: PROJECT_GROUP_LABEL_WEIGHT }}
+              >
+                {t.pinnedSection}
+              </span>
+              <span className="ml-1 shrink-0 opacity-0 group-hover/pinned:opacity-100 text-[var(--c-text-muted)] transition-opacity duration-[80ms]">
+                <ChevronRight size={12} className={['transition-transform duration-150', pinnedExpanded ? 'rotate-90' : 'rotate-0'].join(' ')} />
+              </span>
+            </div>
+            {pinnedExpanded && pinnedWorkThreads.length === 0 && (
+              renderDropRow(
+                <Pin size={14} className="shrink-0 opacity-50" />,
+                dragOverPinned && draggingToPinned ? t.letGo : t.dragToPin,
+                dragOverPinned && draggingToPinned,
+              )
+            )}
+            {pinnedExpanded && pinnedWorkThreads
+              .map(th => renderThread(th, { showStatusDot: true }))}
+          </div>
+          {ProjectSidebarView}
+        </>
+      )
+    }
+    if (gtdEnabled) return GtdSidebarView
+    return (
+      <>
+        {starredThreads.map(thread => renderThread(thread))}
+        {regularThreads.map(thread => renderThread(thread))}
+      </>
+    )
+  }, [
+    ProjectSidebarView,
+    GtdSidebarView,
+    dragOverPinned,
+    draggingToPinned,
+    gtdEnabled,
+    isWorkMode,
+    pinnedExpanded,
+    pinnedWorkThreads,
+    regularThreads,
+    renderDropRow,
+    renderThread,
+    starredThreads,
+    t.letGo,
+    t.pinnedSection,
+    t.recentsEmpty,
+    t.dragToPin,
+    threads.length,
   ])
 
   // GTD / Pin 操作
@@ -1501,7 +1573,14 @@ export const Sidebar = memo(function Sidebar({
   ) : null
   const navButtonClass = 'group flex h-[32px] w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-lg px-[8px] text-[15px] text-[var(--c-text-secondary)] transition-colors duration-[60ms] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)]'
   const navButtonStyle = { fontWeight: 'var(--c-sidebar-nav-weight)' }
-  const navLabelClass = 'min-w-0 overflow-hidden whitespace-nowrap transition-opacity duration-100'
+  const navLabelStyle = {
+    opacity: visualCollapsed ? 0 : 1,
+    visibility: visualCollapsed ? 'hidden' : 'visible',
+    transition: visualCollapsed
+      ? 'opacity 150ms ease, visibility 0s linear 150ms'
+      : 'opacity 150ms ease, visibility 0s',
+  } as const
+  const navLabelClass = 'min-w-0 overflow-hidden whitespace-nowrap'
   const newThreadNavLabel = isWorkMode ? t.newTask : t.newChat
   const searchNavLabel = isWorkMode ? t.searchTasks : t.searchChats
 
@@ -1593,7 +1672,7 @@ export const Sidebar = memo(function Sidebar({
             <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <SquarePen size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{newThreadNavLabel}</span>
+            <span className={navLabelClass} style={navLabelStyle}>{newThreadNavLabel}</span>
           </button>
 
           <button
@@ -1628,7 +1707,7 @@ export const Sidebar = memo(function Sidebar({
             <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Search size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{searchNavLabel}</span>
+            <span className={navLabelClass} style={navLabelStyle}>{searchNavLabel}</span>
           </button>
 
           <button
@@ -1640,7 +1719,7 @@ export const Sidebar = memo(function Sidebar({
             <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Clock size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{t.scheduledJobs}</span>
+            <span className={navLabelClass} style={navLabelStyle}>{t.scheduledJobs}</span>
           </button>
       </nav>
 
@@ -1697,53 +1776,7 @@ export const Sidebar = memo(function Sidebar({
                 pointerEvents: isPrivateModeEffective ? 'none' : 'auto',
               }}
             >
-              {threads.length === 0 ? (
-                <p className="overflow-hidden whitespace-nowrap px-2 py-1 text-[12px] text-[var(--c-text-muted)]">{t.recentsEmpty}</p>
-              ) : isWorkMode ? (
-                <>
-                  {/* Pinned section */}
-                  <div
-                    ref={pinnedDropRef}
-                    className={[
-                      'rounded-[6px]',
-                      dragOverPinned && draggingToPinned ? 'bg-[var(--c-bg-deep)]' : '',
-                    ].join(' ')}
-                  >
-                    <div
-                      className="group/pinned flex h-[34px] w-full cursor-pointer select-none items-center px-2 py-0"
-                      onMouseDown={(e) => { if (e.detail > 1) e.preventDefault() }}
-                      onClick={() => setPinnedExpanded(v => !v)}
-                    >
-                      <span
-                        className="select-none text-[13.5px] leading-[20px] text-[var(--c-text-muted)] transition-colors duration-[80ms] group-hover/pinned:text-[var(--c-text-tertiary)]"
-                        style={{ fontWeight: PROJECT_GROUP_LABEL_WEIGHT }}
-                      >
-                        {t.pinnedSection}
-                      </span>
-                      <span className="ml-1 shrink-0 opacity-0 group-hover/pinned:opacity-100 text-[var(--c-text-muted)] transition-opacity duration-[80ms]">
-                        <ChevronRight size={12} className={['transition-transform duration-150', pinnedExpanded ? 'rotate-90' : 'rotate-0'].join(' ')} />
-                      </span>
-                    </div>
-                    {pinnedExpanded && pinnedWorkThreads.length === 0 && (
-                      renderDropRow(
-                        <Pin size={14} className="shrink-0 opacity-50" />,
-                        dragOverPinned && draggingToPinned ? t.letGo : t.dragToPin,
-                        dragOverPinned && draggingToPinned,
-                      )
-                    )}
-                    {pinnedExpanded && pinnedWorkThreads
-                      .map(th => renderThread(th, { showStatusDot: true }))}
-                  </div>
-                  {ProjectSidebarView}
-                </>
-              ) : gtdEnabled ? (
-                GtdSidebarView
-              ) : (
-                <>
-                  {starredThreads.map(thread => renderThread(thread))}
-                  {regularThreads.map(thread => renderThread(thread))}
-                </>
-              )}
+              {SidebarThreadListContent}
             </div>
           </div>
         </div>

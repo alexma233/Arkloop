@@ -409,7 +409,7 @@ export function AppLayout() {
     (appUpdateState?.phase === 'available' ||
       appUpdateState?.phase === 'downloaded')
   const collapseWorkSidebar = desktop && activeAppMode === 'work' && sidebarCollapsed
-  const keepWorkSidebarLayoutWidth = desktop && activeAppMode === 'work'
+  const keepSidebarLayoutWidth = desktop
   const mainContentAxisPaddingLeft = '0px'
   const mainContentAxisPaddingRight = desktop && sidebarCollapsed && activeAppMode !== 'work'
     ? `${SIDEBAR_COLLAPSED_WIDTH / 2}px`
@@ -467,7 +467,7 @@ export function AppLayout() {
                 visibility: collapsedSidebarEnterVisible ? 'hidden' : undefined,
               }}
             >
-              <div style={{ width: keepWorkSidebarLayoutWidth ? sidebarWidth : '100%', height: '100%' }}>
+              <div style={{ width: keepSidebarLayoutWidth ? sidebarWidth : '100%', height: '100%' }}>
                 <Sidebar
                   threads={filteredThreads}
                   onNewThread={handleNewThread}
