@@ -1,4 +1,4 @@
-import { memo, Fragment, forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ComponentProps } from 'react'
+import { memo, Fragment, forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ComponentProps, type ReactNode } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { MessageBubble } from './MessageBubble'
 import { CopTimeline, type WebSearchPhaseStep } from './cop-timeline/CopTimeline'
@@ -99,6 +99,18 @@ export type MessageListProps = {
   isWorkMode?: boolean
   workFolder?: string | null
 }
+
+const HistoricMessageItem = memo(function HistoricMessageItem({
+  msg,
+  idx,
+  renderMessage,
+}: {
+  msg: AgentMessage
+  idx: number
+  renderMessage: (msg: AgentMessage, idx: number) => ReactNode
+}) {
+  return <>{renderMessage(msg, idx)}</>
+})
 
 export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(function MessageList({
   lastTurnRef,
@@ -227,7 +239,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
     return covered
   }, [hasCurrentRunHandoffUi, messages, meta, terminalRunCoveredRunIds])
 
-  const resolvedMessageSources = resolveMessageSourcesForRender(messages, (() => {
+  const resolvedMessageSources = useMemo(() => resolveMessageSourcesForRender(messages, (() => {
     const map = new Map<string, WebSource[]>()
     for (const msg of messages) {
       if (msg.role !== 'assistant') continue
@@ -235,7 +247,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
       if (m?.sources) map.set(msg.id, m.sources)
     }
     return map
-  })())
+  })()), [messages, meta])
 
   const sharingMessageId = shareModal.sharingMessageId
   const sharedMessageId = shareModal.sharedMessageId
@@ -354,7 +366,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages])
 
-  const renderMessage = (msg: AgentMessage, idx: number) => {
+  const renderMessage = useCallback((msg: AgentMessage, idx: number) => {
     const hideTerminalRunMessage =
       msg.role === 'assistant' &&
       !isLocalTerminalMessage(msg) &&
@@ -648,7 +660,53 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
         )}
       </div>
     )
-  }
+  }, [
+    accessToken,
+    baseUrl,
+    bubbleCallbacksByMessageId,
+    clearUserEnterAnimation,
+    closePanel,
+    codePanelExecutionId,
+    copPayloadsByMessageId,
+    coveredRunIdsForHistory,
+    createShareForMessage,
+    currentRunCopHeaderOverride,
+    handleArtifactAction,
+    handleFork,
+    hasCurrentRunHandoffUi,
+    isSearchThread,
+    isStreaming,
+    isWorkMode,
+    lastTurnStartIdx,
+    lastUserPromptRef,
+    locationState?.forkBaseCount,
+    locationState?.isIncognitoFork,
+    messages.length,
+    meta,
+    openAgentPanel,
+    openCodePanel,
+    openDocumentPanel,
+    openResourcePanel,
+    openSourcePanel,
+    privateThreadIds,
+    resolvedMessageSources,
+    sending,
+    setRunDetailPanelRunId,
+    sharedMessageId,
+    sharingMessageId,
+    showRunDetailButton,
+    sourcePanelMessageId,
+    t.incognitoForkDivider,
+    terminalRunDisplayId,
+    terminalRunHandoffStatus,
+    threadId,
+    userEnterMessageId,
+    workFolder,
+  ])
+
+  const renderHistoricItem = useCallback((idx: number, msg: AgentMessage) => (
+    <HistoricMessageItem msg={msg} idx={idx} renderMessage={renderMessage} />
+  ), [renderMessage])
 
   const hasLastTurn = lastTurnStartIdx < messages.length
   return (
@@ -658,7 +716,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
           ref={virtuosoRef}
           customScrollParent={scrollParent}
           data={historicMessages}
-          itemContent={(idx, msg) => renderMessage(msg, idx)}
+          itemContent={renderHistoricItem}
           computeItemKey={(_idx, msg) => messageClientMessageId(msg) ?? msg.id}
           defaultItemHeight={defaultItemHeight}
           // 大 overscan：常见上下翻看落在已挂载区内，减少 mount。
