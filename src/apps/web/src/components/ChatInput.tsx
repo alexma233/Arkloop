@@ -40,7 +40,7 @@ import { AutoResizeTextarea, measureTextareaHeight } from '@arkloop/shared'
 import { useLatest } from '../hooks/useLatest'
 import { useInputPerfDebug } from '../hooks/useInputPerfDebug'
 import { ActionIconButton } from './ActionIconButton'
-import { SHORTCUTS } from '../shortcuts'
+import { SHORTCUTS, matchesShortcut } from '../shortcuts'
 
 export type ChatInputHandle = {
   clear: () => void
@@ -864,6 +864,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const isComposing = isComposingEvent(e.nativeEvent)
     const target = e.currentTarget
+    if (!isComposing && appMode === 'work' && onTogglePlanMode && matchesShortcut(e.nativeEvent, SHORTCUTS.togglePlanMode)) {
+      e.preventDefault()
+      setSlashOpen(false)
+      void onTogglePlanMode(planMode)
+      return
+    }
     const collapsedSelection = target.selectionStart === target.selectionEnd
     if (!isComposing && collapsedSelection) {
       const inlineTokenRange = getInlineTokenTextRange(target.value, target.selectionStart)

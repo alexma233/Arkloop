@@ -433,12 +433,12 @@ export const zh: LocaleStrings = {
   addFromLocal: "从本地文件添加",
   addFromGitHub: "从 GitHub 添加",
   learningMode: "学习辅导",
-  planMode: "Plan",
+  planMode: "计划",
   planModePlaceholders: [
     "先规划再编码，减少返工...",
     "制定清晰计划，一步步实施...",
     "想清楚需求，设计好方案再动手...",
-    "Plan 模式下，我先分析再执行...",
+    "计划模式下，我先分析再执行...",
   ],
   slashCommands: {
     commandsLabel: "命令",

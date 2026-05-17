@@ -1,5 +1,5 @@
 import { act } from 'react'
-import { type FormEvent } from 'react'
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -85,6 +85,7 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 
 type TextareaReactProps = {
   onChange: (event: { currentTarget: HTMLTextAreaElement }) => void
+  onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
   onCompositionStart: () => void
   onCompositionEnd: (event: { currentTarget: HTMLTextAreaElement }) => void
 }
@@ -271,6 +272,106 @@ describe('ChatInput persona selector', () => {
     })
 
     expect(container.textContent).not.toContain('Work in a folder')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('Work 输入框按 Shift+Tab 切换 Plan 模式', async () => {
+    const onTogglePlanMode = vi.fn<(_: boolean) => Promise<void>>(() => Promise.resolve())
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <ChatInput
+            onSubmit={(event) => event.preventDefault()}
+            accessToken="token"
+            variant="chat"
+            appMode="work"
+            hasMessages={false}
+            messagesLoading={false}
+            planMode={false}
+            onTogglePlanMode={onTogglePlanMode}
+          />
+        </LocaleProvider>,
+      )
+    })
+    await act(async () => {
+      await flushMicrotasks()
+    })
+
+    const textarea = container.querySelector('textarea')
+    expect(textarea).not.toBeNull()
+    if (!textarea) return
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      textarea.dispatchEvent(event)
+      await flushMicrotasks()
+    })
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(onTogglePlanMode).toHaveBeenCalledWith(false)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('Chat 输入框按 Shift+Tab 不切换 Plan 模式', async () => {
+    const onTogglePlanMode = vi.fn<(_: boolean) => Promise<void>>(() => Promise.resolve())
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <ChatInput
+            onSubmit={(event) => event.preventDefault()}
+            accessToken="token"
+            variant="chat"
+            appMode="chat"
+            planMode={false}
+            onTogglePlanMode={onTogglePlanMode}
+          />
+        </LocaleProvider>,
+      )
+    })
+    await act(async () => {
+      await flushMicrotasks()
+    })
+
+    const textarea = container.querySelector('textarea')
+    expect(textarea).not.toBeNull()
+    if (!textarea) return
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      textarea.dispatchEvent(event)
+      await flushMicrotasks()
+    })
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(onTogglePlanMode).not.toHaveBeenCalled()
 
     act(() => {
       root.unmount()
