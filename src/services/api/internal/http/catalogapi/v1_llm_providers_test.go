@@ -90,9 +90,9 @@ func TestLocalProviderMutationGuard(t *testing.T) {
 	}{
 		{name: "patch provider", parts: []string{providerID.String()}, method: nethttp.MethodPatch, want: true},
 		{name: "delete provider", parts: []string{providerID.String()}, method: nethttp.MethodDelete, want: true},
-		{name: "create model", parts: []string{providerID.String(), "models"}, method: nethttp.MethodPost, want: true},
+		{name: "create model", parts: []string{providerID.String(), "models"}, method: nethttp.MethodPost, want: false},
 		{name: "patch model picker", parts: []string{providerID.String(), "models", uuid.NewString()}, method: nethttp.MethodPatch, want: false},
-		{name: "delete model", parts: []string{providerID.String(), "models", uuid.NewString()}, method: nethttp.MethodDelete, want: true},
+		{name: "delete model", parts: []string{providerID.String(), "models", uuid.NewString()}, method: nethttp.MethodDelete, want: false},
 		{name: "available models read", parts: []string{providerID.String(), "available-models"}, method: nethttp.MethodGet, want: false},
 		{name: "model test read", parts: []string{providerID.String(), "models", uuid.NewString(), "test"}, method: nethttp.MethodPost, want: false},
 	}

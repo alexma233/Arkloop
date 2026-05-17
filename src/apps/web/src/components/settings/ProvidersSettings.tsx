@@ -73,6 +73,14 @@ function localAuthModeLabel(provider: LlmProvider, p: ReturnType<typeof useLocal
   return null
 }
 
+function providerBaseUrlDisplay(provider: LlmProvider): string {
+  const baseUrl = provider.base_url?.trim()
+  if (baseUrl) return baseUrl
+  if (provider.provider === 'codex_local') return 'local://codex'
+  if (provider.provider === 'claude_code_local') return 'local://claude-code'
+  return '—'
+}
+
 function vendorLabel(
   key: string,
   p: { vendorOpenai: string; vendorOpenaiChat: string; vendorAnthropic: string; vendorGemini: string },
@@ -430,7 +438,7 @@ function ProviderSummaryCard({
   deleting: boolean
 }) {
   const local = isManagedLocalProvider(provider)
-  const baseUrl = provider.base_url?.trim() || '—'
+  const baseUrl = providerBaseUrlDisplay(provider)
 
   return (
     <SettingsSummaryCard onClick={onOpen} minHeightClass="min-h-[72px]">
@@ -733,7 +741,7 @@ function ProviderDetail({
             </ProviderDetailRow>
           </ProviderDetailCard>
         </ProviderDetailSection>
-        <ModelsSection provider={provider} accessToken={accessToken} onChanged={onUpdated} p={p} readOnly />
+        <ModelsSection provider={provider} accessToken={accessToken} onChanged={onUpdated} p={p} />
       </div>
     )
   }
