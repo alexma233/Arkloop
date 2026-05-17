@@ -101,14 +101,14 @@ func routeAvailableCatalog(rule ProviderRouteRule) map[string]any {
 // inferModelCapabilities 根据模型名推断已知模型的 input modalities。
 // 当 available_catalog 未配置或缺少 input_modalities 时作为 fallback。
 func inferModelCapabilities(model string) ModelCapabilities {
-	if isKnownVisionModel(model) {
+	if IsKnownVisionModel(model) {
 		return ModelCapabilities{InputModalities: []string{"text", "image"}}
 	}
 	return ModelCapabilities{}
 }
 
 // isKnownVisionModel 判断模型是否为已知的支持视觉输入的模型。
-func isKnownVisionModel(model string) bool {
+func IsKnownVisionModel(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if m == "" {
 		return false

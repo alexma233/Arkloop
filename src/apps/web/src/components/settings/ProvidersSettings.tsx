@@ -907,7 +907,7 @@ function ModelsSection({
       const toEnable = created.filter((pm) => pm.model.toLowerCase().includes('gpt-4o-mini') && !embeddingIds.has(pm.model))
       if (toEnable.length > 0) {
         try {
-          await patchProviderModel(accessToken, provider.id, toEnable[0].id, { show_in_picker: true, is_default: true })
+          await patchProviderModel(accessToken, provider.id, toEnable[0].id, { show_in_picker: true })
           await Promise.all(toEnable.slice(1).map((pm) => patchProviderModel(accessToken, provider.id, pm.id, { show_in_picker: true })))
         } catch { /* default-setting is best-effort */ }
       }

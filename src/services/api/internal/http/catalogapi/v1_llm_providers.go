@@ -40,7 +40,6 @@ type createLlmProviderModelRequest struct {
 	Scope               string          `json:"scope"`
 	Model               string          `json:"model"`
 	Priority            int             `json:"priority"`
-	IsDefault           bool            `json:"is_default"`
 	ShowInPicker        *bool           `json:"show_in_picker"`
 	Tags                []string        `json:"tags"`
 	WhenJSON            json.RawMessage `json:"when"`
@@ -74,7 +73,6 @@ type llmProviderModelResponse struct {
 	ProviderID          string          `json:"provider_id"`
 	Model               string          `json:"model"`
 	Priority            int             `json:"priority"`
-	IsDefault           bool            `json:"is_default"`
 	ShowInPicker        bool            `json:"show_in_picker"`
 	Tags                []string        `json:"tags"`
 	WhenJSON            json.RawMessage `json:"when"`
@@ -396,7 +394,7 @@ func createLocalProviderModel(
 	}
 	model := applyLocalModelCatalog(localproviders.Model{
 		ID:           modelID,
-		Default:      req.IsDefault,
+		Default:      false,
 		Hidden:       !showInPicker,
 		Priority:     req.Priority,
 		Tags:         req.Tags,
@@ -972,7 +970,6 @@ func createLlmProviderModel(
 	model, err := service.CreateModel(r.Context(), actor.AccountID, providerID, scope, &actor.UserID, llmproviders.CreateModelInput{
 		Model:               req.Model,
 		Priority:            req.Priority,
-		IsDefault:           req.IsDefault,
 		ShowInPicker:        showInPicker,
 		Tags:                req.Tags,
 		WhenJSON:            whenJSON,
@@ -1025,15 +1022,6 @@ func patchLlmProviderModel(
 	}
 	if prioritySet && priority == nil {
 		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "priority cannot be null", traceID, nil)
-		return
-	}
-	isDefault, isDefaultSet, err := readOptionalBool(body, "is_default")
-	if err != nil {
-		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "is_default must be a boolean", traceID, nil)
-		return
-	}
-	if isDefaultSet && isDefault == nil {
-		httpkit.WriteError(w, nethttp.StatusUnprocessableEntity, "validation.error", "is_default cannot be null", traceID, nil)
 		return
 	}
 	tags, tagsSet, err := readOptionalStringSlice(body, "tags")
@@ -1126,8 +1114,6 @@ func patchLlmProviderModel(
 		Model:                  normalizeOptionalString(modelText),
 		PrioritySet:            prioritySet,
 		Priority:               priority,
-		IsDefaultSet:           isDefaultSet,
-		IsDefault:              isDefault,
 		ShowInPickerSet:        showInPickerSet,
 		ShowInPicker:           showInPicker,
 		TagsSet:                tagsSet,
@@ -1804,7 +1790,6 @@ func toLlmProviderModelResponse(model data.LlmRoute, providerName string) llmPro
 		ProviderID:          model.CredentialID.String(),
 		Model:               llmproviders.CanonicalModelIdentifier(providerName, model.Model),
 		Priority:            model.Priority,
-		IsDefault:           model.IsDefault,
 		ShowInPicker:        model.ShowInPicker,
 		Tags:                tags,
 		WhenJSON:            whenJSON,

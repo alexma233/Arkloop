@@ -172,7 +172,13 @@ func NewRoutingMiddleware(
 				}
 			}
 			if decision.Selected == nil && decision.Denied == nil {
-				decision = activeRouter.Decide(rc.InputJSON, byokEnabled, true)
+				decision = routing.ProviderRouteDecision{
+					Denied: &routing.ProviderRouteDenied{
+						ErrorClass: llm.ErrorClassRoutingNotFound,
+						Code:       "routing.no_model_configured",
+						Message:    "no model configured for this run; set persona.model or spawn.profile.task entitlement override",
+					},
+				}
 			}
 		}
 

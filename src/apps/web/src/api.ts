@@ -1673,7 +1673,6 @@ export type LlmProviderModel = {
   provider_id: string
   model: string
   priority: number
-  is_default: boolean
   show_in_picker: boolean
   tags: string[]
   when: Record<string, unknown>
@@ -1726,7 +1725,6 @@ export type CreateModelRequest = {
   scope?: string
   model: string
   priority?: number
-  is_default?: boolean
   show_in_picker?: boolean
   tags?: string[]
   /** worker compact 只认 advanced_json.available_catalog.context_length */
@@ -1848,7 +1846,7 @@ export async function patchProviderModel(
   accessToken: string,
   providerId: string,
   modelId: string,
-  data: { show_in_picker?: boolean; is_default?: boolean; tags?: string[]; advanced_json?: Record<string, unknown> | null },
+  data: { show_in_picker?: boolean; tags?: string[]; advanced_json?: Record<string, unknown> | null },
 ): Promise<LlmProviderModel> {
   return await apiFetch<LlmProviderModel>(
     withScope(`/v1/llm-providers/${providerId}/models/${modelId}`, BYOK_SCOPE),

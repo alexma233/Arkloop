@@ -134,9 +134,6 @@ func (r *ProviderRouter) Decide(inputJSON map[string]any, byokEnabled bool, plat
 
 func (r *ProviderRouter) pickFirstMatchingRoute(inputJSON map[string]any, platformOnly bool) ProviderRouteRule {
 	for _, route := range r.config.Routes {
-		if route.ID == r.config.DefaultRouteID {
-			continue
-		}
 		if platformOnly && route.AccountScoped {
 			continue
 		}
@@ -147,18 +144,6 @@ func (r *ProviderRouter) pickFirstMatchingRoute(inputJSON map[string]any, platfo
 		if route.Matches(inputJSON) {
 			return route
 		}
-	}
-	if strings.TrimSpace(r.config.DefaultRouteID) != "" {
-		route, _ := r.config.GetRoute(r.config.DefaultRouteID)
-		if !platformOnly || !route.AccountScoped {
-			return route
-		}
-	}
-	for _, route := range r.config.Routes {
-		if platformOnly && route.AccountScoped {
-			continue
-		}
-		return route
 	}
 	return ProviderRouteRule{}
 }

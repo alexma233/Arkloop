@@ -49,12 +49,7 @@ func NewStickerPrepareMiddleware(db data.DB, store MessageAttachmentStore, cfg S
 		}
 		if !stickerSelectedRouteSupportsVision(rc.SelectedRoute) {
 			if resolution, ok := resolveStickerToolVisionRoute(ctx, db, rc, cfg); ok {
-				rc.Gateway = resolution.Gateway
-				rc.SelectedRoute = resolution.Selected
-				rc.ContextWindowTokens = routing.RouteContextWindowTokens(resolution.Selected.Route)
-				if rc.Temperature == nil {
-					rc.Temperature = routing.RouteDefaultTemperature(resolution.Selected.Route)
-				}
+				swapRunContextRoute(rc, resolution)
 				rc.EstimateProviderRequestBytes = stickerProviderRequestEstimator(ctx, resolution.Selected, cfg, rc.LlmMaxResponseBytes)
 			} else {
 				return failStickerRegisterRun(ctx, rc, cfg.EventsRepo, stickerID)
@@ -119,14 +114,15 @@ func resolveStickerToolVisionRoute(
 	db data.DB,
 	rc *RunContext,
 	cfg StickerPrepareConfig,
-) (*accountToolRouteResolution, bool) {
+) (*entitlementRouteResolution, bool) {
 	if db == nil || rc == nil {
 		return nil, false
 	}
-	resolution, ok := resolveAccountToolRouteStrict(
+	resolution, ok := resolveVisionRoute(
 		ctx,
 		db,
 		rc.Run.AccountID,
+		rc.AgentConfig.ImageModel,
 		cfg.AuxGateway,
 		cfg.EmitDebugEvents,
 		rc.LlmMaxResponseBytes,

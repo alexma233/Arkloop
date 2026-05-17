@@ -4985,22 +4985,21 @@ func loadDesktopRoutingConfig(ctx context.Context, db data.DesktopDB) (routing.P
 	}
 
 	routeRows, err := tx.Query(ctx,
-		`SELECT id, credential_id, model, priority, is_default, when_json, advanced_json,
+		`SELECT id, credential_id, model, priority, when_json, advanced_json,
 		        multiplier, cost_per_1k_input, cost_per_1k_output, cost_per_1k_cache_write, cost_per_1k_cache_read
 		 FROM llm_routes ORDER BY priority DESC`)
 	if err != nil {
 		return routing.ProviderRoutingConfig{}, fmt.Errorf("query llm_routes: %w", err)
 	}
 	var routes []routing.ProviderRouteRule
-	defaultRouteID := ""
 	for routeRows.Next() {
 		var (
 			id, credentialID, model, whenStr, advancedStr string
-			priority, isDefault                           int
-			multiplier                                    float64
-			costIn, costOut, costCW, costCR               *float64
+			priority                                     int
+			multiplier                                   float64
+			costIn, costOut, costCW, costCR              *float64
 		)
-		if err := routeRows.Scan(&id, &credentialID, &model, &priority, &isDefault,
+		if err := routeRows.Scan(&id, &credentialID, &model, &priority,
 			&whenStr, &advancedStr, &multiplier, &costIn, &costOut, &costCW, &costCR); err != nil {
 			routeRows.Close()
 			return routing.ProviderRoutingConfig{}, fmt.Errorf("scan llm_routes: %w", err)
@@ -5031,9 +5030,6 @@ func loadDesktopRoutingConfig(ctx context.Context, db data.DesktopDB) (routing.P
 			CostPer1kCacheWrite: costCW, CostPer1kCacheRead: costCR,
 			Priority: priority,
 		})
-		if isDefault != 0 && defaultRouteID == "" {
-			defaultRouteID = id
-		}
 	}
 	routeRows.Close()
 	tx.Rollback(ctx)
@@ -5042,15 +5038,11 @@ func loadDesktopRoutingConfig(ctx context.Context, db data.DesktopDB) (routing.P
 	if len(routes) == 0 {
 		return routing.ProviderRoutingConfig{}, fmt.Errorf("no routes found in database")
 	}
-	if defaultRouteID == "" {
-		defaultRouteID = routes[0].ID
-	}
 
-	slog.Info("desktop: loaded routing config from DB", "credentials", len(creds), "routes", len(routes), "default_route", defaultRouteID)
+	slog.Info("desktop: loaded routing config from DB", "credentials", len(creds), "routes", len(routes))
 	return routing.ProviderRoutingConfig{
-		DefaultRouteID: defaultRouteID,
-		Credentials:    creds,
-		Routes:         routes,
+		Credentials: creds,
+		Routes:      routes,
 	}, nil
 }
 

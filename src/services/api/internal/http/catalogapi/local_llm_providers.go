@@ -63,7 +63,6 @@ func localRouteFromModel(status localproviders.ProviderStatus, providerUUID uuid
 		CredentialID: providerUUID,
 		Model:        model.ID,
 		Priority:     model.Priority,
-		IsDefault:    model.Default && !model.Hidden,
 		ShowInPicker: !model.Hidden,
 		Tags:         copyStringSlice(model.Tags),
 		WhenJSON:     json.RawMessage("{}"),

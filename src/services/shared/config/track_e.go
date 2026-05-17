@@ -140,6 +140,22 @@ func RegisterTrackE(r *Registry) error {
 			Sensitive:   false,
 			Scope:       ScopeBoth,
 		},
+		{
+			Key:         "spawn.profile.vision",
+			Type:        TypeString,
+			Default:     "",
+			Description: "图像理解模型；persona.image_model 未设置时使用，格式 provider^model",
+			Sensitive:   false,
+			Scope:       ScopeBoth,
+		},
+		{
+			Key:         "spawn.profile.tool",
+			Type:        TypeString,
+			Default:     "",
+			Description: "工具模型（标题摘要、结果摘要等子任务），格式 provider^model",
+			Sensitive:   false,
+			Scope:       ScopeBoth,
+		},
 	}
 
 	for _, e := range entries {

@@ -72,7 +72,7 @@ func TestLocalProviderFromStatusIsReadOnlyAndSecretFree(t *testing.T) {
 	if provider.Credential.SecretID != nil || provider.Credential.KeyPrefix != nil || provider.Credential.BaseURL != nil {
 		t.Fatalf("local provider must not carry stored credential data: %#v", provider.Credential)
 	}
-	if len(provider.Models) != 1 || provider.Models[0].ShowInPicker || provider.Models[0].IsDefault {
+	if len(provider.Models) != 1 || provider.Models[0].ShowInPicker {
 		t.Fatalf("unexpected local routes: %#v", provider.Models)
 	}
 }
