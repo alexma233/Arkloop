@@ -171,6 +171,16 @@ func NewRoutingMiddleware(
 					}
 				}
 			}
+			// sticker register runs: try vision → tool entitlement fallback
+			if decision.Selected == nil && decision.Denied == nil && isStickerRegisterRun(rc) {
+				if resolution, ok := resolveVisionRoute(ctx, rc.Pool, rc.Run.AccountID, rc.AgentConfig.ImageModel, auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, byokEnabled); ok && routeSupportsVision(resolution.Selected) {
+					decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+					rc.Gateway = resolution.Gateway
+				} else if resolution, ok := resolveEntitlementRoute(ctx, rc.Pool, rc.Run.AccountID, "spawn.profile.tool", auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, byokEnabled); ok && routeSupportsVision(resolution.Selected) {
+					decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+					rc.Gateway = resolution.Gateway
+				}
+			}
 			if decision.Selected == nil && decision.Denied == nil {
 				decision = routing.ProviderRouteDecision{
 					Denied: &routing.ProviderRouteDenied{

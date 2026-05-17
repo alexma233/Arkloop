@@ -170,6 +170,30 @@ func swapRunContextRoute(rc *RunContext, resolution *entitlementRouteResolution,
 	}
 }
 
+// ResolveStickerVisionRouteForDesktop resolves a vision-capable route for
+// sticker register runs from the desktop routing middleware.
+func ResolveStickerVisionRouteForDesktop(
+	ctx context.Context,
+	pool CompactPersistDB,
+	rc *RunContext,
+	auxGateway llm.Gateway,
+	emitDebugEvents bool,
+	configLoader *routing.ConfigLoader,
+) (*entitlementRouteResolution, bool) {
+	if pool == nil || rc == nil {
+		return nil, false
+	}
+	// 1. spawn.profile.vision
+	if resolution, ok := resolveVisionRoute(ctx, pool, rc.Run.AccountID, rc.AgentConfig.ImageModel, auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, rc.RoutingByokEnabled); ok && routeSupportsVision(resolution.Selected) {
+		return resolution, true
+	}
+	// 2. spawn.profile.tool (if supports vision)
+	if resolution, ok := resolveEntitlementRoute(ctx, pool, rc.Run.AccountID, "spawn.profile.tool", auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, rc.RoutingByokEnabled); ok && routeSupportsVision(resolution.Selected) {
+		return resolution, true
+	}
+	return nil, false
+}
+
 // publishRunEventFromRC 通知 run event channel。
 func publishRunEventFromRC(ctx context.Context, rc *RunContext) {
 	if rc == nil {

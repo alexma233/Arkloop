@@ -48,7 +48,7 @@ func NewStickerPrepareMiddleware(db data.DB, store MessageAttachmentStore, cfg S
 			return nil
 		}
 		if !routeSupportsVision(rc.SelectedRoute) {
-			if resolution, ok := resolveStickerToolVisionRoute(ctx, db, rc, cfg); ok {
+			if resolution, ok := resolveStickerVisionRoute(ctx, db, rc, cfg); ok {
 				estimator := stickerProviderRequestEstimator(ctx, resolution.Selected, cfg, rc.LlmMaxResponseBytes)
 				swapRunContextRoute(rc, resolution, estimator)
 			} else {
@@ -105,16 +105,14 @@ func NewStickerPrepareMiddleware(db data.DB, store MessageAttachmentStore, cfg S
 }
 
 
-func resolveStickerToolVisionRoute(
+func resolveStickerVisionRoute(
 	ctx context.Context,
 	db data.DB,
 	rc *RunContext,
 	cfg StickerPrepareConfig,
 ) (*entitlementRouteResolution, bool) {
-	if db == nil || rc == nil {
-		return nil, false
-	}
-	resolution, ok := resolveVisionRoute(
+	// 1. spawn.profile.vision
+	if resolution, ok := resolveVisionRoute(
 		ctx,
 		db,
 		rc.Run.AccountID,
@@ -124,11 +122,24 @@ func resolveStickerToolVisionRoute(
 		rc.LlmMaxResponseBytes,
 		cfg.RoutingConfigLoader,
 		rc.RoutingByokEnabled,
-	)
-	if !ok || resolution == nil || !routeSupportsVision(resolution.Selected) {
-		return nil, false
+	); ok && routeSupportsVision(resolution.Selected) {
+		return resolution, true
 	}
-	return resolution, true
+	// 2. spawn.profile.tool (if supports vision)
+	if resolution, ok := resolveEntitlementRoute(
+		ctx,
+		db,
+		rc.Run.AccountID,
+		"spawn.profile.tool",
+		cfg.AuxGateway,
+		cfg.EmitDebugEvents,
+		rc.LlmMaxResponseBytes,
+		cfg.RoutingConfigLoader,
+		rc.RoutingByokEnabled,
+	); ok && routeSupportsVision(resolution.Selected) {
+		return resolution, true
+	}
+	return nil, false
 }
 
 func stickerProviderRequestEstimator(
