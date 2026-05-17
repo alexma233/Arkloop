@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Extension } from '@codemirror/state'
-import type { ViewUpdate } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { codeLanguageFromFilename } from './language'
 import './CodeDocumentViewer.css'
@@ -16,12 +15,10 @@ type Props = {
   content: string
   filename?: string
   mimeType?: string
-  editable?: boolean
   showLineNumbers?: boolean
   maxHeight?: number
   fillHeight?: boolean
   diffLines?: DiffLine[]
-  onChange?: (value: string) => void
 }
 
 type CodeMirrorRuntime = {
@@ -32,8 +29,6 @@ type CodeMirrorRuntime = {
   lineNumbers: typeof import('@codemirror/view').lineNumbers
   highlightSpecialChars: typeof import('@codemirror/view').highlightSpecialChars
   drawSelection: typeof import('@codemirror/view').drawSelection
-  highlightActiveLine: typeof import('@codemirror/view').highlightActiveLine
-  highlightActiveLineGutter: typeof import('@codemirror/view').highlightActiveLineGutter
   syntaxHighlighting: typeof import('@codemirror/language').syntaxHighlighting
   HighlightStyle: typeof import('@codemirror/language').HighlightStyle
   javascript: typeof import('@codemirror/lang-javascript').javascript
@@ -69,8 +64,6 @@ function loadCodeMirrorRuntime(): Promise<CodeMirrorRuntime> {
     lineNumbers: view.lineNumbers,
     highlightSpecialChars: view.highlightSpecialChars,
     drawSelection: view.drawSelection,
-    highlightActiveLine: view.highlightActiveLine,
-    highlightActiveLineGutter: view.highlightActiveLineGutter,
     syntaxHighlighting: language.syntaxHighlighting,
     HighlightStyle: language.HighlightStyle,
     javascript: javascript.javascript,
@@ -196,12 +189,10 @@ export const CodeDocumentViewer = memo(function CodeDocumentViewer({
   content,
   filename,
   mimeType,
-  editable = false,
   showLineNumbers = true,
   maxHeight,
   fillHeight = false,
   diffLines,
-  onChange,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<import('@codemirror/view').EditorView | null>(null)
@@ -220,29 +211,20 @@ export const CodeDocumentViewer = memo(function CodeDocumentViewer({
     const mount = mountRef.current
     if (!mount || !runtime) return
 
-    const updateListener = runtime.EditorView.updateListener.of((update: ViewUpdate) => {
-      if (!update.docChanged) return
-      onChange?.(update.state.doc.toString())
-    })
-
     const extensions: Extension[] = [
       runtime.highlightSpecialChars(),
       runtime.drawSelection(),
       runtime.EditorView.lineWrapping,
-      runtime.EditorState.readOnly.of(!editable),
-      runtime.EditorView.editable.of(editable),
+      runtime.EditorState.readOnly.of(true),
+      runtime.EditorView.editable.of(false),
       runtime.EditorView.contentAttributes.of({ spellcheck: 'false' }),
       runtime.EditorView.theme({}, { dark: false }),
       viewerTheme(runtime, maxHeight, fillHeight),
       highlightTheme(runtime),
       diffLineExtension(runtime, diffLines),
-      updateListener,
       ...languageExtension(runtime, language),
     ]
     if (showLineNumbers) extensions.unshift(runtime.lineNumbers())
-    if (editable) {
-      extensions.push(runtime.highlightActiveLine(), runtime.highlightActiveLineGutter())
-    }
 
     const view = new runtime.EditorView({
       parent: mount,
@@ -255,7 +237,17 @@ export const CodeDocumentViewer = memo(function CodeDocumentViewer({
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
     }
-  }, [content, diffLines, editable, fillHeight, language, maxHeight, mimeType, onChange, runtime, showLineNumbers])
+  }, [diffLines, fillHeight, language, maxHeight, mimeType, runtime, showLineNumbers])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const current = view.state.doc.toString()
+    if (current === content) return
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: content },
+    })
+  }, [content])
 
   if (!runtime) {
     return (
@@ -266,7 +258,7 @@ export const CodeDocumentViewer = memo(function CodeDocumentViewer({
   }
 
   return (
-    <div className={`code-document-viewer${fillHeight ? ' code-document-viewer--fill' : ''}`} style={{ maxHeight }}>
+    <div className={`code-document-viewer${fillHeight ? ' code-document-viewer--fill' : ''} code-document-viewer--readonly`} style={{ maxHeight }}>
       <div ref={mountRef} className="code-document-viewer__mount" />
     </div>
   )
