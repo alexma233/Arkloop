@@ -1571,7 +1571,16 @@ export const Sidebar = memo(function Sidebar({
     </div>,
     document.body,
   ) : null
-  const navButtonClass = 'group flex h-[32px] w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-lg px-[8px] text-[15px] text-[var(--c-text-secondary)] transition-colors duration-[60ms] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)]'
+  const navButtonClass = 'group relative flex h-[32px] w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-lg px-[8px] text-[15px] text-[var(--c-text-secondary)] transition-colors duration-[60ms] hover:text-[var(--c-text-primary)]'
+  const navHoverStyle = {
+    position: 'absolute',
+    insetBlock: 0,
+    left: 0,
+    width: visualCollapsed ? 32 : '100%',
+    borderRadius: 8,
+    background: 'var(--c-bg-deep)',
+    transition: 'width 150ms ease, opacity 60ms ease',
+  } as const
   const navButtonStyle = { fontWeight: 'var(--c-sidebar-nav-weight)' }
   const navLabelStyle = {
     opacity: visualCollapsed ? 0 : 1,
@@ -1669,10 +1678,11 @@ export const Sidebar = memo(function Sidebar({
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <SquarePen size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass} style={navLabelStyle}>{newThreadNavLabel}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{newThreadNavLabel}</span>
           </button>
 
           <button
@@ -1704,10 +1714,11 @@ export const Sidebar = memo(function Sidebar({
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Search size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass} style={navLabelStyle}>{searchNavLabel}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{searchNavLabel}</span>
           </button>
 
           <button
@@ -1716,10 +1727,11 @@ export const Sidebar = memo(function Sidebar({
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Clock size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass} style={navLabelStyle}>{t.scheduledJobs}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{t.scheduledJobs}</span>
           </button>
       </nav>
 
