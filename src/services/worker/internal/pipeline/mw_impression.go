@@ -15,6 +15,10 @@ import (
 )
 
 // isImpressionRun 判断当前 run 是否为 impression 生成 run。
+func IsImpressionRun(rc *RunContext) bool {
+	return isImpressionRun(rc)
+}
+
 func isImpressionRun(rc *RunContext) bool {
 	if rc == nil {
 		return false

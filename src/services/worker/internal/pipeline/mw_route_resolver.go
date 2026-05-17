@@ -170,6 +170,22 @@ func swapRunContextRoute(rc *RunContext, resolution *entitlementRouteResolution,
 	}
 }
 
+// ResolveImpressionRouteForDesktop resolves a tool route for
+// impression runs from the desktop routing middleware.
+func ResolveImpressionRouteForDesktop(
+	ctx context.Context,
+	pool CompactPersistDB,
+	rc *RunContext,
+	auxGateway llm.Gateway,
+	emitDebugEvents bool,
+	configLoader *routing.ConfigLoader,
+) (*entitlementRouteResolution, bool) {
+	if pool == nil || rc == nil {
+		return nil, false
+	}
+	return resolveEntitlementRoute(ctx, pool, rc.Run.AccountID, "spawn.profile.tool", auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, rc.RoutingByokEnabled)
+}
+
 // ResolveStickerVisionRouteForDesktop resolves a vision-capable route for
 // sticker register runs from the desktop routing middleware.
 func ResolveStickerVisionRouteForDesktop(

@@ -3195,11 +3195,18 @@ func desktopRouting(
 			if decision.Selected == nil && decision.Denied == nil {
 				decision = router.Decide(rc.InputJSON, false, false)
 			}
-			// sticker register runs: try vision → tool entitlement fallback
-			if decision.Selected == nil && decision.Denied == nil && pipeline.IsStickerRegisterRun(rc) {
-				if resolution, ok := pipeline.ResolveStickerVisionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
-					decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
-					rc.Gateway = resolution.Gateway
+			// auxiliary runs without model selector: try entitlement fallback
+			if decision.Selected == nil && decision.Denied == nil {
+				if pipeline.IsStickerRegisterRun(rc) {
+					if resolution, ok := pipeline.ResolveStickerVisionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
+						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+						rc.Gateway = resolution.Gateway
+					}
+				} else if pipeline.IsImpressionRun(rc) {
+					if resolution, ok := pipeline.ResolveImpressionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
+						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+						rc.Gateway = resolution.Gateway
+					}
 				}
 			}
 			if decision.Selected == nil && decision.Denied == nil {
