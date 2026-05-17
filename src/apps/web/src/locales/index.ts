@@ -1358,6 +1358,10 @@ export interface LocaleStrings {
     chatModel: string;
     chatModelDesc: string;
     chatModelPlatformDefault: string;
+    // vision model
+    visionModel: string;
+    visionModelDesc: string;
+    visionModelUnset: string;
     // tool model
     toolModel: string;
     toolModelDesc: string;

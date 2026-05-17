@@ -8,16 +8,16 @@ import {
 import type { SpawnProfile, LlmProvider } from '../../api'
 import { useLocale } from '../../contexts/LocaleContext'
 import { isLocalMode } from '@arkloop/shared/desktop'
-import { getAvailableCatalogFromAdvancedJson } from '@arkloop/shared/llm/available-catalog-advanced-json'
 import { SettingsModelDropdown } from './SettingsModelDropdown'
 import { ToolModelSettingControl } from './ToolModelSettingControl'
 import { ChatModelSettingControl } from './ChatModelSettingControl'
+import { VisionModelSettingControl } from './VisionModelSettingControl'
 
 type Props = {
   accessToken: string
 }
 
-const PROFILE_NAMES = ['explore', 'vision', 'task', 'strong'] as const
+const PROFILE_NAMES = ['explore', 'task', 'strong'] as const
 
 function RoutingSection({
   title,
@@ -85,17 +85,6 @@ export function RoutingSettings({ accessToken }: Props) {
       value: `${p.name}^${m.model}`,
       label: `${p.name} / ${m.model}`,
     })))
-  const visionModelOptions = providers
-    .flatMap(p => p.models
-      .filter((m) => {
-        const catalog = getAvailableCatalogFromAdvancedJson(m.advanced_json)
-        const inputModalities = Array.isArray(catalog?.input_modalities) ? catalog.input_modalities : []
-        return inputModalities.includes('image')
-      })
-      .map(m => ({
-        value: `${p.name}^${m.model}`,
-        label: `${p.name} / ${m.model}`,
-      })))
 
   const handleChange = async (name: string, value: string) => {
     setSaving(name)
@@ -114,12 +103,9 @@ export function RoutingSettings({ accessToken }: Props) {
 
   const profileMeta: Record<string, { label: string; desc: string }> = {
     explore: { label: a.spawnProfileExplore, desc: a.spawnProfileExploreDesc },
-    vision:  { label: a.spawnProfileVision,  desc: a.spawnProfileVisionDesc  },
     task:    { label: a.spawnProfileTask,    desc: a.spawnProfileTaskDesc    },
     strong:  { label: a.spawnProfileStrong,  desc: a.spawnProfileStrongDesc  },
   }
-  const visionProfile = profiles.find((p) => p.profile === 'vision')
-  const visionModelValue = visionProfile?.resolved_model ?? ''
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6 px-1 pb-8">
       <div>
@@ -163,28 +149,17 @@ export function RoutingSettings({ accessToken }: Props) {
             )}
           />
           <RoutingRow
+            title={ds.visionModel}
+            description={ds.visionModelDesc}
+            control={(
+              <VisionModelSettingControl accessToken={accessToken} />
+            )}
+          />
+          <RoutingRow
             title={ds.toolModel}
             description={ds.toolModelDesc}
             control={(
               <ToolModelSettingControl accessToken={accessToken} />
-            )}
-          />
-        </RoutingCard>
-      </RoutingSection>
-
-      <RoutingSection title={a.spawnProfileVision}>
-        <RoutingCard>
-          <RoutingRow
-            title={a.spawnProfileVision}
-            description={a.spawnProfileVisionDesc}
-            control={(
-              <SettingsModelDropdown
-                value={visionModelValue}
-                options={visionModelOptions}
-                placeholder={a.spawnProfileVisionUnset}
-                disabled={saving === 'vision'}
-                onChange={v => handleChange('vision', v)}
-              />
             )}
           />
         </RoutingCard>

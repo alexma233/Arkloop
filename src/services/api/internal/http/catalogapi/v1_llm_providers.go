@@ -1305,6 +1305,8 @@ func runLlmProviderModelTest(ctx context.Context, cfg llmproviders.ProviderModel
 		return testEmbeddingModel(testCtx, protocolConfig, baseURL, cfg.APIKey, cfg.Model.Model)
 	case "image":
 		return testImageModel(testCtx, protocolConfig, baseURL, cfg.APIKey, cfg.Model.Model)
+	case "vision":
+		return testVisionModel(testCtx, protocolConfig, baseURL, cfg.APIKey, cfg.Model.Model)
 	default:
 		return testChatModel(testCtx, protocolConfig, baseURL, cfg.APIKey, cfg.Model.Model)
 	}
@@ -1317,6 +1319,8 @@ func determineModelTestType(model data.LlmRoute) string {
 			return "embedding"
 		case "image":
 			return "image"
+		case "vision":
+			return "vision"
 		}
 	}
 	if rawCatalog, ok := model.AdvancedJSON[llmproviders.AvailableCatalogAdvancedKey].(map[string]any); ok {
@@ -1325,6 +1329,11 @@ func determineModelTestType(model data.LlmRoute) string {
 		}
 		if modelType, ok := rawCatalog["type"].(string); ok && strings.EqualFold(strings.TrimSpace(modelType), "image") {
 			return "image"
+		}
+		for _, value := range normalizeCatalogStrings(rawCatalog["input_modalities"]) {
+			if value == "image" {
+				return "vision"
+			}
 		}
 		for _, value := range normalizeCatalogStrings(rawCatalog["output_modalities"]) {
 			switch value {
@@ -1387,6 +1396,109 @@ func testImageModel(ctx context.Context, cfg llmproviders.CatalogProtocolConfig,
 	default:
 		return testOpenAIImage(ctx, cfg, baseURL, apiKey, model)
 	}
+}
+
+// testVisionPNG is a 1x1 white PNG, base64-encoded.
+const testVisionPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+
+func testVisionModel(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
+	switch cfg.Kind {
+	case llmproviders.ProtocolKindAnthropicMessages:
+		return testAnthropicVision(ctx, cfg, baseURL, apiKey, model)
+	case llmproviders.ProtocolKindGeminiGenerateContent:
+		return testGeminiVision(ctx, cfg, baseURL, apiKey, model)
+	case llmproviders.ProtocolKindOpenAIResponses:
+		return testOpenAIResponsesVision(ctx, cfg, baseURL, apiKey, model)
+	default:
+		return testOpenAIVision(ctx, cfg, baseURL, apiKey, model)
+	}
+}
+
+func testOpenAIVision(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
+	payload := map[string]any{
+		"model": model,
+		"messages": []map[string]any{
+			{"role": "user", "content": []map[string]any{
+				{"type": "text", "text": "What color is this image?"},
+				{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64," + testVisionPNG}},
+			}},
+		},
+		"max_tokens": 64,
+	}
+	return doTestHTTPPost(ctx, cfg, baseURL+"/chat/completions", apiKey, "Bearer", payload)
+}
+
+func testOpenAIResponsesVision(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
+	payload := map[string]any{
+		"model": model,
+		"input": []map[string]any{
+			{"role": "user", "content": []map[string]any{
+				{"type": "input_text", "text": "What color is this image?"},
+				{"type": "input_image", "image_url": "data:image/png;base64," + testVisionPNG},
+			}},
+		},
+		"max_output_tokens": 64,
+	}
+	return doTestHTTPPost(ctx, cfg, baseURL+"/responses", apiKey, "Bearer", payload)
+}
+
+func testAnthropicVision(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	payload := map[string]any{
+		"model":      model,
+		"max_tokens": 64,
+		"messages": []map[string]any{
+			{"role": "user", "content": []map[string]any{
+				{"type": "text", "text": "What color is this image?"},
+				{"type": "image", "source": map[string]any{
+					"type":       "base64",
+					"media_type": "image/png",
+					"data":       testVisionPNG,
+				}},
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodPost, baseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", cfg.Anthropic.Version)
+	for key, value := range cfg.Anthropic.ExtraHeaders {
+		req.Header.Set(key, value)
+	}
+	applyUserExtraHeadersToRequest(req, cfg)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	return doTestRequest(req)
+}
+
+func testGeminiVision(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
+	payload := map[string]any{
+		"contents": []map[string]any{
+			{"parts": []map[string]any{
+				{"text": "What color is this image?"},
+				{"inline_data": map[string]any{
+					"mime_type": "image/png",
+					"data":      testVisionPNG,
+				}},
+			}},
+		},
+		"generationConfig": map[string]any{"maxOutputTokens": 64},
+	}
+	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodPost, geminiTestEndpoint(baseURL, model, ":generateContent"), bytes.NewReader(mustJSON(payload)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-goog-api-key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	applyUserExtraHeadersToRequest(req, cfg)
+	return doTestRequest(req)
 }
 
 func testOpenAIChat(ctx context.Context, cfg llmproviders.CatalogProtocolConfig, baseURL, apiKey, model string) error {
