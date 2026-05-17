@@ -70,16 +70,21 @@ func describeImagesWithGateway(
 ) ([]string, error) {
 	var descriptions []string
 	for i := range rc.Messages {
+		hasImage := false
 		for _, part := range rc.Messages[i].Content {
-			if part.Kind() != "image" {
-				continue
+			if part.Kind() == "image" {
+				hasImage = true
+				break
 			}
-			desc, err := describeSingleImage(ctx, rc, visionGateway, visionModel, i)
-			if err != nil {
-				return descriptions, fmt.Errorf("describe image in message %d: %w", i, err)
-			}
-			descriptions = append(descriptions, desc)
 		}
+		if !hasImage {
+			continue
+		}
+		desc, err := describeSingleImage(ctx, rc, visionGateway, visionModel, i)
+		if err != nil {
+			return descriptions, fmt.Errorf("describe image in message %d: %w", i, err)
+		}
+		descriptions = append(descriptions, desc)
 	}
 	return descriptions, nil
 }
