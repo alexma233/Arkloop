@@ -10,6 +10,7 @@ type Client interface {
 	CallTool(ctx context.Context, name string, arguments map[string]any, timeoutMs int) (ToolCallResult, error)
 	IsHealthy(ctx context.Context) bool
 	Close() error
+	ServerInstructions() string
 }
 
 type Pool struct {

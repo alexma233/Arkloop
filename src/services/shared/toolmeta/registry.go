@@ -65,7 +65,9 @@ var registry = []ToolMeta{
 		ShortDesc: "load one available skill into the current conversation by exact skill name",
 		LLMDescription: "load one skill from <available_skills> into the current conversation. " +
 			"Use the exact skill name shown in the skill catalog. " +
-			"Call this before relying on a skill's instructions or specialized workflow. " +
+			"When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke load_skill BEFORE generating any other response about the task. " +
+			"NEVER mention a skill without actually calling this tool. " +
+			"Do not invoke a skill that is already loaded in the current conversation. " +
 			"This tool only loads skills visible to the current run; it does not search the web or arbitrary filesystem paths.",
 	},
 	{
