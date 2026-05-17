@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"arkloop/services/worker/internal/data"
 	"arkloop/services/worker/internal/llm"
 	"arkloop/services/worker/internal/routing"
 
@@ -40,8 +39,14 @@ func resolveEntitlementRoute(
 		  LIMIT 1`,
 		accountID, entitlementKey,
 	).Scan(&selector)
+	if err != nil {
+		if err != pgx.ErrNoRows {
+			slog.Warn("entitlement_route: query account_entitlement_overrides failed", "key", entitlementKey, "account_id", accountID, "err", err.Error())
+		}
+		return nil, false
+	}
 	selector = strings.TrimSpace(selector)
-	if err != nil || selector == "" || configLoader == nil {
+	if selector == "" || configLoader == nil {
 		return nil, false
 	}
 
@@ -142,71 +147,27 @@ func messageContainsImage(messages []llm.Message) bool {
 }
 
 // routeSupportsVision 检测 selected route 是否支持 image input。
+// 仅依赖 available_catalog.input_modalities，不做模型名硬编码猜测。
 func routeSupportsVision(selected *routing.SelectedProviderRoute) bool {
 	if selected == nil {
 		return false
 	}
 	caps, ok := routing.SelectedRouteCatalogModelCapabilities(selected)
-	if ok && caps.SupportsInputModality("image") {
-		return true
-	}
-	return routing.IsKnownVisionModel(selected.Route.Model)
+	return ok && caps.SupportsInputModality("image")
 }
 
 // swapRunContextRoute 将 RunContext 的 gateway/selectedRoute/contextWindow 切换到新 route。
-func swapRunContextRoute(rc *RunContext, resolution *entitlementRouteResolution) {
+// 如果 estimateFn 非 nil，同步更新 EstimateProviderRequestBytes。
+func swapRunContextRoute(rc *RunContext, resolution *entitlementRouteResolution, estimateFn func(llm.Request) (int, error)) {
 	rc.Gateway = resolution.Gateway
 	rc.SelectedRoute = resolution.Selected
 	rc.ContextWindowTokens = routing.RouteContextWindowTokens(resolution.Selected.Route)
 	if rc.Temperature == nil {
 		rc.Temperature = routing.RouteDefaultTemperature(resolution.Selected.Route)
 	}
-}
-
-func failVisionRouteUnavailable(ctx context.Context, rc *RunContext, eventsRepo CompactRunEventAppender) error {
-	const (
-		errorClass = llm.ErrorClassRoutingNotFound
-		code       = "routing.vision_model_unavailable"
-		message    = "vision model is not configured for image understanding"
-	)
-	details := map[string]any{}
-	if rc.SelectedRoute != nil {
-		details["selected_model"] = rc.SelectedRoute.Route.Model
-		details["selected_route_id"] = rc.SelectedRoute.Route.ID
+	if estimateFn != nil {
+		rc.EstimateProviderRequestBytes = estimateFn
 	}
-	if eventsRepo == nil || rc == nil || rc.DB == nil || rc.RunStatusDB == nil {
-		return fmt.Errorf("%s: %s", code, message)
-	}
-
-	if rc.ReleaseSlot != nil {
-		defer rc.ReleaseSlot()
-	}
-
-	failed := rc.Emitter.Emit("run.failed", map[string]any{
-		"error_class": errorClass,
-		"code":        code,
-		"message":     message,
-		"details":     details,
-	}, nil, StringPtr(errorClass))
-
-	tx, err := rc.DB.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := eventsRepo.AppendRunEvent(ctx, tx, rc.Run.ID, failed); err != nil {
-		return err
-	}
-	if err := rc.RunStatusDB.UpdateRunTerminalStatus(ctx, tx, rc.Run.ID, data.TerminalStatusUpdate{Status: "failed"}); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-
-	publishRunEventFromRC(ctx, rc)
-	return nil
 }
 
 // publishRunEventFromRC 通知 run event channel。

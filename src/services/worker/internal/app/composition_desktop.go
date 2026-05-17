@@ -810,6 +810,12 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 		})),
 		pipeline.NewTitleSummarizerMiddleware(e.db, nil, e.auxGateway, e.emitDebugEvents, e.routingLoader),
 		pipeline.NewContextCompactMiddleware(e.db, data.MessagesRepository{}, data.DesktopRunEventsRepository{}, e.auxGateway, e.emitDebugEvents, e.routingLoader),
+		pipeline.NewImageUnderstandingMiddleware(pipeline.ImageUnderstandingConfig{
+			AuxGateway:          e.auxGateway,
+			EmitDebugEvents:     e.emitDebugEvents,
+			RoutingConfigLoader: e.routingLoader,
+			EventsRepo:          data.DesktopRunEventsRepository{},
+		}),
 		pipeline.NewImpressionPrepareMiddleware(impStore, e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
 		pipeline.NewStickerPrepareMiddleware(e.db, e.messageAttachmentStore, pipeline.StickerPrepareConfig{
 			AuxGateway:          e.auxGateway,
@@ -3189,15 +3195,20 @@ func desktopRouting(
 			if decision.Selected == nil && decision.Denied == nil {
 				decision = router.Decide(rc.InputJSON, false, false)
 			}
+			if decision.Selected == nil && decision.Denied == nil {
+				decision = routing.ProviderRouteDecision{
+					Denied: &routing.ProviderRouteDenied{
+						ErrorClass: llm.ErrorClassRoutingNotFound,
+						Code:       "routing.no_model_configured",
+						Message:    "no model configured for this run; set persona.model or spawn.profile.task entitlement override",
+					},
+				}
+			}
 		}
 
 		if decision.Denied != nil {
 			return desktopWriteFailure(ctx, db, rc.Run, rc.Emitter, runsRepo, eventsRepo,
 				decision.Denied.ErrorClass, decision.Denied.Message, nil)
-		}
-		if decision.Selected == nil {
-			return desktopWriteFailure(ctx, db, rc.Run, rc.Emitter, runsRepo, eventsRepo,
-				"internal.error", "route decision is empty", nil)
 		}
 
 		gateway, err := desktopGatewayFromRoute(*decision.Selected, auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes)

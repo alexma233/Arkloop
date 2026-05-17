@@ -5,6 +5,7 @@ export interface FlatModel {
   id: string
   provider: string
   label: string
+  priority: number
   showInPicker: boolean
   supportsReasoning: boolean
   contextLength: number | null
@@ -22,6 +23,7 @@ export async function listFlatModels(client: ApiClient): Promise<FlatModel[]> {
         id,
         provider: provider.name,
         label: id,
+        priority: model.priority ?? 0,
         showInPicker: model.show_in_picker !== false,
         supportsReasoning: supportsReasoning(model.advanced_json),
         contextLength: contextLength(model.advanced_json),
@@ -33,9 +35,13 @@ export async function listFlatModels(client: ApiClient): Promise<FlatModel[]> {
 }
 
 export function defaultModel(models: FlatModel[]): FlatModel | null {
-  return models.find((item) => item.showInPicker)
-    ?? models[0]
-    ?? null
+  const picker = models.filter((m) => m.showInPicker)
+  if (picker.length === 0) return models[0] ?? null
+  picker.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority
+    return a.id.localeCompare(b.id)
+  })
+  return picker[0]
 }
 
 export function findModel(models: FlatModel[], query: string): FlatModel | null {

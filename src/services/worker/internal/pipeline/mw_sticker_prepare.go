@@ -47,10 +47,10 @@ func NewStickerPrepareMiddleware(db data.DB, store MessageAttachmentStore, cfg S
 		if strings.TrimSpace(sticker.PreviewStorageKey) == "" {
 			return nil
 		}
-		if !stickerSelectedRouteSupportsVision(rc.SelectedRoute) {
+		if !routeSupportsVision(rc.SelectedRoute) {
 			if resolution, ok := resolveStickerToolVisionRoute(ctx, db, rc, cfg); ok {
-				swapRunContextRoute(rc, resolution)
-				rc.EstimateProviderRequestBytes = stickerProviderRequestEstimator(ctx, resolution.Selected, cfg, rc.LlmMaxResponseBytes)
+				estimator := stickerProviderRequestEstimator(ctx, resolution.Selected, cfg, rc.LlmMaxResponseBytes)
+				swapRunContextRoute(rc, resolution, estimator)
 			} else {
 				return failStickerRegisterRun(ctx, rc, cfg.EventsRepo, stickerID)
 			}
@@ -104,10 +104,6 @@ func NewStickerPrepareMiddleware(db data.DB, store MessageAttachmentStore, cfg S
 	}
 }
 
-func stickerSelectedRouteSupportsVision(selected *routing.SelectedProviderRoute) bool {
-	caps, ok := routing.SelectedRouteCatalogModelCapabilities(selected)
-	return ok && caps.SupportsInputModality("image")
-}
 
 func resolveStickerToolVisionRoute(
 	ctx context.Context,
@@ -129,7 +125,7 @@ func resolveStickerToolVisionRoute(
 		cfg.RoutingConfigLoader,
 		rc.RoutingByokEnabled,
 	)
-	if !ok || resolution == nil || !stickerSelectedRouteSupportsVision(resolution.Selected) {
+	if !ok || resolution == nil || !routeSupportsVision(resolution.Selected) {
 		return nil, false
 	}
 	return resolution, true

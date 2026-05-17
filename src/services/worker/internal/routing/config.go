@@ -90,9 +90,11 @@ type ProviderRouteRule struct {
 	AccountScoped       bool
 }
 
+// Matches checks whether the input satisfies all When conditions.
+// Empty When returns false: routes without conditions can only be selected via route_id, not auto-matching.
 func (r ProviderRouteRule) Matches(input map[string]any) bool {
 	if len(r.When) == 0 {
-		return true
+		return false
 	}
 	for key, expected := range r.When {
 		if !reflect.DeepEqual(input[key], expected) {
@@ -412,10 +414,10 @@ func (c ProviderRoutingConfig) findCredentialIDByName(name string) string {
 }
 
 func (c ProviderRoutingConfig) pickBestRoute(match func(ProviderRouteRule) bool, inputJSON map[string]any) (ProviderRouteRule, ProviderCredential, bool) {
-	// collect routes where When conditions are satisfied (or empty)
+	// collect routes where When conditions are satisfied, plus empty-When defaults
 	var candidates []ProviderRouteRule
 	for _, route := range c.Routes {
-		if match(route) && route.Matches(inputJSON) {
+		if match(route) && (len(route.When) == 0 || route.Matches(inputJSON)) {
 			candidates = append(candidates, route)
 		}
 	}

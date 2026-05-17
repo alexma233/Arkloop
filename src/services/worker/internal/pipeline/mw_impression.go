@@ -41,7 +41,7 @@ func NewImpressionPrepareMiddleware(impStore ImpressionStore, pool CompactPersis
 
 		// 优先使用账户级工具模型；无 override 时保留 routing middleware 选的默认路由
 		if pool != nil && configLoader != nil {
-			if resolution, ok := resolveAccountToolRoute(ctx, pool, rc.Run.AccountID, auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, rc.RoutingByokEnabled); ok {
+			if resolution, ok := resolveEntitlementRoute(ctx, pool, rc.Run.AccountID, "spawn.profile.tool", auxGateway, emitDebugEvents, rc.LlmMaxResponseBytes, configLoader, rc.RoutingByokEnabled); ok {
 				rc.Gateway = resolution.Gateway
 				rc.SelectedRoute = resolution.Selected
 			}
