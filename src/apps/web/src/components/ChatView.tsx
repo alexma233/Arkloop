@@ -1059,6 +1059,8 @@ export const ChatView = memo(function ChatView() {
   const resourcePanelResource = activePanel?.type === 'resource' ? activePanel.resource : null
   // Mirror volatile activePanel-derived values into refs so callbacks passed to
   // MessageList stay referentially stable when the panel context changes.
+  const activePanelRef = useRef(activePanel)
+  useEffect(() => { activePanelRef.current = activePanel }, [activePanel])
   const documentPanelArtifactKeyRef = useRef(documentPanelArtifact?.artifact.key)
   useEffect(() => { documentPanelArtifactKeyRef.current = documentPanelArtifact?.artifact.key }, [documentPanelArtifact?.artifact.key])
   const codePanelExecutionIdRef = useRef(codePanelExecution?.id)
@@ -1070,15 +1072,10 @@ export const ChatView = memo(function ChatView() {
   const sourcePanelMessageIdRef = useRef(sourcePanelMessageId)
   useEffect(() => { sourcePanelMessageIdRef.current = sourcePanelMessageId }, [sourcePanelMessageId])
   const setSourcePanelMessageId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>((value) => {
-    const next = typeof value === 'function' ? value(sourcePanelMessageId) : value
+    const next = typeof value === 'function' ? value(sourcePanelMessageIdRef.current) : value
     if (next) openSourcePanel(next)
-    else if (activePanel?.type === 'source') closePanel()
-  }, [activePanel, closePanel, openSourcePanel, sourcePanelMessageId])
-  const setCodePanelExecution = useCallback<React.Dispatch<React.SetStateAction<CodeExecution | null>>>((value) => {
-    const next = typeof value === 'function' ? value(codePanelExecution) : value
-    if (next) openCodePanelState(next)
-    else if (activePanel?.type === 'code') closePanel()
-  }, [activePanel, closePanel, codePanelExecution, openCodePanelState])
+    else if (activePanelRef.current?.type === 'source') closePanel()
+  }, [closePanel, openSourcePanel])
   // --- Work todo 进度 ---
   const { showRunDetailButton, showDebugPanel, runDetailPanelRunId, setRunDetailPanelRunId } = useDevTools()
 
@@ -2558,12 +2555,13 @@ export const ChatView = memo(function ChatView() {
       const index = current.findIndex((item) => item.id === id)
       if (index < 0) return current
       const target = current[index]
-      if (target.kind === 'source') setSourcePanelMessageId(null)
-      else if (target.kind === 'code' && activePanel?.type === 'code' && activePanel.execution.id === target.execution.id) setCodePanelExecution(null)
-      else if (target.kind === 'agent' && activePanel?.type === 'agent' && activePanel.agent.id === target.agent.id) closePanel()
+      const currentPanel = activePanelRef.current
+      if (target.kind === 'source' && currentPanel?.type === 'source') closePanel()
+      else if (target.kind === 'code' && currentPanel?.type === 'code' && currentPanel.execution.id === target.execution.id) closePanel()
+      else if (target.kind === 'agent' && currentPanel?.type === 'agent' && currentPanel.agent.id === target.agent.id) closePanel()
       else if (target.kind === 'resource') {
-        if (activePanel?.type === 'resource' && resourceTabId(activePanel.resource) === target.id) closePanel()
-        else if (activePanel?.type === 'document' && target.resource.kind === 'artifact' && activePanel.artifact.artifact.key === target.resource.key) closePanel()
+        if (currentPanel?.type === 'resource' && resourceTabId(currentPanel.resource) === target.id) closePanel()
+        else if (currentPanel?.type === 'document' && target.resource.kind === 'artifact' && currentPanel.artifact.artifact.key === target.resource.key) closePanel()
       }
 
       const next = current.filter((item) => item.id !== id)
@@ -2573,7 +2571,7 @@ export const ChatView = memo(function ChatView() {
       })
       return next
     })
-  }, [activePanel, closePanel, setCodePanelExecution, setSourcePanelMessageId, workPanelFolder])
+  }, [closePanel, workPanelFolder])
 
   const setBrowserResourceForCurrentTab = useCallback((resource: BrowserResourceRef) => {
     const activeId = effectiveRightPanelTabIdRef.current

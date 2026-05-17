@@ -14,7 +14,7 @@ import { useRunLifecycle } from '../contexts/run-lifecycle'
 import { isLocalTerminalMessage, useMessageStore } from '../contexts/message-store'
 import { useMessageMeta } from '../contexts/message-meta'
 import { useStream } from '../contexts/stream'
-import { usePanelActions, usePanels } from '../contexts/panels'
+import { useActiveCodeExecutionId, usePanelActions, useShareModalState } from '../contexts/panels'
 import { useAuth } from '../contexts/auth'
 import { useThreadList } from '../contexts/thread-list'
 import { apiBaseUrl } from '@arkloop/shared/api'
@@ -129,8 +129,9 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
   const msgs = useMessageStore()
   const meta = useMessageMeta()
   const stream = useStream()
-  const { activePanel, shareModal } = usePanels()
   const { closePanel, openSourcePanel, setShareState } = usePanelActions()
+  const codePanelExecutionId = useActiveCodeExecutionId()
+  const shareModal = useShareModalState()
   const threadList = useThreadList()
   const location = useLocation()
   const locationState = location.state as LocationState
@@ -235,8 +236,6 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
     }
     return map
   })())
-
-  const codePanelExecutionId = activePanel?.type === 'code' ? activePanel.execution.id : null
 
   const sharingMessageId = shareModal.sharingMessageId
   const sharedMessageId = shareModal.sharedMessageId
