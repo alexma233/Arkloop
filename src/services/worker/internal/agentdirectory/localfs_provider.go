@@ -11,6 +11,7 @@ import (
 // LocalFSProvider 从本地文件系统读取 AWD 文件，用于 Desktop localshell。
 type LocalFSProvider struct {
 	homeDirFunc func() string
+	seeded      bool
 }
 
 func NewLocalFSProvider(homeDirFunc func() string) *LocalFSProvider {
@@ -20,13 +21,25 @@ func NewLocalFSProvider(homeDirFunc func() string) *LocalFSProvider {
 func (p *LocalFSProvider) Load(_ context.Context, _ string) (*Content, error) {
 	base := p.homeDirFunc()
 	_ = os.MkdirAll(base, 0o755)
+
+	if !p.seeded {
+		if _, err := SeedWorkspace(base); err != nil {
+			// Seeding failure is non-fatal; the workspace can still be used without templates.
+		}
+		p.seeded = true
+	}
+
 	content := &Content{WorkDirPath: base}
 
 	files := map[string]*string{
-		"SOUL.md":   &content.Soul,
-		"AGENTS.md": &content.Instructions,
-		"MEMORY.md": &content.Memory,
-		"USER.md":   &content.User,
+		"SOUL.md":      &content.Soul,
+		"AGENTS.md":    &content.Instructions,
+		"MEMORY.md":    &content.Memory,
+		"USER.md":      &content.User,
+		"BOOTSTRAP.md": &content.Bootstrap,
+		"IDENTITY.md":  &content.Identity,
+		"TOOLS.md":     &content.Tools,
+		"HEARTBEAT.md": &content.Heartbeat,
 	}
 	for name, ptr := range files {
 		data, err := os.ReadFile(filepath.Join(base, name))
@@ -36,6 +49,7 @@ func (p *LocalFSProvider) Load(_ context.Context, _ string) (*Content, error) {
 		*ptr = string(data)
 	}
 	content.ExtraFiles = loadExtraMarkdownFiles(base, files)
+	content.BootstrapPending = content.Bootstrap != ""
 	return content, nil
 }
 

@@ -65,10 +65,14 @@ func (p *ObjectStoreProvider) Load(ctx context.Context, profileRef string) (*Con
 
 	content := &Content{WorkDirPath: p.workDirPath}
 	fieldMap := map[string]*string{
-		"SOUL.md":   &content.Soul,
-		"AGENTS.md": &content.Instructions,
-		"MEMORY.md": &content.Memory,
-		"USER.md":   &content.User,
+		"SOUL.md":      &content.Soul,
+		"AGENTS.md":    &content.Instructions,
+		"MEMORY.md":    &content.Memory,
+		"USER.md":      &content.User,
+		"BOOTSTRAP.md": &content.Bootstrap,
+		"IDENTITY.md":  &content.Identity,
+		"TOOLS.md":     &content.Tools,
+		"HEARTBEAT.md": &content.Heartbeat,
 	}
 
 	for _, entry := range m.Entries {
@@ -97,6 +101,7 @@ func (p *ObjectStoreProvider) Load(ctx context.Context, profileRef string) (*Con
 	}
 	sort.Slice(content.ExtraFiles, func(i, j int) bool { return content.ExtraFiles[i].Path < content.ExtraFiles[j].Path })
 
+	content.BootstrapPending = content.Bootstrap != ""
 	return content, nil
 }
 
