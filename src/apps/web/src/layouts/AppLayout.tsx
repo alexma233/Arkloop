@@ -215,7 +215,7 @@ export function AppLayout() {
   const { sidebarCollapsed, sidebarHiddenByWidth, rightPanelOpen, toggleSidebar } = useSidebarUI()
   const { isSearchMode, searchOverlayOpen, exitSearchMode, closeSearchOverlay } = useSearchUI()
   const { appMode, availableAppModes, setAppMode } = useAppModeUI()
-  const { openSettings, closeSettings } = useSettingsUI()
+  const { settingsOpen, openSettings, closeSettings } = useSettingsUI()
   const { closeNotifications } = useNotificationsUI()
   const { queueSkillPrompt } = useSkillPromptUI()
   const { triggerTitleBarIncognitoClick } = useTitleBarIncognitoUI()
@@ -431,7 +431,7 @@ export function AppLayout() {
             isPrivateMode={titleBarIncognitoActive}
             onTogglePrivateMode={handleDesktopTitleBarIncognitoClick}
             rightPanelOpen={rightPanelOpen}
-            onToggleRightPanel={() => triggerTitleBarRightPanelClick()}
+            onToggleRightPanel={settingsOpen ? undefined : () => triggerTitleBarRightPanelClick()}
             showTitleBarNewThread={activeAppMode === 'work' && sidebarCollapsed}
             hasAppUpdate={hasAppUpdate}
             onCheckAppUpdate={handleCheckAppUpdate}
