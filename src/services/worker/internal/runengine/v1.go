@@ -212,10 +212,9 @@ func NewEngineV1(deps EngineV1Deps) (*EngineV1, error) {
 	hookRegistry := pipeline.NewHookRegistry()
 	hookRegistry.RegisterContextContributor(pipeline.NewNotebookContextContributor(notebookprovider.NewProvider(deps.DBPool)))
 	hookRegistry.RegisterContextContributor(pipeline.NewImpressionContextContributor(pipeline.NewPgxImpressionStore(deps.DBPool)))
-	if nowledgeProvider := resolveNowledgeProvider(context.Background(), deps.ConfigResolver); nowledgeProvider != nil {
+	if nowledgeProvider, nowledgeCfg := resolveNowledgeProvider(context.Background(), deps.ConfigResolver); nowledgeProvider != nil {
 		linkRepo := data.ExternalThreadLinksRepository{}
-		maxCtx, minScore := nowledgeRecallConfig()
-		hookRegistry.RegisterContextContributor(pipeline.NewNowledgeContextContributor(nowledgeProvider, maxCtx, minScore))
+		hookRegistry.RegisterContextContributor(pipeline.NewNowledgeContextContributor(nowledgeProvider, nowledgeCfg.ResolvedMaxContextResults(), nowledgeCfg.ResolvedRecallMinScore()))
 		_ = hookRegistry.SetThreadPersistenceProvider(pipeline.NewNowledgeThreadPersistenceProvider(
 			nowledgeProvider,
 			pgxExternalThreadLinks{repo: linkRepo, pool: deps.DBPool},
@@ -285,7 +284,7 @@ func (s pgxExternalThreadLinks) Upsert(ctx context.Context, accountID, threadID 
 	return s.repo.Upsert(ctx, s.pool, accountID, threadID, provider, externalThreadID)
 }
 
-func resolveNowledgeProvider(ctx context.Context, resolver sharedconfig.Resolver) *nowledge.Client {
+func resolveNowledgeProvider(ctx context.Context, resolver sharedconfig.Resolver) (*nowledge.Client, nowledge.Config) {
 	providerName := strings.TrimSpace(os.Getenv("ARKLOOP_MEMORY_PROVIDER"))
 	if providerName == "" && resolver != nil {
 		baseURL, _ := resolver.Resolve(ctx, "nowledge.base_url", sharedconfig.Scope{})
@@ -294,7 +293,7 @@ func resolveNowledgeProvider(ctx context.Context, resolver sharedconfig.Resolver
 		}
 	}
 	if providerName != "nowledge" {
-		return nil
+		return nil, nowledge.Config{}
 	}
 	cfg := nowledge.Config{
 		BaseURL:          strings.TrimSpace(os.Getenv("ARKLOOP_NOWLEDGE_BASE_URL")),
@@ -317,13 +316,22 @@ func resolveNowledgeProvider(ctx context.Context, resolver sharedconfig.Resolver
 				cfg.RequestTimeoutMs = parsed
 			}
 		}
+		if value, err := resolver.Resolve(ctx, "nowledge.max_context_results", sharedconfig.Scope{}); err == nil {
+			if parsed, parseErr := strconv.Atoi(strings.TrimSpace(value)); parseErr == nil && parsed > 0 {
+				cfg.MaxContextResults = parsed
+			}
+		}
+		if value, err := resolver.Resolve(ctx, "nowledge.recall_min_score", sharedconfig.Scope{}); err == nil {
+			if parsed, parseErr := strconv.Atoi(strings.TrimSpace(value)); parseErr == nil && parsed > 0 {
+				cfg.RecallMinScore = parsed
+			}
+		}
 	}
-	return nowledge.NewClient(cfg)
-}
-
-func nowledgeRecallConfig() (int, float64) {
-	envCfg := nowledge.LoadConfigFromEnv()
-	return envCfg.ResolvedMaxContextResults(), envCfg.ResolvedRecallMinScore()
+	client := nowledge.NewClient(cfg)
+	if client == nil {
+		return nil, cfg
+	}
+	return client, cfg
 }
 
 func (e *EngineV1) Execute(ctx context.Context, pool *pgxpool.Pool, run data.Run, input ExecuteInput) error {
