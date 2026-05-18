@@ -65,7 +65,7 @@ export function SuggestionChips({ mode, onSelect, visible, accessToken }: Sugges
           key={s.short_title}
           type="button"
           onClick={() => onSelect(s)}
-          className={`${secondaryButtonXsCls} h-auto py-1.5 text-[13px]`}
+          className={`${secondaryButtonXsCls} h-auto py-1.5 text-[13px] font-normal`}
           style={suggestionBorderStyle}
         >
           {s.short_title}
