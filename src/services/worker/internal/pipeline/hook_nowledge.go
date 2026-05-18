@@ -113,8 +113,8 @@ func (c *NowledgeContextContributor) collectPromptState(ctx context.Context, rc 
 		if block != "" {
 			state.segments = append(state.segments, PromptSegment{
 				Name:          "hook.before.nowledge.recalled_memories",
-				Target:        PromptTargetSystemPrefix,
-				Role:          "system",
+				Target:        PromptTargetRuntimeTail,
+				Role:          "user",
 				Text:          block,
 				Stability:     PromptStabilityVolatileTail,
 				CacheEligible: false,
