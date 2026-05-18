@@ -29,6 +29,7 @@ import {
   isWebFetchToolName,
   extractArtifacts,
   firstVisibleCodeExecutionToolCallIndex,
+  buildMessageCodeExecutionsFromAgentEvents,
 } from '../agentEventProcessing'
 import {
   assistantTurnPlainText,
@@ -165,6 +166,19 @@ export function useThreadSseEffect({
   const armCompletedTitleTail = useCallback((runId: string) => {
     armCompletedTitleTailState(runId)
   }, [armCompletedTitleTailState])
+
+  const completeTerminalRunCacheFromEvents = useCallback((runCache: TerminalRunCache, agentEvents: MessageAgentEvent[]) => {
+    if (agentEvents.length === 0) return
+    const frozenAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEvents)
+    if (frozenAssistantTurn.segments.length > 0) {
+      runCache.handoffAssistantTurn = frozenAssistantTurn
+      runCache.runAssistantTurn = frozenAssistantTurn
+    }
+    const replayCodeExecs = buildMessageCodeExecutionsFromAgentEvents(agentEvents)
+    if (replayCodeExecs.length > 0) {
+      runCache.runCodeExecs = replayCodeExecs
+    }
+  }, [])
 
   const contextCompactHideTimerRef = useRef<number | null>(null)
   const liveSegmentSnapshotIdsRef = useRef(new Set<string>())
@@ -782,13 +796,7 @@ export function useThreadSseEffect({
           return e.order <= event.order
         })
         const runCache = captureTerminalRunCache('completed')
-        if (agentEventsForMessage.length > 0) {
-          const frozenAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEventsForMessage)
-          if (frozenAssistantTurn.segments.length > 0) {
-            runCache.handoffAssistantTurn = frozenAssistantTurn
-            runCache.runAssistantTurn = frozenAssistantTurn
-          }
-        }
+        completeTerminalRunCacheFromEvents(runCache, agentEventsForMessage)
         setLiveAssistantTurn(runCache.handoffAssistantTurn.segments.length > 0 ? runCache.handoffAssistantTurn : null)
         armCompletedTitleTail(completedRunId)
         setActiveRunId(null)
@@ -868,10 +876,7 @@ export function useThreadSseEffect({
           })
           : []
         const runCache = captureTerminalRunCache('cancelled')
-        if (runCache.handoffAssistantTurn.segments.length === 0 && agentEventsForMessage.length > 0) {
-          runCache.handoffAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEventsForMessage)
-          runCache.runAssistantTurn = runCache.handoffAssistantTurn
-        }
+        completeTerminalRunCacheFromEvents(runCache, agentEventsForMessage)
         if (runId) {
           persistThreadRunHandoff(runId, runCache)
         }
@@ -924,10 +929,7 @@ export function useThreadSseEffect({
           })
           : []
         const runCache = captureTerminalRunCache('failed')
-        if (runCache.handoffAssistantTurn.segments.length === 0 && agentEventsForMessage.length > 0) {
-          runCache.handoffAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEventsForMessage)
-          runCache.runAssistantTurn = runCache.handoffAssistantTurn
-        }
+        completeTerminalRunCacheFromEvents(runCache, agentEventsForMessage)
         if (runId) {
           persistThreadRunHandoff(runId, runCache)
         }
@@ -991,10 +993,7 @@ export function useThreadSseEffect({
           })
           : []
         const runCache = captureTerminalRunCache('interrupted')
-        if (runCache.handoffAssistantTurn.segments.length === 0 && agentEventsForMessage.length > 0) {
-          runCache.handoffAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEventsForMessage)
-          runCache.runAssistantTurn = runCache.handoffAssistantTurn
-        }
+        completeTerminalRunCacheFromEvents(runCache, agentEventsForMessage)
         if (runId) {
           persistThreadRunHandoff(runId, runCache)
         }
@@ -1073,10 +1072,7 @@ export function useThreadSseEffect({
       e.order <= terminalRunMaxSeq,
     )
     const terminalCache = captureTerminalRunCache()
-    if (terminalCache.handoffAssistantTurn.segments.length === 0 && agentEventsForMessage.length > 0) {
-      terminalCache.handoffAssistantTurn = buildFrozenAssistantTurnFromAgentEvents(agentEventsForMessage)
-      terminalCache.runAssistantTurn = terminalCache.handoffAssistantTurn
-    }
+    completeTerminalRunCacheFromEvents(terminalCache, agentEventsForMessage)
     setTerminalRunDisplayId(terminalRunId)
     setPreserveLiveRunUi(true)
     setTerminalRunHandoffStatus('interrupted')

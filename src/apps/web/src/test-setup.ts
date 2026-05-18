@@ -34,6 +34,27 @@ if (typeof window !== 'undefined' && typeof window.scrollTo !== 'function') {
   })
 }
 
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollTo !== 'function') {
+  Object.defineProperty(Element.prototype, 'scrollTo', {
+    configurable: true,
+    writable: true,
+    value: function scrollTo(options?: ScrollToOptions | number, y?: number) {
+      const element = this as Element & { scrollTop: number; scrollLeft: number }
+      if (typeof options === 'number') {
+        element.scrollLeft = options
+        element.scrollTop = y ?? 0
+        return
+      }
+      if (options?.left != null) {
+        element.scrollLeft = options.left
+      }
+      if (options?.top != null) {
+        element.scrollTop = options.top
+      }
+    },
+  })
+}
+
 if (typeof globalThis.ResizeObserver === 'undefined') {
   class ResizeObserver {
     observe(): void {}
