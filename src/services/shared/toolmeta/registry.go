@@ -456,6 +456,27 @@ var registry = []ToolMeta{
 			"Only use replacement_id values returned by this tool or shown in <conversation_summary> context.",
 	},
 	{
+		Name:      "thread_list",
+		Group:     GroupMemory,
+		Label:     "Thread list",
+		ShortDesc: "list user's recent conversation threads with metadata",
+		LLMDescription: "list the current user's conversation threads in reverse chronological order. " +
+			"Returns id, title, mode, message_count, updated_at, and created_at for each thread. " +
+			"Use to browse what conversations exist before diving into specific threads with thread_messages. " +
+			"Optional filters: limit (default 10, max 30), offset for pagination, mode (chat or work).",
+	},
+	{
+		Name:      "thread_messages",
+		Group:     GroupMemory,
+		Label:     "Thread messages",
+		ShortDesc: "read messages from a specific conversation thread",
+		LLMDescription: "read messages from a specific conversation thread by thread_id. " +
+			"Returns role, content, created_at, and thread_seq for each message. " +
+			"Use after thread_list to inspect the content of a specific conversation. " +
+			"Required: thread_id. Optional: limit (default 20, max 50), role filter (user or assistant), order (asc or desc, default desc). " +
+			"The thread must belong to the current user; access to other users' threads is denied.",
+	},
+	{
 		Name:      "group_history_search",
 		Group:     GroupMemory,
 		Label:     "Group history search",
