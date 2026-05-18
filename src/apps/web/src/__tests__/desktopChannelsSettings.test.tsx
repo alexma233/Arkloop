@@ -600,6 +600,85 @@ describe('DesktopChannelsSettings', () => {
     })
   })
 
+  it('清空 QQ OneBot 的 Bot 名称时会移除配置字段', async () => {
+    const { api, DesktopChannelsSettings, LocaleProvider } = await loadChannelsSubject()
+    const qqChannel = {
+      id: 'qq-1',
+      account_id: 'acc-1',
+      channel_type: 'qq',
+      persona_id: 'persona-1',
+      webhook_url: null,
+      is_active: true,
+      config_json: {
+        onebot_ws_url: 'ws://127.0.0.1:6098',
+        bot_name: 'Old Bot',
+      },
+      has_credentials: true,
+      created_at: '2026-03-26T00:00:00Z',
+      updated_at: '2026-03-26T00:00:00Z',
+    }
+    vi.mocked(api.listChannels).mockResolvedValue([qqChannel])
+    vi.mocked(api.listMyChannelIdentities).mockResolvedValue([])
+    vi.mocked(api.listChannelPersonas).mockResolvedValue([
+      {
+        id: 'persona-1',
+        persona_key: 'normal',
+        version: '1',
+        display_name: 'Normal',
+        source: 'project',
+      } as never,
+    ])
+    vi.mocked(api.listLlmProviders).mockResolvedValue([])
+    vi.mocked(api.listChannelBindings).mockResolvedValue([])
+    vi.mocked(api.updateChannel).mockResolvedValue({
+      ...qqChannel,
+      config_json: {
+        onebot_ws_url: 'ws://127.0.0.1:6098',
+      },
+    })
+
+    await act(async () => {
+      root!.render(
+        <LocaleProvider>
+          <DesktopChannelsSettings accessToken="token" />
+        </LocaleProvider>,
+      )
+    })
+    await flushEffects()
+
+    const qqOneBotTab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('OneBot'))
+    expect(qqOneBotTab).toBeTruthy()
+
+    await act(async () => {
+      qqOneBotTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushEffects()
+
+    const botNameInput = Array.from(document.body.querySelectorAll('input')).find((input) => input.value === 'Old Bot') as HTMLInputElement
+    expect(botNameInput).toBeTruthy()
+
+    await act(async () => {
+      setInputValue(botNameInput, '   ')
+    })
+    await flushEffects()
+
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.trim() === '保存')
+    await act(async () => {
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushEffects()
+
+    expect(api.updateChannel).toHaveBeenCalledWith('token', 'qq-1', {
+      persona_id: 'persona-1',
+      is_active: true,
+      config_json: {
+        onebot_ws_url: 'ws://127.0.0.1:6098',
+        allowed_user_ids: [],
+        allowed_group_ids: [],
+      },
+    })
+  })
+
   it('可以创建飞书官方渠道并提交官方接入配置', async () => {
     const { api, DesktopChannelsSettings, LocaleProvider } = await loadChannelsSubject()
     vi.mocked(api.listChannels).mockResolvedValue([])
