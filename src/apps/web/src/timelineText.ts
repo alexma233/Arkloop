@@ -178,6 +178,15 @@ const TOOL_ACTION_EN: Record<string, string> = {
   enter_plan_mode: 'Enter Plan Mode',
   exit_plan_mode: 'Exit Plan Mode',
   heartbeat_decision: 'Heartbeat decision',
+  notebook_read: 'Read notebook',
+  notebook_write: 'Wrote notebook',
+  notebook_edit: 'Edited notebook',
+  notebook_forget: 'Forgot notebook entry',
+  memory_read: 'Read memory',
+  memory_write: 'Wrote memory',
+  memory_edit: 'Edited memory',
+  memory_search: 'Searched memory',
+  memory_forget: 'Forgot memory',
 }
 
 const TOOL_ACTION_ZH: Record<string, string> = {
@@ -190,6 +199,15 @@ const TOOL_ACTION_ZH: Record<string, string> = {
   enter_plan_mode: '进入计划模式',
   exit_plan_mode: '退出计划模式',
   heartbeat_decision: '心跳决策',
+  notebook_read: '读取了 Notebook',
+  notebook_write: '写入了 Notebook',
+  notebook_edit: '编辑了 Notebook',
+  notebook_forget: '删除了 Notebook 条目',
+  memory_read: '读取了记忆',
+  memory_write: '写入了记忆',
+  memory_edit: '编辑了记忆',
+  memory_search: '搜索了记忆',
+  memory_forget: '删除了记忆',
 }
 
 function renderEn(value: CoreTimelineText): string {

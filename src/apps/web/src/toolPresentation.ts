@@ -32,7 +32,7 @@ export type ExploreGroupRef = {
   seq?: number
 }
 
-export const EXPLORE_TOOL_NAMES = new Set(['read_file', 'grep', 'glob', 'load_tools', 'load_skill', 'lsp'])
+export const EXPLORE_TOOL_NAMES = new Set(['read_file', 'grep', 'glob', 'load_tools', 'load_skill', 'lsp', 'memory_read', 'memory_search', 'notebook_read'])
 export const LOAD_TOOL_NAMES = new Set(['load_tools', 'load_skill'])
 export const LSP_MUTATING_OPERATIONS = new Set(['rename'])
 
