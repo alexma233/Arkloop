@@ -565,7 +565,7 @@ export function WelcomePage() {
   return (
     <div ref={rootRef} className="flex h-full min-w-0 overflow-hidden">
       <div
-        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        className="theme-surface-page theme-chat-surface flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--c-bg-page)]"
         style={{
           minWidth: isRightPanelOpen ? welcomeMainMinWidth : 0,
           transition: `min-width ${welcomeRightPanelTransitionCss}`,
