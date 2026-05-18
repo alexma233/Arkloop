@@ -401,8 +401,24 @@ const LiveRunPane = memo(function LiveRunPane({
     visibleStreamingArtifacts.length > 0
   const liveContentMaxWidth = isWorkMode ? undefined : '663px'
 
+  const liveRootRef = useRef<HTMLDivElement>(null)
+  const peakHeightRef = useRef(0)
+  useEffect(() => {
+    const el = liveRootRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = el.scrollHeight
+      if (h > peakHeightRef.current) {
+        peakHeightRef.current = h
+        el.style.minHeight = h + 'px'
+      }
+    })
+    ro.observe(el)
+    return () => { ro.disconnect(); peakHeightRef.current = 0 }
+  }, [liveRunUiActive])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div ref={liveRootRef} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {(showPendingThinkingShell || liveSegments.length > 0) && (
         <div data-testid={preserveLiveRunUi ? 'current-run-handoff' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 0, maxWidth: liveContentMaxWidth }}>
           {(showPendingThinkingShell || leadingLiveCop) && (
@@ -2104,8 +2120,6 @@ export const ChatView = memo(function ChatView() {
       return null
     })()
     const shouldPinNewPrompt = !isInterruptedRunStatus(lastAssistantTerminalStatus)
-    // eslint-disable-next-line no-console
-    console.log('[ChatView:submit]', { shouldPinNewPrompt, terminalRunHandoffStatus, lastAssistantTerminalStatus, sending, isStreaming, msgCount: messages.length })
 
     if (sending && !isStreaming) {
       const text = draft.trim()

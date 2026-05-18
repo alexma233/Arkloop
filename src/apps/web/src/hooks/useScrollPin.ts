@@ -8,11 +8,9 @@ const AT_BOTTOM_THRESHOLD = 80
 
 type ScrollState = 'following' | 'pinned' | 'free'
 
-const DEBUG = true
-function dbg(tag: string, extra = '') {
+const DEBUG = false
+function dbg(_tag: string, _extra = '') {
   if (!DEBUG) return
-  // eslint-disable-next-line no-console
-  console.log(`[sp] ${tag} ${extra}`)
 }
 
 interface UseScrollPinOptions {
@@ -241,9 +239,11 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
         pinnedNeedsInitialScrollRef.current = false
         recalcSpacer()
         dbg('streamEffect:initialScroll')
-        prompt.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      } else {
-        recalcSpacer()
+        const container = scrollContainerRef.current
+        if (container) {
+          const promptTop = prompt.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+          container.scrollTo({ top: Math.max(0, promptTop - PROMPT_PIN_TOP_OFFSET), behavior: 'smooth' })
+        }
       }
     }
   }, [messages, liveAssistantTurn, liveRunUiVisible, recalcSpacer])
