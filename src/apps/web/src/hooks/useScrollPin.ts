@@ -61,6 +61,10 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
   const wasLoadingRef = useRef(false)
   const stabilizeFrameRef = useRef<number | null>(null)
 
+  // live run 状态同步到 ref，供 recalcSpacer 等 useCallback 读取
+  const isLiveRef = useRef(false)
+  isLiveRef.current = liveAssistantTurn != null || liveRunUiVisible
+
   const inputAreaHeight = useCallback(() => {
     const el = inputAreaRef.current
     if (!el) return SCROLL_BOTTOM_PAD
@@ -103,7 +107,7 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
     const container = scrollContainerRef.current
     const turn = lastUserMsgRef.current
     if (!spacer || !container) return
-    if (stateRef.current !== 'pinned' || !turn) {
+    if (stateRef.current !== 'pinned' || !turn || !isLiveRef.current) {
       spacer.style.height = '0px'
       return
     }
@@ -230,7 +234,15 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
 
   // streaming auto-follow
   useEffect(() => {
+    const isLive = liveAssistantTurn != null || liveRunUiVisible
+
     dbg('streamEffect', `state=${stateRef.current} needsInit=${pinnedNeedsInitialScrollRef.current} prompt=${!!(lastUserPromptRef.current ?? lastUserMsgRef.current)} msgs=${messages.length} live=${liveAssistantTurn != null} runUi=${liveRunUiVisible}`)
+
+    // no live run → spacer 不应存在
+    if (!isLive) {
+      collapseSpacer()
+    }
+
     if (stateRef.current === 'following') {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' })
     } else if (stateRef.current === 'pinned') {
@@ -246,7 +258,7 @@ export function useScrollPin(options: UseScrollPinOptions = {}): ScrollPinResult
         }
       }
     }
-  }, [messages, liveAssistantTurn, liveRunUiVisible, recalcSpacer])
+  }, [messages, liveAssistantTurn, liveRunUiVisible, recalcSpacer, collapseSpacer])
 
   // history load complete
   useEffect(() => {
