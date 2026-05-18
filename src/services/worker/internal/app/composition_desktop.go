@@ -380,6 +380,8 @@ func ComposeDesktopEngine(ctx context.Context, db data.DesktopDB, bus eventbus.E
 		promptInjection.Resolver,
 		desktopImpStore,
 		newDesktopImpressionRefresh(db, jobQueue),
+		pipeline.NewDesktopSuggestionStore(db),
+		newDesktopSuggestionRefresh(db, jobQueue),
 	))
 	hookRegistry.RegisterAfterThreadPersistHook(pipeline.NewContextCompactMaintenanceObserver(jobQueue))
 	routingLoader := routing.NewDesktopSQLiteRoutingLoader(
@@ -722,6 +724,8 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 	var memMiddleware pipeline.RunMiddleware
 	impStore := pipeline.NewDesktopImpressionStore(e.db)
 	impRefresh := newDesktopImpressionRefresh(e.db, e.jobQueue)
+	sugStore := pipeline.NewDesktopSuggestionStore(e.db)
+	sugRefresh := newDesktopSuggestionRefresh(e.db, e.jobQueue)
 	if e.useOV {
 		memoryMW := pipeline.NewMemoryMiddleware(
 			e.memProvider,
@@ -730,6 +734,8 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 			e.promptInjection.Resolver,
 			impStore,
 			impRefresh,
+			sugStore,
+			sugRefresh,
 		)
 		memMiddleware = memoryMW
 	} else {
@@ -817,6 +823,7 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 			EventsRepo:          data.DesktopRunEventsRepository{},
 		}),
 		pipeline.NewImpressionPrepareMiddleware(impStore, e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
+		pipeline.NewSuggestionPrepareMiddleware(sugStore, e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
 		pipeline.NewStickerPrepareMiddleware(e.db, e.messageAttachmentStore, pipeline.StickerPrepareConfig{
 			AuxGateway:          e.auxGateway,
 			EmitDebugEvents:     e.emitDebugEvents,
@@ -1016,6 +1023,25 @@ func newDesktopImpressionRefresh(db data.DesktopDB, jq queue.JobQueue) pipeline.
 		return nil
 	}
 	return pipeline.NewImpressionRefreshFunc(pipeline.ImpressionRefreshDeps{
+		ExecSQL: func(ctx context.Context, sql string, args ...any) error {
+			_, err := db.Exec(ctx, sql, args...)
+			return err
+		},
+		QueryRowScan: func(ctx context.Context, sql string, args []any, dest ...any) error {
+			return db.QueryRow(ctx, sql, args...).Scan(dest...)
+		},
+		EnqueueRun: func(ctx context.Context, accountID, runID uuid.UUID, traceID, jobType string, payload map[string]any) error {
+			_, err := jq.EnqueueRun(ctx, accountID, runID, traceID, jobType, payload, nil)
+			return err
+		},
+	})
+}
+
+func newDesktopSuggestionRefresh(db data.DesktopDB, jq queue.JobQueue) pipeline.SuggestionRefreshFunc {
+	if db == nil || jq == nil {
+		return nil
+	}
+	return pipeline.NewSuggestionRefreshFunc(pipeline.ImpressionRefreshDeps{
 		ExecSQL: func(ctx context.Context, sql string, args ...any) error {
 			_, err := db.Exec(ctx, sql, args...)
 			return err
@@ -3203,6 +3229,11 @@ func desktopRouting(
 						rc.Gateway = resolution.Gateway
 					}
 				} else if pipeline.IsImpressionRun(rc) {
+					if resolution, ok := pipeline.ResolveImpressionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
+						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+						rc.Gateway = resolution.Gateway
+					}
+				} else if pipeline.IsSuggestionRun(rc) {
 					if resolution, ok := pipeline.ResolveImpressionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
 						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
 						rc.Gateway = resolution.Gateway

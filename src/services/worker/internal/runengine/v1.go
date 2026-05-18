@@ -226,6 +226,8 @@ func NewEngineV1(deps EngineV1Deps) (*EngineV1, error) {
 		deps.ConfigResolver,
 		pipeline.NewPgxImpressionStore(deps.DBPool),
 		newPgxImpressionRefresh(deps),
+		pipeline.NewPgxSuggestionStore(deps.DBPool),
+		newPgxSuggestionRefresh(deps),
 	))
 	hookRegistry.RegisterAfterThreadPersistHook(pipeline.NewContextCompactMaintenanceObserver(deps.JobQueue))
 
@@ -905,6 +907,8 @@ func buildCapabilityLayer(
 		deps.ConfigResolver,
 		pipeline.NewPgxImpressionStore(deps.DBPool),
 		newPgxImpressionRefresh(deps),
+		pipeline.NewPgxSuggestionStore(deps.DBPool),
+		newPgxSuggestionRefresh(deps),
 	)
 	promptHookMW := pipeline.NewPromptHookMiddleware()
 	mws := []pipeline.RunMiddleware{
@@ -989,6 +993,7 @@ func buildRoutingLayer(
 func buildToolFinalizeLayer(deps EngineV1Deps, eventsRepo data.RunEventsRepository) []pipeline.RunMiddleware {
 	return []pipeline.RunMiddleware{
 		pipeline.NewImpressionPrepareMiddleware(pipeline.NewPgxImpressionStore(deps.DBPool), deps.DBPool, deps.AuxGateway, deps.EmitDebugEvents, deps.RoutingConfigLoader),
+		pipeline.NewSuggestionPrepareMiddleware(pipeline.NewPgxSuggestionStore(deps.DBPool), deps.DBPool, deps.AuxGateway, deps.EmitDebugEvents, deps.RoutingConfigLoader),
 		pipeline.NewStickerPrepareMiddleware(deps.DBPool, deps.MessageAttachmentStore, pipeline.StickerPrepareConfig{
 			AuxGateway:          deps.AuxGateway,
 			EmitDebugEvents:     deps.EmitDebugEvents,
@@ -1044,6 +1049,25 @@ func newPgxImpressionRefresh(deps EngineV1Deps) pipeline.ImpressionRefreshFunc {
 		return nil
 	}
 	return pipeline.NewImpressionRefreshFunc(pipeline.ImpressionRefreshDeps{
+		ExecSQL: func(ctx context.Context, sql string, args ...any) error {
+			_, err := deps.DBPool.Exec(ctx, sql, args...)
+			return err
+		},
+		QueryRowScan: func(ctx context.Context, sql string, args []any, dest ...any) error {
+			return deps.DBPool.QueryRow(ctx, sql, args...).Scan(dest...)
+		},
+		EnqueueRun: func(ctx context.Context, accountID, runID uuid.UUID, traceID, jobType string, payload map[string]any) error {
+			_, err := deps.JobQueue.EnqueueRun(ctx, accountID, runID, traceID, jobType, payload, nil)
+			return err
+		},
+	})
+}
+
+func newPgxSuggestionRefresh(deps EngineV1Deps) pipeline.SuggestionRefreshFunc {
+	if deps.DBPool == nil || deps.JobQueue == nil {
+		return nil
+	}
+	return pipeline.NewSuggestionRefreshFunc(pipeline.ImpressionRefreshDeps{
 		ExecSQL: func(ctx context.Context, sql string, args ...any) error {
 			_, err := deps.DBPool.Exec(ctx, sql, args...)
 			return err

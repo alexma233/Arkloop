@@ -69,6 +69,14 @@ func RegisterTrackE(r *Registry) error {
 			Scope:       ScopeBoth,
 		},
 		{
+			Key:         "suggestion.score_threshold",
+			Type:        TypeInt,
+			Default:     "15",
+			Description: "suggestion 更新触发阈值",
+			Sensitive:   false,
+			Scope:       ScopeBoth,
+		},
+		{
 			Key:         "backpressure.enabled",
 			Type:        TypeBool,
 			Default:     "true",

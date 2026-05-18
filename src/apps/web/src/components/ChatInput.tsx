@@ -46,6 +46,7 @@ export type ChatInputHandle = {
   clear: () => void
   setValue: (text: string) => void
   getValue: () => string
+  focus: () => void
 }
 
 export type Attachment = {
@@ -311,6 +312,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       setDraft(text)
     },
     getValue: () => draftRef.current,
+    focus: () => {
+      textareaRef.current?.focus({ preventScroll: true })
+    },
   }))
 
   const { wrapOnChange } = useInputPerfDebug()

@@ -290,6 +290,8 @@ type RunContext struct {
 
 	// -- Impression --
 	ImpressionRun bool
+	// -- Suggestion --
+	SuggestionRun bool
 	// -- Sticker register --
 	StickerRegisterRun bool
 

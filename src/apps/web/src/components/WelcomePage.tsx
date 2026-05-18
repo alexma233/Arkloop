@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Glasses } from 'lucide-react'
 import type { LocaleStrings } from '../locales'
 import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
+import { SuggestionChips, type Suggestion } from './SuggestionChips'
 import { ErrorCallout, type AppError } from './ErrorCallout'
 import { NotificationBell } from './NotificationBell'
 import { RightPanel, type RightPanelTab } from './RightPanel'
@@ -459,6 +460,11 @@ export function WelcomePage() {
     setError(normalizeError(err, t.requestFailed))
   }, [onLoggedOut, t.requestFailed])
 
+  const handleSelectSuggestion = useCallback((suggestion: Suggestion) => {
+    chatInputRef.current?.setValue(suggestion.full_prompt)
+    chatInputRef.current?.focus()
+  }, [])
+
   const handleTogglePlanMode = useCallback(async (_currentMode: boolean) => {
     if (appMode !== 'work') return
     setInitialPlanMode((prev) => !prev)
@@ -688,6 +694,12 @@ export function WelcomePage() {
             </div>
           </div>
           {error && <ErrorCallout error={error} />}
+          <SuggestionChips
+            mode={appMode === 'work' ? 'work' : 'chat'}
+            onSelect={handleSelectSuggestion}
+            visible={!isSearchMode && !isPrivateMode}
+            accessToken={accessToken}
+          />
         </div>
         </div>
         {showDebugPanel && <DebugTrigger />}

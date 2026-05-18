@@ -374,7 +374,7 @@ func TestLegacyMemoryDistillObserverRefreshesNowledgeSnapshotWithoutCreatedCount
 		ExternalThreadID: "thread-legacy",
 		Provider:         "nowledge",
 	}
-	observer := NewLegacyMemoryDistillObserver(snapshotStore, nil, nil, nil, nil)
+	observer := NewLegacyMemoryDistillObserver(snapshotStore, nil, nil, nil, nil, nil, nil)
 
 	if _, err := observer.AfterThreadPersist(context.Background(), rc, delta, result); err != nil {
 		t.Fatalf("AfterThreadPersist: %v", err)

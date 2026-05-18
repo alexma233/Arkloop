@@ -810,7 +810,7 @@ func TestDesktopOpenVikingMemoryMiddlewareUsesPromptInjectionResolver(t *testing
 	}
 
 	provider := &desktopMemoryProviderStub{appendCalled: make(chan struct{}, 1)}
-	mw := pipeline.NewMemoryMiddleware(provider, pipeline.NewDesktopMemorySnapshotStore(db), db, capability.Resolver, nil, nil)
+	mw := pipeline.NewMemoryMiddleware(provider, pipeline.NewDesktopMemorySnapshotStore(db), db, capability.Resolver, nil, nil, nil, nil)
 	userID := uuid.New()
 	rc := &pipeline.RunContext{
 		Run: data.Run{
