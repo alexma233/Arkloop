@@ -116,8 +116,8 @@ func (c *NowledgeContextContributor) collectPromptState(ctx context.Context, rc 
 				Target:        PromptTargetSystemPrefix,
 				Role:          "system",
 				Text:          block,
-				Stability:     PromptStabilitySessionPrefix,
-				CacheEligible: true,
+				Stability:     PromptStabilityVolatileTail,
+				CacheEligible: false,
 			})
 			state.recalledInjected = true
 		}
@@ -139,8 +139,8 @@ func (c *NowledgeContextContributor) BeforePromptSegments(ctx context.Context, r
 			Target:        PromptTargetSystemPrefix,
 			Role:          "system",
 			Text:          strings.TrimSpace(state.guidance),
-			Stability:     PromptStabilitySessionPrefix,
-			CacheEligible: true,
+			Stability:     PromptStabilityVolatileTail,
+			CacheEligible: false,
 		})
 	}
 	return segments, nil

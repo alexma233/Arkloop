@@ -803,11 +803,11 @@ func TestNowledgeContextContributorRecallInjection(t *testing.T) {
 	if recallSeg.Target != PromptTargetSystemPrefix {
 		t.Fatalf("expected SystemPrefix target, got %v", recallSeg.Target)
 	}
-	if recallSeg.Stability != PromptStabilitySessionPrefix {
-		t.Fatalf("expected SessionPrefix stability, got %v", recallSeg.Stability)
+	if recallSeg.Stability != PromptStabilityVolatileTail {
+		t.Fatalf("expected VolatileTail stability, got %v", recallSeg.Stability)
 	}
-	if !recallSeg.CacheEligible {
-		t.Fatal("expected CacheEligible=true")
+	if recallSeg.CacheEligible {
+		t.Fatal("expected CacheEligible=false")
 	}
 	if !strings.Contains(recallSeg.Text, "<recalled-knowledge>") {
 		t.Fatalf("expected recalled-knowledge block, got %q", recallSeg.Text)
