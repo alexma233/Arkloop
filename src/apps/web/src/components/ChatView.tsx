@@ -414,7 +414,7 @@ const LiveRunPane = memo(function LiveRunPane({
       }
     })
     ro.observe(el)
-    return () => { ro.disconnect(); peakHeightRef.current = 0 }
+    return () => { ro.disconnect(); peakHeightRef.current = 0; el.style.minHeight = '' }
   }, [liveRunUiActive])
 
   return (
