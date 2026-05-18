@@ -2351,11 +2351,16 @@ export async function discoverExternalSkills(
 }
 
 export async function getExternalDirs(accessToken: string): Promise<string[]> {
-  const res = await apiFetch<{ value: string }>(
-    '/v1/admin/platform-settings/skills.external_dirs',
-    { method: 'GET', accessToken },
-  )
-  try { return JSON.parse(res.value) as string[] } catch { return [] }
+  try {
+    const res = await apiFetch<{ value: string }>(
+      '/v1/admin/platform-settings/skills.external_dirs',
+      { method: 'GET', accessToken },
+    )
+    try { return JSON.parse(res.value) as string[] } catch { return [] }
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return []
+    throw err
+  }
 }
 
 export async function setExternalDirs(accessToken: string, dirs: string[]): Promise<void> {
