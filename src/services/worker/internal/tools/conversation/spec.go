@@ -76,6 +76,7 @@ var ThreadMessagesLlmSpec = llm.ToolSpec{
 		"properties": map[string]any{
 			"thread_id": map[string]any{"type": "string"},
 			"limit":     map[string]any{"type": "integer", "minimum": 1, "maximum": 50},
+			"offset":    map[string]any{"type": "integer", "minimum": 0},
 			"role":      map[string]any{"type": "string", "enum": []string{"user", "assistant"}},
 			"order":     map[string]any{"type": "string", "enum": []string{"asc", "desc"}},
 		},

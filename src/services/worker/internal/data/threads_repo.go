@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -123,7 +124,10 @@ func (ThreadsRepository) ListVisibleMessages(
 		threadID, accountID, ownerUserID,
 	).Scan(&exists)
 	if err != nil {
-		return nil, ErrThreadNotFound
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrThreadNotFound
+		}
+		return nil, fmt.Errorf("verify thread ownership: %w", err)
 	}
 
 	args := []any{threadID, accountID}
