@@ -65,7 +65,9 @@ var registry = []ToolMeta{
 		ShortDesc: "load one available skill into the current conversation by exact skill name",
 		LLMDescription: "load one skill from <available_skills> into the current conversation. " +
 			"Use the exact skill name shown in the skill catalog. " +
-			"Call this before relying on a skill's instructions or specialized workflow. " +
+			"When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke load_skill BEFORE generating any other response about the task. " +
+			"NEVER mention a skill without actually calling this tool. " +
+			"Do not invoke a skill that is already loaded in the current conversation. " +
 			"This tool only loads skills visible to the current run; it does not search the web or arbitrary filesystem paths.",
 	},
 	{
@@ -454,6 +456,27 @@ var registry = []ToolMeta{
 			"Only use replacement_id values returned by this tool or shown in <conversation_summary> context.",
 	},
 	{
+		Name:      "thread_list",
+		Group:     GroupMemory,
+		Label:     "Thread list",
+		ShortDesc: "list user's recent conversation threads with metadata",
+		LLMDescription: "list the current user's conversation threads in reverse chronological order. " +
+			"Returns id, title, mode, message_count, updated_at, and created_at for each thread. " +
+			"Use to browse what conversations exist before diving into specific threads with thread_messages. " +
+			"Optional filters: limit (default 10, max 30), offset for pagination, mode (chat or work).",
+	},
+	{
+		Name:      "thread_messages",
+		Group:     GroupMemory,
+		Label:     "Thread messages",
+		ShortDesc: "read messages from a specific conversation thread",
+		LLMDescription: "read messages from a specific conversation thread by thread_id. " +
+			"Returns role, content, created_at, and thread_seq for each message. " +
+			"Use after thread_list to inspect the content of a specific conversation. " +
+			"Required: thread_id. Optional: limit (default 20, max 50), role filter (user or assistant), order (asc or desc, default desc). " +
+			"The thread must belong to the current user; access to other users' threads is denied.",
+	},
+	{
 		Name:      "group_history_search",
 		Group:     GroupMemory,
 		Label:     "Group history search",
@@ -626,9 +649,12 @@ var registry = []ToolMeta{
 		Name:      "todo_write",
 		Group:     GroupOrchestration,
 		Label:     "Todo write",
-		ShortDesc: "manage a structured todo list for the current run",
-		LLMDescription: "create and update a structured todo list for the current run. " +
-			"Each call fully replaces the list — include ALL items, not just new ones. " +
+		ShortDesc: "manage a structured todo list for the current run or a plan file",
+		LLMDescription: "create and update a structured todo list. " +
+			"Use either per-run mode or plan-bound mode. " +
+			"Per-run mode: pass todos; each call fully replaces the list, so include ALL items, not just new ones. " +
+			"Plan-bound mode: pass plan_path and updates; omit todos. The tool updates matching todos in the .plan.md front matter and emits the plan file's todo list as the current run todo state. " +
+			"When executing an approved .plan.md, use plan-bound mode for every plan todo status change; do not use edit or write_file merely to change todo statuses in the plan file. " +
 			"Use proactively for complex multi-step tasks (3+ distinct steps), non-trivial tasks requiring planning, or when the user provides multiple tasks. " +
 			"Do NOT use for single straightforward tasks, trivial one-step operations, or purely conversational questions. " +
 			"Start with all items as pending, mark one as in_progress before beginning work on it, mark it completed when done. " +

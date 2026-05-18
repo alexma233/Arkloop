@@ -64,6 +64,8 @@ export const en: LocaleStrings = {
     search: 'Search',
     noHistory: 'No history',
     clear: 'Clear',
+    frameBlockedTitle: 'Cannot open in panel',
+    frameBlockedDetail: 'This site only allows top-level windows',
   },
   nav: {
     account: "Account",
@@ -552,7 +554,7 @@ export const en: LocaleStrings = {
   agentNoOutput: "No output",
   // pasted content
   pastedContent: "Pasted content",
-  pastedLines: (n: number) => `${n} lines`,
+  pastedLines: (n: number) => `${n} line${n === 1 ? '' : 's'}`,
   // user input card
   userInput: {
     dismiss: "Skip",
@@ -572,6 +574,14 @@ export const en: LocaleStrings = {
   },
   // message actions
   copyAction: "Copy",
+  editAction: "Edit",
+  cancelAction: "Cancel",
+  doneAction: "Done",
+  forkAction: "Fork",
+  showMoreAction: "Show more",
+  showLessAction: "Show less",
+  sourceCount: (count: number) => `${count} source${count === 1 ? '' : 's'}`,
+  diffAddedRemoved: (added: number, removed: number) => removed > 0 ? `${added} added, ${removed} removed` : `${added} added`,
   assistantCopDefaultTitle: "Processing…",
   assistantStreamThinkingPlaceholder: "Thinking",
   copTimelineLiveProgress: "In process",
@@ -602,7 +612,6 @@ export const en: LocaleStrings = {
     'Turning this over',
   ] as const,
   copThinkingDone: 'Done',
-  editAction: "Edit",
   // model config
   models: {
     addProvider: "Add provider",
@@ -696,8 +705,8 @@ export const en: LocaleStrings = {
     spawnProfileFollowCurrentChat: 'Follow Current Chat',
     spawnProfileExplore: 'Explore',
     spawnProfileExploreDesc: 'Lightweight search and file exploration',
-    imageGenerativeTitle: 'Image Generative',
-    imageGenerativeDesc: 'Choose the model used by the image generation tool',
+    imageGenerativeTitle: 'Image Generation',
+    imageGenerativeDesc: 'Image generation model for creating visual content',
     imageGenerativeUnset: 'Not Set',
     spawnProfileTask: 'Task',
     spawnProfileTaskDesc: 'General-purpose task execution',
@@ -1429,6 +1438,9 @@ export const en: LocaleStrings = {
     chatModel: "Default Chat Model",
     chatModelDesc: "Default model for new chat threads; leave empty to use the Persona default",
     chatModelPlatformDefault: "Persona Default",
+    visionModel: "Vision Model",
+    visionModelDesc: "Image understanding model used when the chat model cannot process images",
+    visionModelUnset: "Not Set",
     toolModel: "Tool Model",
     toolModelDesc: "Model used for background tasks such as title generation and memory operations",
     toolModelPlatformDefault: "Platform Default",

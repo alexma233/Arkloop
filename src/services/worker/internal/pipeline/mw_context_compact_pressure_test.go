@@ -498,6 +498,60 @@ func TestResolveContextCompactPressureAnchorReadsNewestTurnAnchor(t *testing.T) 
 	}
 }
 
+func TestResolveContextCompactPressureAnchorWithReplacementPrefix(t *testing.T) {
+	db := testutil.SetupPostgresDatabase(t, "context_compact_pressure_anchor_replacement_prefix")
+	pool, err := pgxpool.New(context.Background(), db.DSN)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	accountID := uuid.New()
+	threadID := uuid.New()
+	runID := uuid.New()
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO threads (id, account_id) VALUES ($1, $2)`,
+		threadID, accountID,
+	); err != nil {
+		t.Fatalf("insert thread: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO runs (id, account_id, thread_id, status) VALUES ($1, $2, $3, 'completed')`,
+		runID, accountID, threadID,
+	); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO run_events (run_id, seq, ts, type, data_json)
+		 VALUES ($1, 1, now(), 'llm.turn.completed', '{"last_real_prompt_tokens":183057,"last_request_context_estimate_tokens":85615}'::jsonb)`,
+		runID,
+	); err != nil {
+		t.Fatalf("insert run event: %v", err)
+	}
+
+	phase := compactSyntheticPhase
+	rc := &RunContext{
+		Messages: []llm.Message{
+			{Role: "system", Content: []llm.TextPart{{Text: "sys"}}},
+			{Role: "system", Phase: &phase, Content: []llm.TextPart{{Text: "compact summary"}}},
+			{Role: "user", Content: []llm.TextPart{{Text: "tail"}}},
+		},
+	}
+	rc.Run.AccountID = accountID
+	rc.Run.ThreadID = threadID
+
+	anchor, ok := resolveContextCompactPressureAnchor(context.Background(), pool, rc)
+	if !ok {
+		t.Fatal("expected anchor")
+	}
+	if anchor.LastRealPromptTokens != 183057 {
+		t.Fatalf("unexpected last real prompt tokens: %d", anchor.LastRealPromptTokens)
+	}
+	if anchor.LastRequestContextEstimateTokens != 85615 {
+		t.Fatalf("unexpected last request estimate: %d", anchor.LastRequestContextEstimateTokens)
+	}
+}
+
 func TestCompactConsecutiveFailuresIgnoresAttemptProgressEvents(t *testing.T) {
 	db := testutil.SetupPostgresDatabase(t, "context_compact_ignore_attempt_progress")
 	pool, err := pgxpool.New(context.Background(), db.DSN)
@@ -572,7 +626,7 @@ func TestResolveCompactionGatewayDefaultsToCurrentThreadRoute(t *testing.T) {
 		},
 	}
 	configLoader := routing.NewConfigLoader(nil, routing.ProviderRoutingConfig{
-		DefaultRouteID: "tool-route",
+		
 		Credentials: []routing.ProviderCredential{{
 			ID:           "stub-tool",
 			Name:         "tool",
@@ -628,7 +682,7 @@ func TestResolveCompactionGatewayHonorsExplicitSelector(t *testing.T) {
 		SelectedRoute:       &routing.SelectedProviderRoute{Route: routing.ProviderRouteRule{Model: "thread-model", ID: "thread-route"}},
 	}
 	configLoader := routing.NewConfigLoader(nil, routing.ProviderRoutingConfig{
-		DefaultRouteID: "tool-route",
+		
 		Credentials: []routing.ProviderCredential{{
 			ID:           "stub-tool",
 			Name:         "tool",
@@ -690,7 +744,7 @@ func TestEstimateContextCompactRequestBytesUsesInjectedEstimator(t *testing.T) {
 
 func TestRoutingMiddlewareInjectsProviderRequestEstimator(t *testing.T) {
 	router := routing.NewProviderRouter(routing.ProviderRoutingConfig{
-		DefaultRouteID: "route-openai",
+		
 		Credentials: []routing.ProviderCredential{{
 			ID:           "cred-openai",
 			Name:         "openai",
@@ -718,7 +772,7 @@ func TestRoutingMiddlewareInjectsProviderRequestEstimator(t *testing.T) {
 
 	rc := &RunContext{
 		Emitter:             events.NewEmitter("test"),
-		InputJSON:           map[string]any{},
+		InputJSON:           map[string]any{"model": "gpt-4o"},
 		LlmMaxResponseBytes: 8192,
 	}
 	handler := Build([]RunMiddleware{mw}, func(_ context.Context, rc *RunContext) error {

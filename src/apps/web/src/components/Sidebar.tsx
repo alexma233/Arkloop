@@ -29,7 +29,7 @@ import { ShareModal } from './ShareModal'
 import { beginPerfTrace, endPerfTrace, isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
 import { useAuth } from '../contexts/auth'
 import { useThreadList, useThreadLiveState } from '../contexts/thread-list'
-import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarUI } from '../contexts/app-ui'
+import { useAppModeUI, useSearchUI, useSettingsUI, useSidebarCollapseUI } from '../contexts/app-ui'
 import { SHORTCUTS } from '../shortcuts'
 import { ActionIconButton } from './ActionIconButton'
 import {
@@ -47,6 +47,7 @@ type Props = {
   threads: ThreadResponse[]
   onNewThread: () => void
   onThreadDeleted: (threadId: string) => void
+  preserveExpandedLayout?: boolean
   /** 点到历史会话时先收起设置等全屏层；否则同 URL 的 navigate 不会触发，桌面端无法回到聊天 */
   beforeNavigateToThread?: () => void
 }
@@ -252,10 +253,11 @@ const SidebarThreadItem = memo(function SidebarThreadItem({
   )
 })
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   threads,
   onNewThread,
   onThreadDeleted,
+  preserveExpandedLayout = false,
   beforeNavigateToThread,
 }: Props) {
   const { me, accessToken } = useAuth()
@@ -267,7 +269,8 @@ export function Sidebar({
     markCompletionRead,
   } = useThreadList()
   const { runningThreadIds, completedUnreadThreadIds } = useThreadLiveState()
-  const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarUI()
+  const { sidebarCollapsed: collapsed, toggleSidebar: onToggleCollapse } = useSidebarCollapseUI()
+  const visualCollapsed = preserveExpandedLayout ? false : collapsed
   const { openSearchOverlay: onOpenSearchOverlay } = useSearchUI()
   const { settingsOpen: suppressActiveThreadHighlight, openSettings: onOpenSettings } = useSettingsUI()
   const { appMode } = useAppModeUI()
@@ -384,6 +387,7 @@ export function Sidebar({
   // -- 分组逻辑 --
 
   const projectGroups = useMemo(() => {
+    if (!isWorkMode) return []
     void workFolderVersion
     const groups = new Map<string, ThreadResponse[]>()
 
@@ -414,7 +418,7 @@ export function Sidebar({
     })
 
     return result
-  }, [threads, effectivePinnedIds, starredIds, t, workFolderVersion])
+  }, [isWorkMode, threads, effectivePinnedIds, starredIds, t, workFolderVersion])
 
   const localGtdBucketForThread = useCallback((id: string): GtdBucket | null => {
     if (gtdInboxIds.has(id)) return 'inbox'
@@ -430,6 +434,7 @@ export function Sidebar({
   }, [localGtdBucketForThread])
 
   const gtdGroups = useMemo(() => {
+    if (isWorkMode || !gtdEnabled) return []
     const buckets: GtdGroup[] = [
       { bucket: 'inbox', label: t.gtdInbox, threads: [] },
       { bucket: 'todo', label: t.gtdTodo, threads: [] },
@@ -457,7 +462,7 @@ export function Sidebar({
     }
 
     return buckets
-  }, [threads, effectiveGtdBucketForThread, effectivePinnedIds, starredIds, t])
+  }, [isWorkMode, gtdEnabled, threads, effectiveGtdBucketForThread, effectivePinnedIds, starredIds, t])
 
   const openMenu = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -531,7 +536,7 @@ export function Sidebar({
     )
   }, [menuThreadId, editingThreadId, activeThreadId, starredSet, draggingThreadId, editingTitle, t.untitled, editInputRef, setEditingTitle, setEditingThreadId, commitRename, markCompletionRead, beforeNavigateToThread, navigate, openMenu])
 
-  const renderDropRow = (icon: React.ReactNode, label: string, active: boolean) => (
+  const renderDropRow = useCallback((icon: React.ReactNode, label: string, active: boolean) => (
     <div
       className={[
         'relative isolate flex h-[34px] w-full items-center gap-2 rounded-[6px] px-2 py-0 text-[13.5px] leading-[20px] before:pointer-events-none before:absolute before:inset-x-0 before:inset-y-px before:-z-10 before:rounded-[6px] before:content-[""]',
@@ -544,11 +549,11 @@ export function Sidebar({
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </div>
-  )
+  ), [])
 
   // -- 视图组件 --
 
-  const ProjectSidebarView = (
+  const ProjectSidebarView = useMemo(() => (
     <>
       {projectGroups.map(group => {
         const isExpanded = expandedPaths.has(group.path)
@@ -633,9 +638,18 @@ export function Sidebar({
         )
       })}
     </>
-  )
+  ), [
+    dragOverProjectPath,
+    expandedLimits,
+    expandedPaths,
+    onNewThread,
+    projectGroups,
+    renderThread,
+    setProjectGroupNode,
+    t.folderMore,
+  ])
 
-  const GtdSidebarView = (
+  const GtdSidebarView = useMemo(() => (
     <>
       {gtdGroups.map(group => {
         const isExpanded = expandedGtdBuckets.has(group.bucket)
@@ -695,7 +709,85 @@ export function Sidebar({
         )
       })}
     </>
-  )
+  ), [
+    dragOverGtdBucket,
+    expandedGtdBuckets,
+    gtdExpandedLimits,
+    gtdGroups,
+    renderThread,
+    setGtdGroupNode,
+    t.folderMore,
+  ])
+
+  const SidebarThreadListContent = useMemo(() => {
+    if (threads.length === 0) {
+      return <p className="overflow-hidden whitespace-nowrap px-2 py-1 text-[12px] text-[var(--c-text-muted)]">{t.recentsEmpty}</p>
+    }
+    if (isWorkMode) {
+      return (
+        <>
+          <div
+            ref={pinnedDropRef}
+            className={[
+              'rounded-[6px]',
+              dragOverPinned && draggingToPinned ? 'bg-[var(--c-bg-deep)]' : '',
+            ].join(' ')}
+          >
+            <div
+              className="group/pinned flex h-[34px] w-full cursor-pointer select-none items-center px-2 py-0"
+              onMouseDown={(e) => { if (e.detail > 1) e.preventDefault() }}
+              onClick={() => setPinnedExpanded(v => !v)}
+            >
+              <span
+                className="select-none text-[13.5px] leading-[20px] text-[var(--c-text-muted)] transition-colors duration-[80ms] group-hover/pinned:text-[var(--c-text-tertiary)]"
+                style={{ fontWeight: PROJECT_GROUP_LABEL_WEIGHT }}
+              >
+                {t.pinnedSection}
+              </span>
+              <span className="ml-1 shrink-0 opacity-0 group-hover/pinned:opacity-100 text-[var(--c-text-muted)] transition-opacity duration-[80ms]">
+                <ChevronRight size={12} className={['transition-transform duration-150', pinnedExpanded ? 'rotate-90' : 'rotate-0'].join(' ')} />
+              </span>
+            </div>
+            {pinnedExpanded && pinnedWorkThreads.length === 0 && (
+              renderDropRow(
+                <Pin size={14} className="shrink-0 opacity-50" />,
+                dragOverPinned && draggingToPinned ? t.letGo : t.dragToPin,
+                dragOverPinned && draggingToPinned,
+              )
+            )}
+            {pinnedExpanded && pinnedWorkThreads
+              .map(th => renderThread(th, { showStatusDot: true }))}
+          </div>
+          {ProjectSidebarView}
+        </>
+      )
+    }
+    if (gtdEnabled) return GtdSidebarView
+    return (
+      <>
+        {starredThreads.map(thread => renderThread(thread))}
+        {regularThreads.map(thread => renderThread(thread))}
+      </>
+    )
+  }, [
+    ProjectSidebarView,
+    GtdSidebarView,
+    dragOverPinned,
+    draggingToPinned,
+    gtdEnabled,
+    isWorkMode,
+    pinnedExpanded,
+    pinnedWorkThreads,
+    regularThreads,
+    renderDropRow,
+    renderThread,
+    starredThreads,
+    t.letGo,
+    t.pinnedSection,
+    t.recentsEmpty,
+    t.dragToPin,
+    threads.length,
+  ])
 
   // GTD / Pin 操作
   const applyGtdBucketLocal = useCallback((id: string, bucket: GtdBucket | null) => {
@@ -1479,9 +1571,25 @@ export function Sidebar({
     </div>,
     document.body,
   ) : null
-  const navButtonClass = 'group flex h-[32px] w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-lg px-[8px] text-[15px] text-[var(--c-text-secondary)] transition-colors duration-[60ms] hover:bg-[var(--c-bg-deep)] hover:text-[var(--c-text-primary)]'
+  const navButtonClass = 'group relative flex h-[32px] w-full items-center gap-[10px] overflow-hidden whitespace-nowrap rounded-lg px-[8px] text-[15px] text-[var(--c-text-secondary)] transition-colors duration-[60ms] hover:text-[var(--c-text-primary)]'
+  const navHoverStyle = {
+    position: 'absolute',
+    insetBlock: 0,
+    left: 0,
+    width: visualCollapsed ? 32 : '100%',
+    borderRadius: 8,
+    background: 'var(--c-bg-deep)',
+    transition: 'width 150ms ease, opacity 60ms ease',
+  } as const
   const navButtonStyle = { fontWeight: 'var(--c-sidebar-nav-weight)' }
-  const navLabelClass = 'min-w-0 overflow-hidden whitespace-nowrap transition-opacity duration-100'
+  const navLabelStyle = {
+    opacity: visualCollapsed ? 0 : 1,
+    visibility: visualCollapsed ? 'hidden' : 'visible',
+    transition: visualCollapsed
+      ? 'opacity 150ms ease, visibility 0s linear 150ms'
+      : 'opacity 150ms ease, visibility 0s',
+  } as const
+  const navLabelClass = 'min-w-0 overflow-hidden whitespace-nowrap'
   const newThreadNavLabel = isWorkMode ? t.newTask : t.newChat
   const searchNavLabel = isWorkMode ? t.searchTasks : t.searchChats
 
@@ -1493,9 +1601,7 @@ export function Sidebar({
         'theme-surface-sidebar flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--c-bg-sidebar)]',
       ].join(' ')}
       style={{
-        transition: 'width 280ms cubic-bezier(0.16,1,0.3,1)',
-        willChange: 'width',
-        borderRight: '0.5px solid var(--c-border)',
+        contain: 'layout paint style',
       }}
     >
       {/* Desktop title bar spacer */}
@@ -1503,7 +1609,7 @@ export function Sidebar({
 
       {/* Non-desktop title bar or spacer */}
       {!desktopMode && (
-        collapsed ? (
+        visualCollapsed ? (
           <div className="h-3" />
         ) : (
           <div className="flex min-h-[56px] items-center justify-between px-4 py-3">
@@ -1557,18 +1663,26 @@ export function Sidebar({
         )
       )}
 
-      {!(collapsed && isWorkMode) && (
-        <nav className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1">
+      <nav
+        className="flex flex-col items-start gap-px pl-[8px] pr-[7px] pt-1"
+        style={{
+          opacity: visualCollapsed && isWorkMode ? 0 : 1,
+          pointerEvents: visualCollapsed && isWorkMode ? 'none' : 'auto',
+          transition: 'opacity 120ms ease',
+        }}
+        aria-hidden={visualCollapsed && isWorkMode ? true : undefined}
+      >
           <button
             onClick={onNewThread}
             aria-label={newThreadNavLabel}
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <SquarePen size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{newThreadNavLabel}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{newThreadNavLabel}</span>
           </button>
 
           <button
@@ -1600,10 +1714,11 @@ export function Sidebar({
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Search size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{searchNavLabel}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{searchNavLabel}</span>
           </button>
 
           <button
@@ -1612,22 +1727,22 @@ export function Sidebar({
             className={navButtonClass}
             style={navButtonStyle}
           >
-            <span className="flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100" style={navHoverStyle} />
+            <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
               <Clock size={16} className="shrink-0 transition-transform duration-100 group-hover:scale-[1.05]" />
             </span>
-            <span className={navLabelClass}>{t.scheduledJobs}</span>
+            <span className={`relative ${navLabelClass}`} style={navLabelStyle}>{t.scheduledJobs}</span>
           </button>
-        </nav>
-      )}
+      </nav>
 
       {/* Thread list — hidden when collapsed */}
       <div
         className={[
           'mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto px-2',
-          collapsed ? 'opacity-0' : 'opacity-100',
+          visualCollapsed ? 'opacity-0' : 'opacity-100',
         ].join(' ')}
         style={{ transition: 'opacity 150ms ease' }}
-        inert={collapsed || undefined}
+        inert={visualCollapsed || undefined}
       >
           {!isWorkMode && !gtdEnabled && (
             <div className="mb-[12px] mt-1 flex shrink-0 items-center gap-2 px-2">
@@ -1673,53 +1788,7 @@ export function Sidebar({
                 pointerEvents: isPrivateModeEffective ? 'none' : 'auto',
               }}
             >
-              {threads.length === 0 ? (
-                <p className="overflow-hidden whitespace-nowrap px-2 py-1 text-[12px] text-[var(--c-text-muted)]">{t.recentsEmpty}</p>
-              ) : isWorkMode ? (
-                <>
-                  {/* Pinned section */}
-                  <div
-                    ref={pinnedDropRef}
-                    className={[
-                      'rounded-[6px]',
-                      dragOverPinned && draggingToPinned ? 'bg-[var(--c-bg-deep)]' : '',
-                    ].join(' ')}
-                  >
-                    <div
-                      className="group/pinned flex h-[34px] w-full cursor-pointer select-none items-center px-2 py-0"
-                      onMouseDown={(e) => { if (e.detail > 1) e.preventDefault() }}
-                      onClick={() => setPinnedExpanded(v => !v)}
-                    >
-                      <span
-                        className="select-none text-[13.5px] leading-[20px] text-[var(--c-text-muted)] transition-colors duration-[80ms] group-hover/pinned:text-[var(--c-text-tertiary)]"
-                        style={{ fontWeight: PROJECT_GROUP_LABEL_WEIGHT }}
-                      >
-                        {t.pinnedSection}
-                      </span>
-                      <span className="ml-1 shrink-0 opacity-0 group-hover/pinned:opacity-100 text-[var(--c-text-muted)] transition-opacity duration-[80ms]">
-                        <ChevronRight size={12} className={['transition-transform duration-150', pinnedExpanded ? 'rotate-90' : 'rotate-0'].join(' ')} />
-                      </span>
-                    </div>
-                    {pinnedExpanded && pinnedWorkThreads.length === 0 && (
-                      renderDropRow(
-                        <Pin size={14} className="shrink-0 opacity-50" />,
-                        dragOverPinned && draggingToPinned ? t.letGo : t.dragToPin,
-                        dragOverPinned && draggingToPinned,
-                      )
-                    )}
-                    {pinnedExpanded && pinnedWorkThreads
-                      .map(th => renderThread(th, { showStatusDot: true }))}
-                  </div>
-                  {ProjectSidebarView}
-                </>
-              ) : gtdEnabled ? (
-                GtdSidebarView
-              ) : (
-                <>
-                  {starredThreads.map(thread => renderThread(thread))}
-                  {regularThreads.map(thread => renderThread(thread))}
-                </>
-              )}
+              {SidebarThreadListContent}
             </div>
           </div>
         </div>
@@ -1728,12 +1797,12 @@ export function Sidebar({
       <div
         className="mt-auto px-2 pb-2 pt-1"
         style={{
-          borderTop: '1px solid var(--c-border)',
-          borderTopColor: collapsed ? 'transparent' : 'var(--c-border)',
+          borderTop: '0.5px solid var(--c-border)',
+          borderTopColor: visualCollapsed ? 'transparent' : 'var(--c-border)',
           transition: 'border-top-color 280ms cubic-bezier(0.16,1,0.3,1)',
         }}
       >
-        {!collapsed && !isLocalMode() && (
+        {!visualCollapsed && !isLocalMode() && (
           <button
             onClick={() => onOpenSettings('account')}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-[10px] transition-[background-color] duration-[60ms] hover:bg-[var(--c-bg-deep)]"
@@ -1802,4 +1871,4 @@ export function Sidebar({
       {dragPortal}
     </>
   )
-}
+})

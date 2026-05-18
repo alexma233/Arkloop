@@ -547,17 +547,16 @@ button:not(:disabled) {
 @keyframes todo-list-item-rise-in {
   from {
     opacity: 0;
-    transform: translate3d(0, 6px, 0);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translateY(0);
   }
 }
 
 .todo-list-item-rise {
-  animation: todo-list-item-rise-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: opacity, transform;
+  animation: todo-list-item-rise-in 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .todo-summary-expand {
@@ -805,9 +804,9 @@ button:not(:disabled) {
 }
 
 .cop-timeline-root {
-  --c-cop-row-fg: var(--c-text-tertiary);
+  --c-cop-row-fg: #87857e;
   --c-cop-row-hover-fg: var(--c-text-primary);
-  --c-cop-row-subtle-fg: var(--c-text-tertiary);
+  --c-cop-row-subtle-fg: #87857e;
   --c-cop-row-weight: var(--c-fw-400);
   --c-cop-row-font-size: 14px;
   --c-cop-row-line-height: 20px;
@@ -819,9 +818,9 @@ button:not(:disabled) {
 
 .top-level-todo-root,
 .work-group-root {
-  --c-cop-row-fg: var(--c-text-tertiary);
+  --c-cop-row-fg: #87857e;
   --c-cop-row-hover-fg: var(--c-text-primary);
-  --c-cop-row-subtle-fg: var(--c-text-tertiary);
+  --c-cop-row-subtle-fg: #87857e;
   --c-cop-row-weight: var(--c-fw-400);
   --c-cop-row-font-size: 14px;
   --c-cop-row-line-height: 20px;
@@ -882,7 +881,6 @@ button:not(:disabled) {
   max-height: var(--c-cop-card-max-height);
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 6px 10px;
   scrollbar-gutter: stable;
 }
@@ -1424,7 +1422,6 @@ button:not(:disabled) {
 .modal-enter {
   transform-origin: center;
   animation: modal-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform, opacity;
 }
 @keyframes overlay-fade-in {
   from { opacity: 0; }
@@ -1448,7 +1445,6 @@ button:not(:disabled) {
 .design-token-modal-enter {
   transform-origin: center;
   animation: design-token-modal-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform, opacity;
 }
 @keyframes slide-in-left {
   from { opacity: 0; transform: translateX(-10px); }
@@ -1498,12 +1494,10 @@ button:not(:disabled) {
 
 .collapsed-sidebar-exit-overlay {
   animation: collapsed-sidebar-exit 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: opacity, transform;
 }
 
 .collapsed-sidebar-enter-overlay {
   animation: collapsed-sidebar-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: opacity, transform;
 }
 
 @keyframes dropdown-slide-up {

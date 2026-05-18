@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, memo, Fragment, type ComponentProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, CornerDownLeft, Globe2, Pencil, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUpFromLine, ChevronDown, ChevronRight, ClipboardList, CornerDownLeft, Globe2, Pencil, Trash2 } from 'lucide-react'
 import { AutoResizeTextarea, DebugTrigger } from '@arkloop/shared'
 import { ChatInput, type Attachment, type ChatInputHandle } from './ChatInput'
 import { RunDetailPanel } from './RunDetailPanel'
@@ -32,6 +32,7 @@ import { ResourcePreviewPanel } from './resource-preview/ResourcePreviewPanel'
 import { BrowserSiteIcon } from './resource-preview/BrowserSiteIcon'
 import type { BrowserResourceRef, LocalFileResourceRef, ResourceRef } from './resource-preview/types'
 import { resourceTitle } from './resource-preview/resourceUri'
+import { isPlanMarkdownPath } from '../planMetadata'
 import { ChatTitleMenu } from './ChatTitleMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
 import { CopSegmentBlocks } from './CopSegmentBlocks'
@@ -211,6 +212,9 @@ function resourceTabId(resource: ResourceRef): string {
 
 function localFileTabIcon(resource: LocalFileResourceRef | null) {
   if (!resource) return undefined
+  if (isPlanMarkdownPath(resource.path)) {
+    return <ClipboardList size={rightPanelIconSize} strokeWidth={1.8} style={{ color: 'var(--c-text-icon)', flexShrink: 0 }} />
+  }
   const iconUrl = resolveLocalFileIconUrl({
     name: resource.name ?? resource.filename ?? resource.path.split('/').filter(Boolean).at(-1) ?? resource.path,
     path: resource.path,
@@ -220,8 +224,25 @@ function localFileTabIcon(resource: LocalFileResourceRef | null) {
   return iconUrl ? <img src={iconUrl} alt="" aria-hidden="true" draggable={false} style={{ width: rightPanelIconSize, height: rightPanelIconSize, flexShrink: 0 }} /> : undefined
 }
 
+function resourcePanelIcon(resource: ResourceRef) {
+  const planPath = 'path' in resource ? resource.path : 'filename' in resource ? resource.filename : undefined
+  if (isPlanMarkdownPath(planPath)) {
+    return <ClipboardList size={rightPanelIconSize} strokeWidth={1.8} style={{ color: 'var(--c-text-icon)', flexShrink: 0 }} />
+  }
+  if (resource.kind === 'local-file') return localFileTabIcon(resource)
+  if (resource.kind === 'browser') return <BrowserSiteIcon url={resource.url} faviconUrl={resource.faviconUrl} size={rightPanelIconSize} />
+  return undefined
+}
+
+function sameBrowserResource(left: BrowserResourceRef | null, right: BrowserResourceRef): boolean {
+  return left?.url === right.url
+    && left?.title === right.title
+    && left?.faviconUrl === right.faviconUrl
+}
+
 function clampRightPanelWidth(width: number, containerWidth: number): number {
-  const maxWidth = Math.max(rightPanelMinWidth, containerWidth - chatViewMinWidth)
+  const maxWidth = Math.max(0, containerWidth - chatViewMinWidth)
+  if (maxWidth <= rightPanelMinWidth) return maxWidth
   return Math.min(Math.max(width, rightPanelMinWidth), maxWidth)
 }
 
@@ -380,8 +401,24 @@ const LiveRunPane = memo(function LiveRunPane({
     visibleStreamingArtifacts.length > 0
   const liveContentMaxWidth = isWorkMode ? undefined : '663px'
 
+  const liveRootRef = useRef<HTMLDivElement>(null)
+  const peakHeightRef = useRef(0)
+  useEffect(() => {
+    const el = liveRootRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = el.scrollHeight
+      if (h > peakHeightRef.current) {
+        peakHeightRef.current = h
+        el.style.minHeight = h + 'px'
+      }
+    })
+    ro.observe(el)
+    return () => { ro.disconnect(); peakHeightRef.current = 0; el.style.minHeight = '' }
+  }, [liveRunUiActive])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div ref={liveRootRef} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {(showPendingThinkingShell || liveSegments.length > 0) && (
         <div data-testid={preserveLiveRunUi ? 'current-run-handoff' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 0, maxWidth: liveContentMaxWidth }}>
           {(showPendingThinkingShell || leadingLiveCop) && (
@@ -878,7 +915,10 @@ export const ChatView = memo(function ChatView() {
   const learningModeRequestSeqRef = useRef(0)
   const [rightPanelVisible, setRightPanelVisible] = useState(false)
   const chatViewRootRef = useRef<HTMLDivElement>(null)
+  const rightPanelShellRef = useRef<HTMLDivElement>(null)
+  const rightPanelContentRef = useRef<HTMLDivElement>(null)
   const rightPanelRatioRef = useRef(0)
+  const [rightPanelResizing, setRightPanelResizing] = useState(false)
   const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelMinWidth)
   const [rightPanelTabs, setRightPanelTabs] = useState<RightPanelStoredTab[]>([])
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null)
@@ -1035,6 +1075,8 @@ export const ChatView = memo(function ChatView() {
   const resourcePanelResource = activePanel?.type === 'resource' ? activePanel.resource : null
   // Mirror volatile activePanel-derived values into refs so callbacks passed to
   // MessageList stay referentially stable when the panel context changes.
+  const activePanelRef = useRef(activePanel)
+  useEffect(() => { activePanelRef.current = activePanel }, [activePanel])
   const documentPanelArtifactKeyRef = useRef(documentPanelArtifact?.artifact.key)
   useEffect(() => { documentPanelArtifactKeyRef.current = documentPanelArtifact?.artifact.key }, [documentPanelArtifact?.artifact.key])
   const codePanelExecutionIdRef = useRef(codePanelExecution?.id)
@@ -1046,15 +1088,10 @@ export const ChatView = memo(function ChatView() {
   const sourcePanelMessageIdRef = useRef(sourcePanelMessageId)
   useEffect(() => { sourcePanelMessageIdRef.current = sourcePanelMessageId }, [sourcePanelMessageId])
   const setSourcePanelMessageId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>((value) => {
-    const next = typeof value === 'function' ? value(sourcePanelMessageId) : value
+    const next = typeof value === 'function' ? value(sourcePanelMessageIdRef.current) : value
     if (next) openSourcePanel(next)
-    else if (activePanel?.type === 'source') closePanel()
-  }, [activePanel, closePanel, openSourcePanel, sourcePanelMessageId])
-  const setCodePanelExecution = useCallback<React.Dispatch<React.SetStateAction<CodeExecution | null>>>((value) => {
-    const next = typeof value === 'function' ? value(codePanelExecution) : value
-    if (next) openCodePanelState(next)
-    else if (activePanel?.type === 'code') closePanel()
-  }, [activePanel, closePanel, codePanelExecution, openCodePanelState])
+    else if (activePanelRef.current?.type === 'source') closePanel()
+  }, [closePanel, openSourcePanel])
   // --- Work todo 进度 ---
   const { showRunDetailButton, showDebugPanel, runDetailPanelRunId, setRunDetailPanelRunId } = useDevTools()
 
@@ -1092,11 +1129,6 @@ export const ChatView = memo(function ChatView() {
     (sending || activeRunId != null)
 
   const messageListRef = useRef<MessageListHandle>(null)
-  // 提供给 useScrollPin 的桥：scrollToBottom 触发时先让 Virtuoso 跳过中间区间，
-  // 避免浏览器原生 smooth scroll 逐帧穿过数千 px 引发挂载风暴。
-  const jumpHistoryToEnd = useCallback(() => {
-    messageListRef.current?.scrollHistoryToEnd('auto')
-  }, [])
 
   const {
     bottomRef,
@@ -1104,7 +1136,6 @@ export const ChatView = memo(function ChatView() {
     lastUserMsgRef,
     lastUserPromptRef,
     inputAreaRef,
-    forceInstantBottomScrollRef,
     isAtBottomRef,
     handleScrollContainerScroll,
     stabilizeDocumentPanelScroll,
@@ -1118,18 +1149,8 @@ export const ChatView = memo(function ChatView() {
     messages,
     liveAssistantTurn,
     liveRunUiVisible,
-    topLevelCodeExecutionsLength: topLevelCodeExecutions.length,
     promptPinningDisabled: isWorkMode,
-    jumpHistoryToEnd,
   })
-
-  // 把 scrollContainer 的 DOM 元素以 state 暴露出来，供 Virtuoso 的 customScrollParent 使用。
-  // 必须保持与 scrollContainerRef.current 同步——同一个 div 同时承担 useScrollPin 的 ref 目标与 Virtuoso 的滚动父容器。
-  const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null)
-  const setScrollContainerEl = useCallback((el: HTMLDivElement | null) => {
-    (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
-    setScrollParent(el)
-  }, [scrollContainerRef])
 
   const { resetAssistantTurnLive, captureTerminalRunCache, persistThreadRunHandoff } = useRunTransition()
 
@@ -1164,12 +1185,6 @@ export const ChatView = memo(function ChatView() {
     topLevelWebFetches,
   ])
 
-  useEffect(() => {
-    if (messagesLoading) {
-      forceInstantBottomScrollRef.current = false
-    }
-  }, [messagesLoading, forceInstantBottomScrollRef])
-
   const canCancel =
     activeRunId != null &&
     (sse.state === 'connecting' || sse.state === 'connected' || sse.state === 'reconnecting')
@@ -1185,7 +1200,9 @@ export const ChatView = memo(function ChatView() {
     handleAsrError,
     handleArtifactAction,
   } = useChatActions({ scrollToBottom: activateAnchor })
-  void sendMessage
+  const handleBuildPlan = useCallback((message: string) => {
+    void sendMessage(message)
+  }, [sendMessage])
 
   // 加载 thread 数据
   useEffect(() => {
@@ -2102,9 +2119,7 @@ export const ChatView = memo(function ChatView() {
       }
       return null
     })()
-    const shouldPinNewPrompt =
-      !isInterruptedRunStatus(terminalRunHandoffStatus) &&
-      !isInterruptedRunStatus(lastAssistantTerminalStatus)
+    const shouldPinNewPrompt = !isInterruptedRunStatus(lastAssistantTerminalStatus)
 
     if (sending && !isStreaming) {
       const text = draft.trim()
@@ -2431,10 +2446,13 @@ export const ChatView = memo(function ChatView() {
 
     const adaptToContainer = () => {
       const containerWidth = root.clientWidth
-      setRightPanelWidth(() => {
-        const ratio = rightPanelRatioRef.current || rightPanelDefaultRatio
-        const next = clampRightPanelWidth(containerWidth * ratio, containerWidth)
+      setRightPanelWidth((current) => {
+        const target = rightPanelRatioRef.current === 0
+          ? containerWidth * rightPanelDefaultRatio
+          : current
+        const next = clampRightPanelWidth(target, containerWidth)
         rightPanelRatioRef.current = next / Math.max(containerWidth, 1)
+        if (Math.abs(current - next) < 1) return current
         return next
       })
     }
@@ -2449,25 +2467,49 @@ export const ChatView = memo(function ChatView() {
     event.preventDefault()
     const root = chatViewRootRef.current
     if (!root) return
+    setRightPanelResizing(true)
     const pointerId = event.pointerId
     event.currentTarget.setPointerCapture(pointerId)
     const rect = root.getBoundingClientRect()
+    const shell = rightPanelShellRef.current
+    const content = rightPanelContentRef.current
+    let frame = 0
+    let nextWidth = rightPanelWidth
+
+    if (shell) shell.style.transition = 'none'
+    if (content) content.style.transition = 'none'
+
+    const applyWidth = () => {
+      frame = 0
+      if (shell) shell.style.width = `${nextWidth}px`
+      if (content) content.style.width = `${nextWidth}px`
+    }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const next = clampRightPanelWidth(rect.right - moveEvent.clientX, rect.width)
-      rightPanelRatioRef.current = next / Math.max(rect.width, 1)
-      setRightPanelWidth(next)
+      nextWidth = clampRightPanelWidth(rect.right - moveEvent.clientX, rect.width)
+      rightPanelRatioRef.current = nextWidth / Math.max(rect.width, 1)
+      if (frame === 0) frame = requestAnimationFrame(applyWidth)
     }
     const stopResize = () => {
+      if (frame !== 0) {
+        cancelAnimationFrame(frame)
+        applyWidth()
+      }
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', stopResize)
       window.removeEventListener('pointercancel', stopResize)
+      setRightPanelWidth(nextWidth)
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (shell) shell.style.transition = ''
+        if (content) content.style.transition = ''
+        setRightPanelResizing(false)
+      }))
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', stopResize)
     window.addEventListener('pointercancel', stopResize)
-  }, [])
+  }, [rightPanelWidth])
 
   const upsertRightPanelTab = useCallback((tab: RightPanelStoredTab) => {
     setRightPanelTabs((current) => {
@@ -2505,12 +2547,13 @@ export const ChatView = memo(function ChatView() {
       const index = current.findIndex((item) => item.id === id)
       if (index < 0) return current
       const target = current[index]
-      if (target.kind === 'source') setSourcePanelMessageId(null)
-      else if (target.kind === 'code' && activePanel?.type === 'code' && activePanel.execution.id === target.execution.id) setCodePanelExecution(null)
-      else if (target.kind === 'agent' && activePanel?.type === 'agent' && activePanel.agent.id === target.agent.id) closePanel()
+      const currentPanel = activePanelRef.current
+      if (target.kind === 'source' && currentPanel?.type === 'source') closePanel()
+      else if (target.kind === 'code' && currentPanel?.type === 'code' && currentPanel.execution.id === target.execution.id) closePanel()
+      else if (target.kind === 'agent' && currentPanel?.type === 'agent' && currentPanel.agent.id === target.agent.id) closePanel()
       else if (target.kind === 'resource') {
-        if (activePanel?.type === 'resource' && resourceTabId(activePanel.resource) === target.id) closePanel()
-        else if (activePanel?.type === 'document' && target.resource.kind === 'artifact' && activePanel.artifact.artifact.key === target.resource.key) closePanel()
+        if (currentPanel?.type === 'resource' && resourceTabId(currentPanel.resource) === target.id) closePanel()
+        else if (currentPanel?.type === 'document' && target.resource.kind === 'artifact' && currentPanel.artifact.artifact.key === target.resource.key) closePanel()
       }
 
       const next = current.filter((item) => item.id !== id)
@@ -2520,18 +2563,18 @@ export const ChatView = memo(function ChatView() {
       })
       return next
     })
-  }, [activePanel, closePanel, setCodePanelExecution, setSourcePanelMessageId, workPanelFolder])
+  }, [closePanel, workPanelFolder])
 
   const setBrowserResourceForCurrentTab = useCallback((resource: BrowserResourceRef) => {
     const activeId = effectiveRightPanelTabIdRef.current
     if (activeId?.startsWith('web:')) {
       setExtraBrowserTabs((current) => current.map((tab) => (
-        tab.id === activeId ? { ...tab, resource } : tab
+        tab.id === activeId && !sameBrowserResource(tab.resource, resource) ? { ...tab, resource } : tab
       )))
       setActiveRightPanelTabId(activeId)
       return
     }
-    setWebPanelResource(resource)
+    setWebPanelResource((current) => sameBrowserResource(current, resource) ? current : resource)
     setActiveRightPanelTabId('web')
   }, [])
 
@@ -2593,7 +2636,7 @@ export const ChatView = memo(function ChatView() {
         const nextTab: RightPanelStoredTab = {
           id: tabId,
           kind: 'resource',
-          title: resourceTitle(resourcePanelResource),
+          title: previous?.kind === 'resource' ? previous.title : resourceTitle(resourcePanelResource),
           resource: resourcePanelResource,
           artifacts: previous?.kind === 'resource' ? previous.artifacts : undefined,
           runId: previous?.kind === 'resource' ? previous.runId : undefined,
@@ -2651,22 +2694,41 @@ export const ChatView = memo(function ChatView() {
       id: tab.id,
       kind: tab.kind,
       title: tab.title,
-      icon: tab.resource.kind === 'local-file'
-        ? localFileTabIcon(tab.resource)
-        : tab.resource.kind === 'browser'
-          ? <BrowserSiteIcon url={tab.resource.url} faviconUrl={tab.resource.faviconUrl} size={rightPanelIconSize} />
-          : undefined,
+      icon: resourcePanelIcon(tab.resource),
       content: (
         <ResourcePreviewPanel
           resource={tab.resource}
           accessToken={accessToken}
           artifacts={tab.artifacts}
           runId={tab.runId}
+          workFolder={workPanelFolder}
           onClose={() => closeRightPanelTab(tab.id)}
+          onBuildPlan={handleBuildPlan}
+          onOpenModelSettings={() => onOpenSettings('models')}
+          onPlanTitleChange={(title) => {
+            setRightPanelTabs((current) => {
+              const target = current.find((item) => item.id === tab.id && item.kind === 'resource')
+              if (!target || target.title === title) return current
+              return current.map((item) => (
+                item.id === tab.id && item.kind === 'resource' ? { ...item, title } : item
+              ))
+            })
+          }}
         />
       ),
     }
-  }, [accessToken, closeRightPanelTab, resolvedMessageSources])
+  }, [accessToken, closeRightPanelTab, handleBuildPlan, onOpenSettings, resolvedMessageSources, workPanelFolder])
+
+  const handleWebPanelResourceChange = useCallback((resource: ResourceRef) => {
+    if (resource.kind !== 'browser') return
+    setWebPanelResource((current) => sameBrowserResource(current, resource) ? current : resource)
+  }, [])
+
+  const updateExtraBrowserTabResource = useCallback((id: string, resource: BrowserResourceRef) => {
+    setExtraBrowserTabs((current) => current.map((tab) => (
+      tab.id === id && !sameBrowserResource(tab.resource, resource) ? { ...tab, resource } : tab
+    )))
+  }, [])
 
   // Individual tab memos — when only one dep changes, other tabs stay stable.
   // This prevents e.g. adding a document tab from rebuilding the files tab (incl. LocalFileTree).
@@ -2681,12 +2743,10 @@ export const ChatView = memo(function ChatView() {
       <ResourcePreviewPanel
         resource={webPanelResource ?? { kind: 'browser', url: '', title: t.rightPanel.browser }}
         accessToken={accessToken}
-        onResourceChange={(resource) => {
-          if (resource.kind === 'browser') setWebPanelResource(resource)
-        }}
+        onResourceChange={handleWebPanelResourceChange}
       />
     ),
-  }), [webPanelResource, accessToken, t.rightPanel.browser])
+  }), [webPanelResource, accessToken, handleWebPanelResourceChange, t.rightPanel.browser])
 
   const extraBrowserPanelTabs = useMemo<RightPanelTab[]>(() =>
     extraBrowserTabs.map((browserTab) => ({
@@ -2702,14 +2762,12 @@ export const ChatView = memo(function ChatView() {
           accessToken={accessToken}
           onResourceChange={(resource) => {
             if (resource.kind !== 'browser') return
-            setExtraBrowserTabs((current) => current.map((tab) => (
-              tab.id === browserTab.id ? { ...tab, resource } : tab
-            )))
+            updateExtraBrowserTabResource(browserTab.id, resource)
           }}
         />
       ),
     })),
-  [extraBrowserTabs, accessToken, t.rightPanel.browser])
+  [extraBrowserTabs, accessToken, t.rightPanel.browser, updateExtraBrowserTabResource])
 
   const filesPanelTab = useMemo<RightPanelTab | null>(() => {
     if (!workPanelFolder?.trim()) return null
@@ -3344,7 +3402,7 @@ export const ChatView = memo(function ChatView() {
   // CSS custom properties set on the parent div.
   const messageListArea = useMemo(() => (
     <div
-      ref={setScrollContainerEl}
+      ref={scrollContainerRef}
       onScroll={handleScrollContainerScroll}
       className="theme-surface-page chat-scroll-hidden relative flex-1 min-h-0 overflow-y-auto bg-[var(--c-bg-page)] [scrollbar-gutter:stable]"
       style={{ contain: 'layout paint style' }}
@@ -3378,7 +3436,6 @@ export const ChatView = memo(function ChatView() {
             <CopTimelineLocalExpansionProvider stabilizeScroll={stabilizeDocumentPanelScroll}>
               <MessageList
               ref={messageListRef}
-              scrollParent={scrollParent}
               isWorkMode={isWorkMode}
               lastTurnStartIdx={lastTurnStartIdx}
               lastTurnRef={lastUserMsgRef}
@@ -3421,8 +3478,6 @@ export const ChatView = memo(function ChatView() {
     openCodePanel,
     openDocumentPanel,
     openResourcePanel,
-    scrollParent,
-    setScrollContainerEl,
     sourcePanelMessageId,
     setRunDetailPanelRunId,
     stabilizeDocumentPanelScroll,
@@ -3545,6 +3600,7 @@ export const ChatView = memo(function ChatView() {
         </div>
 
       <motion.div
+        ref={rightPanelShellRef}
         className="relative flex-shrink-0 overflow-hidden bg-[var(--c-bg-page)]"
         initial={false}
         animate={{
@@ -3552,30 +3608,32 @@ export const ChatView = memo(function ChatView() {
           opacity: isPanelOpen ? 1 : 0,
           pointerEvents: isPanelOpen ? 'auto' : 'none',
         }}
-        transition={rightPanelLayoutTransition}
+        transition={rightPanelResizing ? { duration: 0 } : rightPanelLayoutTransition}
         style={{
           borderLeft: isPanelOpen ? '0.5px solid var(--c-border-subtle)' : 'none',
           willChange: 'width, opacity',
         }}
       >
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          title="Resize"
-          onPointerDown={handleRightPanelResizeStart}
-          className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize"
-        />
-        <RightPanel
-          tabs={rightPanelRenderedTabs}
-          activeTabId={effectiveRightPanelTabId}
-          onSelectTab={setActiveRightPanelTabId}
-          onCloseTab={closeRightPanelTab}
-          tabOrder={rightPanelTabOrder}
-          onTabOrderChange={setRightPanelTabOrder}
-          addOptions={rightPanelAddOptions}
-          addLabel={t.rightPanel.newTab}
-          emptyLabel={t.rightPanel.empty}
-        />
+        <div ref={rightPanelContentRef} style={{ width: rightPanelWidth, height: '100%' }}>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Resize"
+            onPointerDown={handleRightPanelResizeStart}
+            className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize"
+          />
+          <RightPanel
+            tabs={rightPanelRenderedTabs}
+            activeTabId={effectiveRightPanelTabId}
+            onSelectTab={setActiveRightPanelTabId}
+            onCloseTab={closeRightPanelTab}
+            tabOrder={rightPanelTabOrder}
+            onTabOrderChange={setRightPanelTabOrder}
+            addOptions={rightPanelAddOptions}
+            addLabel={t.rightPanel.newTab}
+            emptyLabel={t.rightPanel.empty}
+          />
+        </div>
       </motion.div>
       </div>
 

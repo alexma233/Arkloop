@@ -355,7 +355,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			}
 		}
 
-		handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
+		handled, reply, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			text, true, platformChatID,
 			nil,
@@ -391,11 +391,13 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			if err := commitTx(); err != nil {
 				return err
 			}
-			if cancelRunID != uuid.Nil {
-				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
-			}
-			if replyText != "" {
-				c.sendQQReply(ctx, cfg, "private", platformChatID, replyText)
+			if reply != nil {
+				if reply.CancelRunID != uuid.Nil {
+					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, reply.CancelRunID.String())
+				}
+				if reply.Text != "" {
+					c.sendQQReply(ctx, cfg, "private", platformChatID, reply.Text)
+				}
 			}
 			return nil
 		}
@@ -404,7 +406,7 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 	// --- 群聊命令路径 ---
 	if !isPrivate {
 		cmdText := stripLeadingMention(text)
-		handled, replyText, _, _, cancelRunID, err := DispatchChannelCommand(
+		handled, reply, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			cmdText, false, platformChatID,
 			nil,
@@ -450,8 +452,10 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 			if err := commitTx(); err != nil {
 				return err
 			}
-			if cancelRunID != uuid.Nil {
-				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+			if reply != nil {
+				if reply.CancelRunID != uuid.Nil {
+					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, reply.CancelRunID.String())
+				}
 			}
 			if strings.HasPrefix(cmdText, "/heartbeat") {
 				pendingHeartbeatNotify = false
@@ -459,8 +463,8 @@ func (c *qqConnector) HandleEvent(ctx context.Context, traceID string, ch data.C
 					_ = c.bus.Publish(ctx, pgnotify.ChannelHeartbeat, "")
 				}
 			}
-			if replyText != "" {
-				c.sendQQReply(ctx, cfg, "group", platformChatID, replyText)
+			if reply != nil && reply.Text != "" {
+				c.sendQQReply(ctx, cfg, "group", platformChatID, reply.Text)
 			}
 			return nil
 		}

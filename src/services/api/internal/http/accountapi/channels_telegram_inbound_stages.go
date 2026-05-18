@@ -153,7 +153,7 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			}
 			return &telegramInboundStageAResult{finalState: inboundStateIgnoredUnlinked}, nil
 		}
-		handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
+		handled, reply, err := DispatchChannelCommand(
 			ctx, tx, ch, *persona, identity,
 			trimmedCommandText, true, incoming.PlatformChatID,
 			c.entitlementSvc,
@@ -194,13 +194,13 @@ func (c telegramConnector) persistTelegramInboundStageA(
 		}
 		if handled {
 			var replyMarkup *telegrambot.InlineKeyboardMarkup
-			if prefResult != nil {
-				replyMarkup = buildPreferenceKeyboard(prefResult)
-			} else if personaResult != nil {
-				replyMarkup = buildPersonaKeyboard(personaResult)
-			}
-			if cancelRunID != uuid.Nil {
-				_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
+			replyText := ""
+			if reply != nil {
+				replyMarkup = BuildTelegramInteractive(reply)
+				replyText = reply.Text
+				if reply.CancelRunID != uuid.Nil {
+					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, reply.CancelRunID.String())
+				}
 			}
 			if err := c.recordTelegramInboundFinalState(ctx, tx, ch, incoming, &identity.ID, nil, nil, inboundStateCommandHandled, baseMetadata); err != nil {
 				return nil, err
@@ -223,7 +223,7 @@ func (c telegramConnector) persistTelegramInboundStageA(
 				cmdText = "/new"
 			}
 			commandIdentity := identity
-			handled, replyText, prefResult, personaResult, cancelRunID, err := DispatchChannelCommand(
+			handled, reply, err := DispatchChannelCommand(
 				ctx, tx, ch, *persona, commandIdentity,
 				cmdText, false, incoming.PlatformChatID,
 				c.entitlementSvc,
@@ -263,19 +263,19 @@ func (c telegramConnector) persistTelegramInboundStageA(
 			}
 			if handled {
 				var replyMarkup *telegrambot.InlineKeyboardMarkup
-				if prefResult != nil {
-					replyMarkup = buildPreferenceKeyboard(prefResult)
-				} else if personaResult != nil {
-					replyMarkup = buildPersonaKeyboard(personaResult)
+				replyText := ""
+				if reply != nil {
+					replyMarkup = BuildTelegramInteractive(reply)
+					replyText = reply.Text
+					if reply.CancelRunID != uuid.Nil {
+						_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, reply.CancelRunID.String())
+					}
 				}
 				if err := c.recordTelegramInboundFinalState(ctx, tx, ch, incoming, &commandIdentity.ID, nil, nil, inboundStateCommandHandled, baseMetadata); err != nil {
 					return nil, err
 				}
 				if err := commitTx(); err != nil {
 					return nil, err
-				}
-				if cancelRunID != uuid.Nil {
-					_, _ = c.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgnotify.ChannelRunCancel, cancelRunID.String())
 				}
 				return &telegramInboundStageAResult{finalState: inboundStateCommandHandled, replyText: replyText, replyMarkup: replyMarkup}, nil
 			}
