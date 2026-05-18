@@ -159,11 +159,6 @@ func NewHeartbeatPrepareMiddleware() RunMiddleware {
 			rc.ToolSpecs = append(rc.ToolSpecs, heartbeattool.Spec)
 		}
 
-		rc.ToolChoice = &llm.ToolChoice{
-			Mode:     "specific",
-			ToolName: heartbeattool.ToolName,
-		}
-
 		return next(ctx, rc)
 	}
 }
