@@ -2499,13 +2499,14 @@ export function readGtdEnabled(): boolean {
 }
 
 export function writeGtdEnabled(v: boolean): void {
-  if (!canUseLocalStorage()) return
-  try {
-    localStorage.setItem(GTD_ENABLED_STORAGE_KEY, String(v))
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(GTD_ENABLED_CHANGED_EVENT, { detail: v }))
-    }
-  } catch { /* ignore */ }
+  if (canUseLocalStorage()) {
+    try {
+      localStorage.setItem(GTD_ENABLED_STORAGE_KEY, String(v))
+    } catch { /* ignore */ }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(GTD_ENABLED_CHANGED_EVENT, { detail: v }))
+  }
 }
 
 export function subscribeGtdEnabled(listener: (enabled: boolean) => void): () => void {

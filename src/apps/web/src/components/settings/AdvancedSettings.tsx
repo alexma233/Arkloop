@@ -135,6 +135,13 @@ function applySidebarGrouping(value: unknown): void {
   writeGtdEnabled(value === 'gtd')
 }
 
+function collectImportedCustomThemes(value: unknown): ThemeDefinition[] {
+  if (!value || typeof value !== 'object') return []
+  return Object.values(value).filter((item): item is ThemeDefinition => (
+    !!item && typeof item === 'object' && 'id' in item && typeof item.id === 'string'
+  ))
+}
+
 function formatUsd(value: number) {
   return `$${value.toFixed(4)}`
 }
@@ -1118,13 +1125,7 @@ function DataPane({ onReloadOverview }: { onReloadOverview: () => Promise<void> 
         return
       }
       const importedThemes = result.themes
-      if (importedThemes?.customThemes && typeof importedThemes.customThemes === 'object') {
-        for (const value of Object.values(importedThemes.customThemes)) {
-          if (value && typeof value === 'object' && 'id' in value && typeof value.id === 'string') {
-            saveCustomTheme(value as ThemeDefinition)
-          }
-        }
-      }
+      const importedCustomThemes = collectImportedCustomThemes(importedThemes?.customThemes)
       let hasImportedBackground = false
       let importedBackground: ThemeBackgroundImage | null = null
       if (importedThemes && 'backgroundImage' in importedThemes) {
@@ -1135,23 +1136,33 @@ function DataPane({ onReloadOverview }: { onReloadOverview: () => Promise<void> 
         importedBackground = backgroundResult.value
         hasImportedBackground = true
       }
+      const importedBackgroundOpacity = typeof importedThemes?.backgroundImageOpacity === 'number' && Number.isFinite(importedThemes.backgroundImageOpacity)
+        ? importedThemes.backgroundImageOpacity
+        : null
+      const importedSidebarGrouping = importedThemes?.sidebarGrouping
+      const importedThemePreset = importedThemes?.themePreset
+      const importedCustomThemeId = importedThemes?.customThemeId
+
       if (hasImportedBackground && !setBackgroundImage(importedBackground)) {
         throw new Error(t.requestFailed)
       }
-      if (typeof importedThemes?.backgroundImageOpacity === 'number' && Number.isFinite(importedThemes.backgroundImageOpacity)) {
-        setBackgroundImageOpacity(importedThemes.backgroundImageOpacity)
+      for (const theme of importedCustomThemes) {
+        saveCustomTheme(theme)
       }
-      applySidebarGrouping(importedThemes?.sidebarGrouping)
-      if (isThemePreset(importedThemes?.themePreset)) {
-        if (importedThemes.themePreset === 'custom' && importedThemes.customThemeId) {
-          setActiveCustomTheme(importedThemes.customThemeId)
-        } else if (importedThemes.themePreset === 'background-image') {
+      if (importedBackgroundOpacity !== null) {
+        setBackgroundImageOpacity(importedBackgroundOpacity)
+      }
+      applySidebarGrouping(importedSidebarGrouping)
+      if (isThemePreset(importedThemePreset)) {
+        if (importedThemePreset === 'custom' && importedCustomThemeId) {
+          setActiveCustomTheme(importedCustomThemeId)
+        } else if (importedThemePreset === 'background-image') {
           setThemePreset('background-image')
         } else {
-          setThemePreset(importedThemes.themePreset)
+          setThemePreset(importedThemePreset)
         }
-      } else if (importedThemes?.customThemeId) {
-        setActiveCustomTheme(importedThemes.customThemeId)
+      } else if (importedCustomThemeId) {
+        setActiveCustomTheme(importedCustomThemeId)
       }
       addToast(ds.advancedImportDone, 'success')
       await onReloadOverview()

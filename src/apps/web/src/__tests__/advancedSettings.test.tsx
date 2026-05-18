@@ -356,4 +356,150 @@ describe('AdvancedSettings', () => {
       }),
     }))
   })
+
+  it('导入主题外观校验失败时不写入部分主题状态', async () => {
+    const saveCustomTheme = vi.fn()
+    const setBackgroundImage = vi.fn(() => true)
+    const setBackgroundImageOpacity = vi.fn()
+    const setThemePreset = vi.fn()
+    const setActiveCustomTheme = vi.fn()
+    const writeGtdEnabled = vi.fn()
+    const desktopApi = {
+      advanced: {
+        getOverview: vi.fn().mockResolvedValue({
+          appName: 'Arkloop',
+          appVersion: '1.2.3',
+          githubUrl: 'https://github.com/qqqqqf-q/Arkloop',
+          telegramUrl: null,
+          iconDataUrl: null,
+          configPath: '/tmp/config.json',
+          dataDir: '/tmp/data',
+          logsDir: '/tmp/logs',
+          sqlitePath: '/tmp/data.db',
+          links: [],
+          status: [],
+          usage: null,
+        }),
+        chooseDataFolder: vi.fn().mockResolvedValue('/tmp/export'),
+        exportDataBundle: vi.fn().mockResolvedValue({ ok: true, filePath: '/tmp/export/bundle' }),
+        importDataBundle: vi.fn().mockResolvedValue({
+          ok: true,
+          importedFrom: '/tmp/import',
+          themes: {
+            themePreset: 'background-image',
+            customThemeId: 'theme-1',
+            customThemes: {
+              'theme-1': { id: 'theme-1', name: 'Theme 1' },
+            },
+            backgroundImage: { dataUrl: 12 },
+            backgroundImageOpacity: 55,
+            sidebarGrouping: 'gtd',
+          },
+        }),
+        listLogs: vi.fn().mockResolvedValue({ entries: [] }),
+      },
+      config: {
+        get: vi.fn().mockResolvedValue({
+          network: {
+            proxyEnabled: false,
+            requestTimeoutMs: 30000,
+            retryCount: 1,
+          },
+        }),
+        set: vi.fn().mockResolvedValue({ ok: true }),
+      },
+    }
+
+    vi.doMock('../storage', async () => {
+      const actual = await vi.importActual<typeof import('../storage')>('../storage')
+      return {
+        ...actual,
+        readLocaleFromStorage: vi.fn(() => 'zh'),
+        readGtdEnabled: vi.fn(() => false),
+        writeGtdEnabled,
+        writeLocaleToStorage: vi.fn(),
+      }
+    })
+    vi.doMock('../api', async () => {
+      const actual = await vi.importActual<typeof import('../api')>('../api')
+      return {
+        ...actual,
+        getMyUsage: vi.fn().mockResolvedValue(null),
+        getMyDailyUsage: vi.fn().mockResolvedValue([]),
+        getMyHourlyUsage: vi.fn().mockResolvedValue([]),
+        getMyUsageByModel: vi.fn().mockResolvedValue([]),
+      }
+    })
+    vi.doMock('../components/settings/ConnectionSettings', () => ({
+      ConnectionSettings: () => <div>connection-settings</div>,
+    }))
+    vi.doMock('../components/settings/ModulesSettings', () => ({
+      ModulesSettings: () => <div>modules-settings</div>,
+    }))
+    vi.doMock('../components/settings/ExtensionsSettings', () => ({
+      ExtensionsSettings: () => <div>extensions-settings</div>,
+    }))
+    vi.doMock('../components/settings/UpdateSettings', () => ({
+      UpdateSettingsContent: () => <div>update-settings</div>,
+    }))
+    vi.doMock('../contexts/AppearanceContext', () => ({
+      useAppearance: () => ({
+        themePreset: 'default',
+        setThemePreset,
+        customThemeId: null,
+        customThemes: {},
+        saveCustomTheme,
+        setActiveCustomTheme,
+        backgroundImage: null,
+        setBackgroundImage,
+        backgroundImageOpacity: 40,
+        setBackgroundImageOpacity,
+      }),
+    }))
+    vi.doMock('@arkloop/shared', async () => {
+      const actual = await vi.importActual<typeof import('@arkloop/shared')>('@arkloop/shared')
+      return {
+        ...actual,
+        useToast: () => ({ addToast }),
+      }
+    })
+    vi.doMock('@arkloop/shared/desktop', () => ({
+      getDesktopApi: () => desktopApi,
+    }))
+
+    const { AdvancedSettings } = await import('../components/settings/AdvancedSettings')
+    const { LocaleProvider } = await import('../contexts/LocaleContext')
+
+    await act(async () => {
+      root!.render(
+        <LocaleProvider>
+          <AdvancedSettings accessToken="token" />
+        </LocaleProvider>,
+      )
+    })
+    await flushEffects()
+
+    const dataButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('数据'))
+    expect(dataButton).toBeTruthy()
+
+    await act(async () => {
+      dataButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushEffects()
+
+    const importButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('导入数据'))
+    expect(importButton).toBeTruthy()
+
+    await act(async () => {
+      importButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushEffects()
+
+    expect(saveCustomTheme).not.toHaveBeenCalled()
+    expect(setBackgroundImage).not.toHaveBeenCalled()
+    expect(setBackgroundImageOpacity).not.toHaveBeenCalled()
+    expect(setThemePreset).not.toHaveBeenCalled()
+    expect(setActiveCustomTheme).not.toHaveBeenCalled()
+    expect(writeGtdEnabled).not.toHaveBeenCalled()
+  })
 })

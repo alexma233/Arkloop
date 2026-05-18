@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ThemeBackgroundImage } from '../themes/types'
 import {
@@ -120,6 +120,28 @@ describe('appearance storage', () => {
     writeGtdEnabled(false)
     expect(readGtdEnabled()).toBe(false)
     expect(observed).toEqual([true, false])
+
+    unsubscribe()
+  })
+
+  it('storage 写入失败时仍广播 GTD 分组变更', () => {
+    const storage = createMemoryStorage()
+    const failingStorage = {
+      ...storage,
+      setItem: vi.fn(() => {
+        throw new Error('quota')
+      }),
+    } as Storage
+    Object.defineProperty(globalThis, 'localStorage', { value: failingStorage, configurable: true })
+    Object.defineProperty(window, 'localStorage', { value: failingStorage, configurable: true })
+
+    const observed: boolean[] = []
+    const unsubscribe = subscribeGtdEnabled((enabled) => observed.push(enabled))
+
+    writeGtdEnabled(true)
+
+    expect(observed).toEqual([true])
+    expect(readGtdEnabled()).toBe(false)
 
     unsubscribe()
   })
