@@ -214,7 +214,8 @@ func NewEngineV1(deps EngineV1Deps) (*EngineV1, error) {
 	hookRegistry.RegisterContextContributor(pipeline.NewImpressionContextContributor(pipeline.NewPgxImpressionStore(deps.DBPool)))
 	if nowledgeProvider := resolveNowledgeProvider(context.Background(), deps.ConfigResolver); nowledgeProvider != nil {
 		linkRepo := data.ExternalThreadLinksRepository{}
-		hookRegistry.RegisterContextContributor(pipeline.NewNowledgeContextContributor(nowledgeProvider))
+		maxCtx, minScore := nowledgeRecallConfig()
+		hookRegistry.RegisterContextContributor(pipeline.NewNowledgeContextContributor(nowledgeProvider, maxCtx, minScore))
 		_ = hookRegistry.SetThreadPersistenceProvider(pipeline.NewNowledgeThreadPersistenceProvider(
 			nowledgeProvider,
 			pgxExternalThreadLinks{repo: linkRepo, pool: deps.DBPool},
@@ -318,6 +319,11 @@ func resolveNowledgeProvider(ctx context.Context, resolver sharedconfig.Resolver
 		}
 	}
 	return nowledge.NewClient(cfg)
+}
+
+func nowledgeRecallConfig() (int, float64) {
+	envCfg := nowledge.LoadConfigFromEnv()
+	return envCfg.ResolvedMaxContextResults(), envCfg.ResolvedRecallMinScore()
 }
 
 func (e *EngineV1) Execute(ctx context.Context, pool *pgxpool.Pool, run data.Run, input ExecuteInput) error {
