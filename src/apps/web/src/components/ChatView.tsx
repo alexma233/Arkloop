@@ -1113,11 +1113,6 @@ export const ChatView = memo(function ChatView() {
     (sending || activeRunId != null)
 
   const messageListRef = useRef<MessageListHandle>(null)
-  // 提供给 useScrollPin 的桥：scrollToBottom 触发时先让 Virtuoso 跳过中间区间，
-  // 避免浏览器原生 smooth scroll 逐帧穿过数千 px 引发挂载风暴。
-  const jumpHistoryToEnd = useCallback(() => {
-    messageListRef.current?.scrollHistoryToEnd('auto')
-  }, [])
 
   const {
     bottomRef,
@@ -1125,7 +1120,6 @@ export const ChatView = memo(function ChatView() {
     lastUserMsgRef,
     lastUserPromptRef,
     inputAreaRef,
-    forceInstantBottomScrollRef,
     isAtBottomRef,
     handleScrollContainerScroll,
     stabilizeDocumentPanelScroll,
@@ -1139,18 +1133,8 @@ export const ChatView = memo(function ChatView() {
     messages,
     liveAssistantTurn,
     liveRunUiVisible,
-    topLevelCodeExecutionsLength: topLevelCodeExecutions.length,
     promptPinningDisabled: isWorkMode,
-    jumpHistoryToEnd,
   })
-
-  // 把 scrollContainer 的 DOM 元素以 state 暴露出来，供 Virtuoso 的 customScrollParent 使用。
-  // 必须保持与 scrollContainerRef.current 同步——同一个 div 同时承担 useScrollPin 的 ref 目标与 Virtuoso 的滚动父容器。
-  const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null)
-  const setScrollContainerEl = useCallback((el: HTMLDivElement | null) => {
-    (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
-    setScrollParent(el)
-  }, [scrollContainerRef])
 
   const { resetAssistantTurnLive, captureTerminalRunCache, persistThreadRunHandoff } = useRunTransition()
 
@@ -1184,12 +1168,6 @@ export const ChatView = memo(function ChatView() {
     topLevelSubAgents,
     topLevelWebFetches,
   ])
-
-  useEffect(() => {
-    if (messagesLoading) {
-      forceInstantBottomScrollRef.current = false
-    }
-  }, [messagesLoading, forceInstantBottomScrollRef])
 
   const canCancel =
     activeRunId != null &&
@@ -2125,9 +2103,9 @@ export const ChatView = memo(function ChatView() {
       }
       return null
     })()
-    const shouldPinNewPrompt =
-      !isInterruptedRunStatus(terminalRunHandoffStatus) &&
-      !isInterruptedRunStatus(lastAssistantTerminalStatus)
+    const shouldPinNewPrompt = !isInterruptedRunStatus(lastAssistantTerminalStatus)
+    // eslint-disable-next-line no-console
+    console.log('[ChatView:submit]', { shouldPinNewPrompt, terminalRunHandoffStatus, lastAssistantTerminalStatus, sending, isStreaming, msgCount: messages.length })
 
     if (sending && !isStreaming) {
       const text = draft.trim()
@@ -3410,7 +3388,7 @@ export const ChatView = memo(function ChatView() {
   // CSS custom properties set on the parent div.
   const messageListArea = useMemo(() => (
     <div
-      ref={setScrollContainerEl}
+      ref={scrollContainerRef}
       onScroll={handleScrollContainerScroll}
       className="theme-surface-page chat-scroll-hidden relative flex-1 min-h-0 overflow-y-auto bg-[var(--c-bg-page)] [scrollbar-gutter:stable]"
       style={{ contain: 'layout paint style' }}
@@ -3444,7 +3422,6 @@ export const ChatView = memo(function ChatView() {
             <CopTimelineLocalExpansionProvider stabilizeScroll={stabilizeDocumentPanelScroll}>
               <MessageList
               ref={messageListRef}
-              scrollParent={scrollParent}
               isWorkMode={isWorkMode}
               lastTurnStartIdx={lastTurnStartIdx}
               lastTurnRef={lastUserMsgRef}
@@ -3487,8 +3464,6 @@ export const ChatView = memo(function ChatView() {
     openCodePanel,
     openDocumentPanel,
     openResourcePanel,
-    scrollParent,
-    setScrollContainerEl,
     sourcePanelMessageId,
     setRunDetailPanelRunId,
     stabilizeDocumentPanelScroll,

@@ -1,5 +1,4 @@
-import { memo, Fragment, forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ComponentProps, type ReactNode } from 'react'
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { memo, Fragment, forwardRef, useCallback, useImperativeHandle, useMemo, type ComponentProps } from 'react'
 import { MessageBubble } from './MessageBubble'
 import { CopTimeline, type WebSearchPhaseStep } from './cop-timeline/CopTimeline'
 import { CopSegmentBlocks } from './CopSegmentBlocks'
@@ -34,8 +33,7 @@ import {
   widgetToolCallIdsPlacedInTurn,
   historicWidgetsForCop,
 } from '../lib/chat-helpers'
-import { isLocalUserMessage, messageClientMessageId, messageTextContent } from '../messageContent'
-import type { MessageMeta } from '../contexts/message-meta'
+import { isLocalUserMessage, messageClientMessageId } from '../messageContent'
 
 type LocationState = {
   initialRunId?: string
@@ -45,26 +43,11 @@ type LocationState = {
   userEnterMessageId?: string
 } | null
 
-// 给 Virtuoso 用的 defaultItemHeight 估算函数：
-// user 消息按字符数粗估，assistant 按 segments / widgets / code 计数粗估。
-// 估算越准，快速拖动滚动条时的跳动幅度越小。
-function estimateMessageHeight(msg: AgentMessage, meta: MessageMeta | undefined): number {
-  if (msg.role === 'user') {
-    const text = messageTextContent(msg)
-    return Math.max(60, Math.ceil(text.length / 80) * 24 + 32)
-  }
-  const segments = meta?.assistantTurn?.segments ?? []
-  const widgetCount = meta?.widgets?.length ?? 0
-  const codeCount = meta?.codeExecutions?.length ?? 0
-  return Math.max(120, segments.length * 200 + widgetCount * 140 + codeCount * 80)
-}
-
 export interface MessageListHandle {
   scrollToMessage(
     messageId: string,
     options?: { align?: 'start' | 'center' | 'end'; behavior?: 'auto' | 'smooth' },
   ): void
-  scrollHistoryToEnd(behavior: 'smooth' | 'auto'): void
 }
 
 export type MessageListProps = {
@@ -72,7 +55,6 @@ export type MessageListProps = {
   lastUserPromptRef: React.RefObject<HTMLDivElement | null>
   lastTurnChildren?: React.ReactNode
   lastTurnStartIdx: number
-  scrollParent: HTMLDivElement | null
   handleRetryUserMessage: (message: AgentMessage) => void
   handleEditMessage: (message: AgentMessage, newContent: string) => void
   handleFork: (messageId: string) => Promise<void>
@@ -100,24 +82,11 @@ export type MessageListProps = {
   workFolder?: string | null
 }
 
-const HistoricMessageItem = memo(function HistoricMessageItem({
-  msg,
-  idx,
-  renderMessage,
-}: {
-  msg: AgentMessage
-  idx: number
-  renderMessage: (msg: AgentMessage, idx: number) => ReactNode
-}) {
-  return <>{renderMessage(msg, idx)}</>
-})
-
 export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(function MessageList({
   lastTurnRef,
   lastUserPromptRef,
   lastTurnChildren,
   lastTurnStartIdx,
-  scrollParent,
   handleRetryUserMessage,
   handleEditMessage,
   handleFork,
@@ -158,38 +127,13 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
   const userEnterMessageId = msgs.userEnterMessageId
   const privateThreadIds = threadList.privateThreadIds
 
-  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const historicMessages = useMemo(
     () => messages.slice(0, lastTurnStartIdx),
     [messages, lastTurnStartIdx],
   )
 
-  // 基于当前 thread 历史消息内容算平均估算高度，给 Virtuoso 作 defaultItemHeight。
-  // 显式列出 meta.getMeta 作为依赖会触发不必要的重算（meta 是稳定 ref 但 getMeta 在某些 provider 下会变），
-  // 这里跟 copPayloadsByMessageId 的 useMemo 一致只跟 historicMessages。
-  const defaultItemHeight = useMemo(() => {
-    if (historicMessages.length === 0) return 200
-    let total = 0
-    for (const msg of historicMessages) {
-      total += estimateMessageHeight(msg, meta.getMeta(msg.id))
-    }
-    return Math.round(total / historicMessages.length)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historicMessages])
-
   useImperativeHandle(ref, () => ({
     scrollToMessage(messageId, options) {
-      const historicIdx = historicMessages.findIndex((m) => m.id === messageId)
-      if (historicIdx >= 0) {
-        virtuosoRef.current?.scrollToIndex({
-          index: historicIdx,
-          align: options?.align ?? 'start',
-          behavior: options?.behavior ?? 'smooth',
-        })
-        return
-      }
-      const lastTurnHit = messages.some((m, i) => i >= lastTurnStartIdx && m.id === messageId)
-      if (!lastTurnHit) return
       const el = document.querySelector(`[data-message-id="${messageId}"]`)
       if (!(el instanceof HTMLElement)) return
       el.scrollIntoView({
@@ -197,18 +141,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
         block: options?.align === 'center' ? 'center' : options?.align === 'end' ? 'end' : 'start',
       })
     },
-    // 跳到历史区末尾。Virtuoso 自带 scrollToIndex 比浏览器原生 smooth scroll 更聪明：
-    // 知道目标 index 后能直接定位、按需挂载，不会逐帧穿过几千 px 触发大量 mount/unmount。
-    // 历史区为空时静默 no-op，由调用方直接处理 lastTurn 滚动。
-    scrollHistoryToEnd(behavior) {
-      if (historicMessages.length === 0) return
-      virtuosoRef.current?.scrollToIndex({
-        index: historicMessages.length - 1,
-        align: 'end',
-        behavior,
-      })
-    },
-  }), [historicMessages, messages, lastTurnStartIdx])
+  }), [])
 
   const hasCurrentRunHandoffUi =
     stream.preserveLiveRunUi &&
@@ -704,31 +637,17 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
     workFolder,
   ])
 
-  const renderHistoricItem = useCallback((idx: number, msg: AgentMessage) => (
-    <HistoricMessageItem msg={msg} idx={idx} renderMessage={renderMessage} />
-  ), [renderMessage])
-
   const hasLastTurn = lastTurnStartIdx < messages.length
   return (
     <>
-      {scrollParent != null && historicMessages.length > 0 ? (
-        <Virtuoso
-          ref={virtuosoRef}
-          customScrollParent={scrollParent}
-          data={historicMessages}
-          itemContent={renderHistoricItem}
-          computeItemKey={(_idx, msg) => messageClientMessageId(msg) ?? msg.id}
-          defaultItemHeight={defaultItemHeight}
-          // 大 overscan：常见上下翻看落在已挂载区内，减少 mount。
-          // 不使用 scrollSeek：enter 阈值要么误触（轻微滚轮也出现整块占位），要么漏触（快滚仍卡），聊天场景宁可偶发卡顿也不要满屏「灰色条」。
-          increaseViewportBy={{ top: 3500, bottom: 3500 }}
-          initialTopMostItemIndex={Math.max(0, historicMessages.length - 1)}
-        />
-      ) : (
-        // mount 第一帧 scrollParent 还没就绪时的回退渲染。React 18 通常会在 paint 之前完成 setScrollParent
-        // 触发的二次 render，用户感知不到这一帧。空 thread 时也走这里（不挂 Virtuoso 避免空容器）。
-        historicMessages.map(renderMessage)
-      )}
+      {historicMessages.map((msg, idx) => (
+        <div
+          key={messageClientMessageId(msg) ?? msg.id}
+          style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}
+        >
+          {renderMessage(msg, idx)}
+        </div>
+      ))}
       {(hasLastTurn || lastTurnChildren) && (
         <div ref={lastTurnRef} className="flex flex-col" style={{ gap: isWorkMode ? 0 : '1.5rem' }}>
           {hasLastTurn && messages.slice(lastTurnStartIdx).map((msg, i) => renderMessage(msg, lastTurnStartIdx + i))}
