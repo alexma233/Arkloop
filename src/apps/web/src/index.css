@@ -1641,7 +1641,8 @@ button:not(:disabled) {
 }
 
 :root[data-background-image="custom"] {
-  --c-bg-page-gradient-stop: color-mix(in srgb, var(--c-bg-page) 90%, transparent);
+  --c-bg-page-gradient-stop: var(--c-bg-page);
+  --c-chat-bg-gradient-stop: transparent;
 }
 
 :root[data-background-image="custom"] .theme-background-layer {
@@ -1667,6 +1668,10 @@ button:not(:disabled) {
 }
 
 @supports (color: color-mix(in srgb, black, white)) {
+  :root[data-background-image="custom"] {
+    --c-bg-page-gradient-stop: color-mix(in srgb, var(--c-bg-page) 90%, transparent);
+  }
+
   :root[data-background-image="custom"] .theme-surface-page {
     background-color: color-mix(in srgb, var(--c-bg-page) 76%, transparent);
   }
@@ -1677,10 +1682,6 @@ button:not(:disabled) {
 
   :root[data-background-image="custom"] .theme-surface-page .theme-surface-page {
     background-color: transparent;
-  }
-
-  :root[data-background-image="custom"] {
-    --c-chat-bg-gradient-stop: transparent;
   }
 
   :root[data-background-image="custom"] .theme-chat-surface {

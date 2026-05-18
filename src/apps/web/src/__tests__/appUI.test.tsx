@@ -1,6 +1,7 @@
 import { act, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppUIProvider, useSettingsUI, useSidebarUI, useTitleBarRightPanelUI } from '../contexts/app-ui'
@@ -295,6 +296,17 @@ describe('AppUIProvider sidebar state', () => {
       root.unmount()
     })
     container.remove()
+  })
+})
+
+describe('custom background surface CSS', () => {
+  it('keeps chat gradient transparent outside color-mix support', () => {
+    const css = readFileSync('src/index.css', 'utf-8')
+
+    expect(css).toContain(':root[data-background-image="custom"]')
+    expect(css).toContain('--c-chat-bg-gradient-stop: transparent;')
+    expect(css).toContain('.theme-chat-surface')
+    expect(css).toContain('background-color: color-mix(in srgb, var(--c-bg-page) 42%, transparent);')
   })
 })
 
