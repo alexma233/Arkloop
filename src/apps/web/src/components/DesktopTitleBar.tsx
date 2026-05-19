@@ -418,15 +418,18 @@ export function DesktopTitleBar({
             onClose={handleWindowClose}
           />
         )}
-        {updatePopoverOpen && <UpdatePopover
-          ref={popoverRef}
-          position={updatePopoverPosition}
-          state={appUpdateState ?? null}
-          onDownload={onDownloadApp}
-          onInstall={onInstallApp}
-          onOpenSettings={onOpenSettings}
-          onClose={() => setUpdatePopoverOpen(false)}
-        />}
+        {updatePopoverOpen && createPortal(
+          <UpdatePopover
+            ref={popoverRef}
+            position={updatePopoverPosition}
+            state={appUpdateState ?? null}
+            onDownload={onDownloadApp}
+            onInstall={onInstallApp}
+            onOpenSettings={onOpenSettings}
+            onClose={() => setUpdatePopoverOpen(false)}
+          />,
+          document.body,
+        )}
       </div>
     </div>
   )
@@ -761,14 +764,15 @@ const UpdatePopover = forwardRef<HTMLDivElement, UpdatePopoverProps>(function Up
         top: `${position.top}px`,
         right: `${position.right}px`,
         width: 280,
-        zIndex: 1000,
+        zIndex: 9999,
         background: 'var(--c-bg-page)',
         border: '0.5px solid var(--c-border-mid)',
         borderRadius: 12,
         boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
         padding: 14,
         animation: 'updatePopoverIn 150ms ease-out',
-      }}
+        WebkitAppRegion: 'no-drag',
+      } as React.CSSProperties}
     >
       {renderContent()}
       <style>{`@keyframes updatePopoverIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>

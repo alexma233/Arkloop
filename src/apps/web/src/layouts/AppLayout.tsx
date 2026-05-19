@@ -27,6 +27,7 @@ import {
 } from '../contexts/app-ui'
 import { useCredits } from '../contexts/credits'
 import { isPerfDebugEnabled, recordPerfValue } from '../perfDebug'
+import { applyDevAppUpdateMock, resolveAppUpdaterApi } from '../devAppUpdateMock'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'arkloop:web:sidebar_width'
 const SIDEBAR_COLLAPSED_WIDTH = 48
@@ -237,10 +238,10 @@ export function AppLayout() {
   // app updater
   useEffect(() => {
     if (!desktop) return
-    const api = getDesktopApi()
-    if (!api?.appUpdater) return
-    void api.appUpdater.getState().then(setAppUpdateState).catch(() => {})
-    return api.appUpdater.onState(setAppUpdateState)
+    const api = resolveAppUpdaterApi()
+    if (!api) return
+    void api.getState().then((state) => setAppUpdateState(applyDevAppUpdateMock(state))).catch(() => {})
+    return api.onState((state) => setAppUpdateState(applyDevAppUpdateMock(state) ?? state))
   }, [desktop])
 
   useEffect(() => {
@@ -256,18 +257,18 @@ export function AppLayout() {
   }, [desktop])
 
   const handleCheckAppUpdate = useCallback(() => {
-    const api = getDesktopApi()
-    void api?.appUpdater?.check().then(setAppUpdateState).catch(() => {})
+    const api = resolveAppUpdaterApi()
+    void api?.check().then((state) => setAppUpdateState(applyDevAppUpdateMock(state) ?? state)).catch(() => {})
   }, [])
 
   const handleDownloadApp = useCallback(() => {
-    const api = getDesktopApi()
-    void api?.appUpdater?.download().then(setAppUpdateState).catch(() => {})
+    const api = resolveAppUpdaterApi()
+    void api?.download().then((state) => setAppUpdateState(applyDevAppUpdateMock(state) ?? state)).catch(() => {})
   }, [])
 
   const handleInstallApp = useCallback(() => {
-    const api = getDesktopApi()
-    void api?.appUpdater?.install().catch(() => {})
+    const api = resolveAppUpdaterApi()
+    void api?.install().catch(() => {})
   }, [])
 
   const handleTitleBarOpenSettings = useCallback((tab?: SettingsTab | 'voice') => {
