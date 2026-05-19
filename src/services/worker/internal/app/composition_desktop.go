@@ -824,6 +824,7 @@ func (e *DesktopEngine) Execute(ctx context.Context, run data.Run, traceID strin
 		}),
 		pipeline.NewImpressionPrepareMiddleware(impStore, e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
 		pipeline.NewSuggestionPrepareMiddleware(sugStore, e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
+		pipeline.NewActivityRecorderPrepareMiddleware(e.db, e.auxGateway, e.emitDebugEvents, e.routingLoader),
 		pipeline.NewStickerPrepareMiddleware(e.db, e.messageAttachmentStore, pipeline.StickerPrepareConfig{
 			AuxGateway:          e.auxGateway,
 			EmitDebugEvents:     e.emitDebugEvents,
@@ -3238,6 +3239,11 @@ func desktopRouting(
 						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
 						rc.Gateway = resolution.Gateway
 					}
+				} else if pipeline.IsActivityRecorderRun(rc) {
+					if resolution, ok := pipeline.ResolveImpressionRouteForDesktop(ctx, db, rc, auxGateway, emitDebugEvents, routingLoader); ok {
+						decision = routing.ProviderRouteDecision{Selected: resolution.Selected}
+						rc.Gateway = resolution.Gateway
+					}
 				}
 			}
 			if decision.Selected == nil && decision.Denied == nil {
@@ -5051,9 +5057,9 @@ func loadDesktopRoutingConfig(ctx context.Context, db data.DesktopDB) (routing.P
 	for routeRows.Next() {
 		var (
 			id, credentialID, model, whenStr, advancedStr string
-			priority                                     int
-			multiplier                                   float64
-			costIn, costOut, costCW, costCR              *float64
+			priority                                      int
+			multiplier                                    float64
+			costIn, costOut, costCW, costCR               *float64
 		)
 		if err := routeRows.Scan(&id, &credentialID, &model, &priority,
 			&whenStr, &advancedStr, &multiplier, &costIn, &costOut, &costCW, &costCR); err != nil {
