@@ -35,7 +35,7 @@ import { useThreadLiveState } from '../contexts/thread-list'
 export const DESKTOP_TITLEBAR_HEIGHT = 44
 const WINDOWS_TITLEBAR_HEIGHT = 44
 const MAC_TITLEBAR_LEFT_PADDING = 76
-const DESKTOP_ICON_RAIL_LEFT_PADDING = 8
+const DESKTOP_ICON_RAIL_LEFT_PADDING = 12
 const PINNED_MENU_OPEN_DELAY_MS = 70
 const PINNED_MENU_GAP = 4
 
