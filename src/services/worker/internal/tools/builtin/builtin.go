@@ -25,6 +25,7 @@ import (
 	webfetch "arkloop/services/worker/internal/tools/builtin/web_fetch"
 	websearch "arkloop/services/worker/internal/tools/builtin/web_search"
 	writefile "arkloop/services/worker/internal/tools/builtin/write_file"
+	xsearch "arkloop/services/worker/internal/tools/builtin/x_search"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -43,6 +44,8 @@ func AgentSpecs() []tools.AgentToolSpec {
 		websearch.AgentSpecTavily,
 		websearch.AgentSpecSearxng,
 		websearch.AgentSpecExa,
+		xsearch.AgentSpec,
+		xsearch.AgentSpecXAI,
 		webfetch.AgentSpec,
 		webfetch.AgentSpecJina,
 		webfetch.AgentSpecFirecrawl,
@@ -77,6 +80,7 @@ func LlmSpecs() []llm.ToolSpec {
 		artifactguidelines.LlmSpec,
 		arkloophelp.LlmSpec,
 		websearch.LlmSpec,
+		xsearch.LlmSpec,
 		webfetch.LlmSpec,
 		read.LlmSpec,
 		writefile.LlmSpec,
@@ -108,6 +112,7 @@ func Executors(pool *pgxpool.Pool, rdb *redis.Client, resolver sharedconfig.Reso
 		websearch.AgentSpecTavily.Name:    websearch.NewTavilyExecutor(resolver),
 		websearch.AgentSpecSearxng.Name:   websearch.NewSearxngExecutor(resolver),
 		websearch.AgentSpecExa.Name:       websearch.NewExaExecutor(resolver),
+		xsearch.AgentSpec.Name:            xsearch.NewToolExecutor(resolver),
 		webfetch.AgentSpec.Name:           webfetch.NewToolExecutor(resolver),
 		webfetch.AgentSpecJina.Name:       webfetch.NewJinaExecutor(resolver),
 		webfetch.AgentSpecFirecrawl.Name:  webfetch.NewFirecrawlExecutor(resolver),

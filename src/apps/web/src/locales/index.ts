@@ -965,6 +965,7 @@ export interface LocaleStrings {
       enable: string;
       disable: string;
       refresh: string;
+      buildNow: string;
       runtimeMissing: string;
       runningSources: string;
       statusLabels: Record<string, string>;
@@ -998,11 +999,16 @@ export interface LocaleStrings {
       meetingDetectorDesc: string;
       snapshotCompaction: string;
       snapshotCompactionDesc: string;
+      builderSection: string;
+      builderInterval: string;
+      builderIntervalDesc: string;
+      builderManualDesc: string;
       loadFailed: string;
       installFailed: string;
       toggleFailed: string;
       refreshFailed: string;
       settingsFailed: string;
+      buildFailed: string;
     };
     voice: string;
     advanced: string;
@@ -1263,6 +1269,8 @@ export interface LocaleStrings {
     fetchConnectorDesc: string;
     searchConnectorTitle: string;
     searchConnectorDesc: string;
+    xSearchConnectorTitle: string;
+    xSearchConnectorDesc: string;
     providerLabel: string;
     providerNone: string;
     apiKeyLabel: string;
@@ -1293,6 +1301,10 @@ export interface LocaleStrings {
     searchProviderTavily: string;
     searchProviderExa: string;
     searchProviderSearxng: string;
+    xSearchProviderXai: string;
+    xSearchProviderXaiOAuth: string;
+    xSearchProviderXaiApiKey: string;
+    oauthConnect: string;
     searchProviderBasicDesc: string;
     searchProviderTavilyDesc: string;
     searchProviderExaDesc: string;

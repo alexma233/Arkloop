@@ -18,6 +18,7 @@ type ActiveProviderConfig struct {
 	GroupName    string
 	ProviderName string
 	APIKeyValue  *string
+	OAuthValue   *string
 	KeyPrefix    *string
 	BaseURL      *string
 	ConfigJSON   map[string]any
@@ -59,6 +60,7 @@ func activeConfigsFromStatuses(statuses []sharedtoolruntime.ProviderRuntimeStatu
 			GroupName:    status.GroupName,
 			ProviderName: status.ProviderName,
 			APIKeyValue:  status.APIKeyValue,
+			OAuthValue:   status.OAuthValue,
 			KeyPrefix:    status.KeyPrefix,
 			BaseURL:      status.BaseURL,
 			ConfigJSON:   status.ConfigJSON,

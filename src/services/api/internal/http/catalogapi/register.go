@@ -83,6 +83,7 @@ func RegisterRoutes(mux *nethttp.ServeMux, deps Deps) {
 	mux.HandleFunc("/v1/tool-catalog/", toolCatalogItemEntry(deps.AuthService, deps.AccountMembershipRepo, deps.ToolDescriptionOverridesRepo, deps.ProjectRepo))
 	mux.HandleFunc("/v1/tool-providers", toolProvidersEntry(deps.AuthService, deps.AccountMembershipRepo, deps.ToolProviderConfigsRepo, deps.SecretsRepo, deps.Pool, deps.DirectPool, deps.ProjectRepo))
 	mux.HandleFunc("/v1/tool-providers/", toolProviderEntry(deps.AuthService, deps.AccountMembershipRepo, deps.ToolProviderConfigsRepo, deps.SecretsRepo, deps.Pool, deps.DirectPool, deps.ProjectRepo))
+	mux.HandleFunc("/v1/tool-provider-oauth/callback", toolProviderOAuthCallbackEntry(deps.SecretsRepo, deps.Pool, deps.DirectPool))
 	mux.HandleFunc("/v1/skill-packages", skillPackagesEntry(deps.AuthService, deps.AccountMembershipRepo, deps.APIKeysRepo, deps.AuditWriter, deps.SkillPackagesRepo, deps.SkillStore))
 	mux.HandleFunc("/v1/skill-packages/", skillPackageEntry(deps.AuthService, deps.AccountMembershipRepo, deps.APIKeysRepo, deps.AuditWriter, deps.SkillPackagesRepo))
 	mux.HandleFunc("/v1/plugins", pluginsEntry(deps.AuthService, deps.AccountMembershipRepo, deps.APIKeysRepo, deps.AuditWriter, deps.PluginPackagesRepo, deps.PluginInstaller, deps.Pool))

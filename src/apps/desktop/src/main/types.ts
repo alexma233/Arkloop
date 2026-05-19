@@ -3,6 +3,7 @@ export type LocalPortMode = 'auto' | 'manual'
 
 export type FetchProvider = 'none' | 'jina' | 'basic' | 'firecrawl'
 export type SearchProvider = 'none' | 'basic' | 'tavily' | 'exa' | 'searxng'
+export type XSearchProvider = 'none' | 'xai_oauth' | 'xai_api_key'
 
 export type FetchConnectorConfig = {
   provider: FetchProvider
@@ -20,9 +21,17 @@ export type SearchConnectorConfig = {
   searxngBaseUrl?: string
 }
 
+export type XSearchConnectorConfig = {
+  provider: XSearchProvider
+  xaiApiKey?: string
+  xaiApiKeyStored?: boolean
+  xaiOAuthConnected?: boolean
+}
+
 export type ConnectorsConfig = {
   fetch: FetchConnectorConfig
   search: SearchConnectorConfig
+  xSearch: XSearchConnectorConfig
 }
 
 export type MemoryProvider = 'notebook' | 'openviking' | 'nowledge'
@@ -124,6 +133,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   connectors: {
     fetch: { provider: 'none' },
     search: { provider: 'basic' },
+    xSearch: { provider: 'none' },
   },
   memory: { enabled: true, provider: 'notebook', memoryCommitEachTurn: true },
   network: {
