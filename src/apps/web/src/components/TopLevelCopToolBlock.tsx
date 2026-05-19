@@ -63,29 +63,10 @@ function TopLevelLivePreview({ text }: { text?: string }) {
 }
 
 function TopLevelToolMarker({ marker }: { marker: TimelineMarker }) {
-  if (marker.kind === 'icon') {
-    return (
-      <span
-        title={marker.label}
-        aria-label={marker.label}
-        style={{
-          width: TOP_LEVEL_TOOL_ICON_WIDTH,
-          height: TOP_LEVEL_TOOL_LINE_HEIGHT,
-          flex: `0 0 ${TOP_LEVEL_TOOL_ICON_WIDTH}px`,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingTop: 1,
-          color: 'var(--c-cop-row-fg, var(--c-text-tertiary))',
-        }}
-      >
-        <marker.icon width={13} height={13} strokeWidth={2.1} />
-      </span>
-    )
-  }
   return (
     <span
-      aria-hidden="true"
+      title={marker.label}
+      aria-label={marker.label}
       style={{
         width: TOP_LEVEL_TOOL_ICON_WIDTH,
         height: TOP_LEVEL_TOOL_LINE_HEIGHT,
@@ -93,16 +74,11 @@ function TopLevelToolMarker({ marker }: { marker: TimelineMarker }) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        paddingTop: 1,
+        color: 'var(--c-cop-row-fg, var(--c-text-tertiary))',
       }}
     >
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: 'var(--c-cop-row-fg, var(--c-text-tertiary))',
-        }}
-      />
+      <marker.icon width={13} height={13} strokeWidth={2.1} />
     </span>
   )
 }

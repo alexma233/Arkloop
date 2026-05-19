@@ -2,6 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import {
   BotMessageSquare,
   CheckCircle2,
+  Circle,
   ClipboardList,
   FilePenLine,
   FileSearch,
@@ -21,11 +22,9 @@ import type { WebSearchPhaseStep } from './types'
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>
 
-export type TimelineMarker =
-  | { kind: 'dot' }
-  | { kind: 'icon'; icon: Icon; label: string }
+export type TimelineMarker = { kind: 'icon'; icon: Icon; label: string }
 
-export const DOT_MARKER: TimelineMarker = { kind: 'dot' }
+export const GENERIC_MARKER: TimelineMarker = { kind: 'icon', icon: Circle, label: 'Tool' }
 
 export function markerForCategory(category: CopSegmentCategory): TimelineMarker {
   switch (category) {
@@ -37,7 +36,7 @@ export function markerForCategory(category: CopSegmentCategory): TimelineMarker 
     case 'search': return { kind: 'icon', icon: Globe, label: 'Search' }
     case 'image': return { kind: 'icon', icon: FileImage, label: 'Image' }
     case 'plan': return { kind: 'icon', icon: ClipboardList, label: 'Plan' }
-    case 'generic': return DOT_MARKER
+    case 'generic': return GENERIC_MARKER
   }
 }
 
@@ -95,7 +94,7 @@ export function markerForToolName(toolName: string): TimelineMarker {
     case 'web_fetch':
       return { kind: 'icon', icon: Globe, label: 'Browser' }
     default:
-      return DOT_MARKER
+      return GENERIC_MARKER
   }
 }
 
@@ -105,7 +104,7 @@ export function markerForFileOp(op: FileOpRef): TimelineMarker {
 
 export function markerForStep(step: WebSearchPhaseStep): TimelineMarker {
   if (step.kind === 'finished') return { kind: 'icon', icon: CheckCircle2, label: 'Done' }
-  if (step.kind === 'planning') return DOT_MARKER
+  if (step.kind === 'planning') return GENERIC_MARKER
   if (step.kind === 'reviewing') return { kind: 'icon', icon: Globe, label: 'Review' }
   return { kind: 'icon', icon: Search, label: 'Search' }
 }
