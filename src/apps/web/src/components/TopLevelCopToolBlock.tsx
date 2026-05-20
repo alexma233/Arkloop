@@ -8,6 +8,8 @@ import { ExecutionCard } from './ExecutionCard'
 import { TodoListCard } from './TodoListCard'
 import { FileOpToolRow } from './cop-timeline/ToolRows'
 import { markerForToolName, type TimelineMarker } from './cop-timeline/markers'
+import { DocumentResourceCard } from './DocumentCard'
+import { isPlanMarkdownPath } from '../planMetadata'
 
 export type TopLevelCopToolEntry =
   | { kind: 'code'; id: string; seq: number; item: CodeExecutionRef }
@@ -122,6 +124,18 @@ export const TopLevelCopToolBlock = memo(function TopLevelCopToolBlock({
 
   if (entry.kind === 'generic') {
     const item = entry.item
+    if (item.toolName === 'document_write') {
+      const title = typeof item.label === 'string' && item.label.trim() ? item.label : item.toolName
+      return (
+        <TopLevelToolFrame toolName={item.toolName}>
+          <DocumentResourceCard
+            title={title}
+            isPlan={isPlanMarkdownPath(title)}
+            onClick={() => {}}
+          />
+        </TopLevelToolFrame>
+      )
+    }
     return (
       <TopLevelToolFrame toolName={item.toolName}>
         <ExecutionCard
