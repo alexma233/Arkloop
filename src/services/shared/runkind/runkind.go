@@ -1,6 +1,7 @@
 package runkind
 
 const Heartbeat = "heartbeat"
+const Discuss = "discuss"
 const Impression = "impression"
 const Suggestion = "suggestion"
 const ActivityRecorder = "activity_recorder"

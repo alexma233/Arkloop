@@ -890,6 +890,7 @@ func buildChannelLayer(deps EngineV1Deps, messagesRepo data.MessagesRepository, 
 	return []pipeline.RunMiddleware{
 		pipeline.NewChannelContextMiddleware(deps.DBPool),
 		pipeline.NewHeartbeatScheduleMiddleware(deps.DBPool),
+		pipeline.NewDiscussModeMiddleware(),
 		pipeline.NewChannelAdminTagMiddleware(deps.DBPool),
 		pipeline.NewChannelTelegramGroupUserMergeMiddleware(),
 		pipeline.NewChannelTelegramToolsMiddleware(nil, nil, pipeline.ChannelTelegramToolsDeps{
