@@ -16,6 +16,8 @@ import (
 )
 
 const activityRecorderPluginID = "arkloop.plugins.activity-recorder"
+const aiContextSyncStaleAfter = 10 * time.Minute
+const aiContextSyncRetryAfter = 15 * time.Minute
 
 type aiContextSourceConfig struct {
 	Key  string `json:"key"`
@@ -102,12 +104,36 @@ func prepareAIContext(runtimeState map[string]any) {
 		runtimeState[prefix+"db_records"] = records
 		if records == 0 {
 			startAIContextInitialSync(runtimeState)
+			return
+		}
+		clearAIContextInitialSyncIfStopped(runtimeState)
+		if latestUnix, err := sqliteCount(dbPath, "SELECT COALESCE(MAX(unixepoch(timestamp)), 0) FROM activity"); err == nil && latestUnix > 0 {
+			latest := time.Unix(int64(latestUnix), 0).UTC()
+			runtimeState[prefix+"db_latest_at"] = latest.Format(time.RFC3339)
+			stale := time.Since(latest) > aiContextSyncStaleAfter
+			runtimeState[prefix+"stale"] = stale
+			if stale {
+				startAIContextInitialSync(runtimeState)
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		runtimeState[prefix+"db_error"] = err.Error()
 	} else {
 		runtimeState[prefix+"db_records"] = 0
 		startAIContextInitialSync(runtimeState)
+	}
+}
+
+func clearAIContextInitialSyncIfStopped(runtimeState map[string]any) {
+	key := "aicontext.initial_sync"
+	if pid := daemonPID(runtimeState, key); processRunning(pid) {
+		runtimeState[key+".status"] = "running"
+		return
+	}
+	removeDaemonPID(runtimeState, key)
+	delete(runtimeState, key+".pid")
+	if stringFromPluginMap(runtimeState, key+".status") == "running" {
+		runtimeState[key+".status"] = "stopped"
 	}
 }
 
@@ -170,6 +196,10 @@ func startAIContextInitialSync(runtimeState map[string]any) {
 		return
 	}
 	removeDaemonPID(runtimeState, key)
+	if recentAIContextSync(runtimeState, key) {
+		runtimeState[prefix+"status"] = "stale"
+		return
+	}
 	pluginData := stringFromPluginMap(runtimeState, "plugin_data")
 	logPath := filepath.Join(pluginData, "runtime", "logs", "aicontext.initial-sync.log")
 	if pluginData == "" {
@@ -206,6 +236,18 @@ func startAIContextInitialSync(runtimeState map[string]any) {
 	go func() {
 		_ = cmd.Wait()
 	}()
+}
+
+func recentAIContextSync(runtimeState map[string]any, key string) bool {
+	startedAt := stringFromPluginMap(runtimeState, key+".started_at")
+	if startedAt == "" {
+		return false
+	}
+	parsed, err := time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(parsed) < aiContextSyncRetryAfter
 }
 
 func checkScreenTimeAccess(runtimeState map[string]any) {

@@ -141,6 +141,14 @@ func (i *Installer) SeedBuiltin(ctx context.Context, accountID, userID uuid.UUID
 		}
 	} else {
 		pkg = *existing
+		if err := persistPluginAssets(ctx, i.pluginStore, manifest, pluginRoot); err != nil {
+			return err
+		}
+		for _, skill := range manifest.Skills {
+			if err := i.ensureSkillPackage(ctx, i.skillPackagesRepo, accountID, manifest, skill, pluginRoot); err != nil {
+				return err
+			}
+		}
 	}
 	profileRef := sharedenvironmentref.BuildProfileRef(accountID, &userID)
 	workspaceRef, err := ensureDefaultWorkspace(ctx, i.profileRepo, i.workspaceRepo, accountID, userID, profileRef)

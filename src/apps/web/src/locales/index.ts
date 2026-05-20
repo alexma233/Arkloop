@@ -1003,6 +1003,7 @@ export interface LocaleStrings {
       builderInterval: string;
       builderIntervalDesc: string;
       builderManualDesc: string;
+      builderRunning: string;
       loadFailed: string;
       installFailed: string;
       toggleFailed: string;

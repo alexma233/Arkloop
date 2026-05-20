@@ -1093,6 +1093,7 @@ export const en: LocaleStrings = {
       builderInterval: "Build Interval",
       builderIntervalDesc: "Background memory build interval in minutes.",
       builderManualDesc: "Scan the current activity window now.",
+      builderRunning: "Building",
       loadFailed: "Failed to load Activity Recorder.",
       installFailed: "Failed to install Activity Recorder.",
       toggleFailed: "Failed to update Activity Recorder.",

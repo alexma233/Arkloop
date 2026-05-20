@@ -53,6 +53,7 @@ import (
 	"arkloop/services/worker/internal/toolprovider"
 	"arkloop/services/worker/internal/tools"
 	"arkloop/services/worker/internal/tools/builtin"
+	activityrecorderfinish "arkloop/services/worker/internal/tools/builtin/activity_recorder_finish"
 	"arkloop/services/worker/internal/tools/builtin/read"
 	sandboxbuiltin "arkloop/services/worker/internal/tools/builtin/sandbox"
 	conversationtool "arkloop/services/worker/internal/tools/conversation"
@@ -258,6 +259,7 @@ func ComposeDesktopEngine(ctx context.Context, db data.DesktopDB, bus eventbus.E
 		return nil, err
 	}
 	executors[conversationtool.GroupSearchAgentSpec.Name] = groupSearchExec
+	executors[activityrecorderfinish.AgentSpec.Name] = activityrecorderfinish.NewToolExecutor(db)
 
 	memEnabled := strings.TrimSpace(os.Getenv("ARKLOOP_MEMORY_ENABLED")) != "false"
 	memoryProviderName := strings.TrimSpace(os.Getenv("ARKLOOP_MEMORY_PROVIDER"))

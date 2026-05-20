@@ -11,6 +11,11 @@ Use this skill when running background activity recording or when the user asks 
 
 Load source-owned skills first:
 
+- `aicontext`
+- `catchme`
+- `chrome-history`
+- `clipboard`
+- `screentime`
 - `screenpipe-api`
 - `screenpipe-health`
 - `screenpipe-logs`

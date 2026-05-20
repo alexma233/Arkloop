@@ -1083,6 +1083,7 @@ export const zh: LocaleStrings = {
       builderInterval: "构建间隔",
       builderIntervalDesc: "后台记忆构建间隔，单位分钟。",
       builderManualDesc: "立即扫描当前时间窗口。",
+      builderRunning: "构建中",
       loadFailed: "加载 Activity Recorder 失败。",
       installFailed: "安装 Activity Recorder 失败。",
       toggleFailed: "切换 Activity Recorder 失败。",

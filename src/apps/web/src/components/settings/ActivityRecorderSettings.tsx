@@ -8,6 +8,7 @@ import {
   listPlugins,
   setPluginEnabled,
   updatePluginSettings,
+  triggerActivityRecorderBuilder,
   type PluginEnablement,
   type PluginPackage,
   type PluginRuntimeState,
@@ -28,7 +29,7 @@ type ActivityRecorderStatus = {
   runtime: PluginRuntimeState | null
 }
 
-type BusyAction = 'install' | 'toggle' | 'refresh' | 'settings' | null
+type BusyAction = 'install' | 'toggle' | 'refresh' | 'settings' | 'build' | null
 
 type SourceView = {
   key: string
@@ -80,6 +81,7 @@ type RecorderSettings = {
   retention_days: number
   meeting_detector: boolean
   snapshot_compaction: boolean
+  builder_interval_min: number
 }
 
 const defaultRecorderSettings: RecorderSettings = {
@@ -98,6 +100,7 @@ const defaultRecorderSettings: RecorderSettings = {
   retention_days: 3,
   meeting_detector: false,
   snapshot_compaction: false,
+  builder_interval_min: 300,
 }
 
 const presetSettings: Record<RecorderMode, RecorderSettings> = {
@@ -118,6 +121,7 @@ const presetSettings: Record<RecorderMode, RecorderSettings> = {
     retention_days: 14,
     meeting_detector: true,
     snapshot_compaction: true,
+    builder_interval_min: 300,
   },
   custom: defaultRecorderSettings,
 }
@@ -156,6 +160,7 @@ function currentSettings(enablement: PluginEnablement | null): RecorderSettings 
     retention_days: toNumber(raw.retention_days, defaultRecorderSettings.retention_days),
     meeting_detector: toBool(raw.meeting_detector, defaultRecorderSettings.meeting_detector),
     snapshot_compaction: toBool(raw.snapshot_compaction, defaultRecorderSettings.snapshot_compaction),
+    builder_interval_min: toNumber(raw.builder_interval_min, defaultRecorderSettings.builder_interval_min),
   }
 }
 
@@ -322,6 +327,7 @@ export function ActivityRecorderSettings({ accessToken }: { accessToken: string 
     () => sources.filter((source) => settings[source.setting]).length,
     [settings],
   )
+  const builderRunning = runtimeBool(status.runtime, 'activity_recorder.builder.running') === true
 
   const install = useCallback(async () => {
     setBusy('install')
@@ -359,6 +365,20 @@ export function ActivityRecorderSettings({ accessToken }: { accessToken: string 
       setBusy(null)
     }
   }, [accessToken, addToast, copy.refreshFailed])
+
+  const triggerBuilder = useCallback(async () => {
+    setBusy('build')
+    try {
+      const result = await triggerActivityRecorderBuilder(accessToken)
+      const runtime = await checkPluginRuntime(accessToken, activityRecorderPluginID)
+      setStatus((current) => ({ ...current, runtime }))
+      if (result.running) return
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : copy.buildFailed, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }, [accessToken, addToast, copy.buildFailed])
 
   const updateSettings = useCallback(async (patch: Partial<RecorderSettings>) => {
     const nextSettings = { ...settings, ...patch }
@@ -440,6 +460,46 @@ export function ActivityRecorderSettings({ accessToken }: { accessToken: string 
                       {busy === 'refresh' ? <Loader2 className="animate-spin" /> : <RefreshCw />}
                     </SettingsIconButton>
                     {control}
+                  </div>
+                )}
+              />
+            </SettingsCard>
+          </SettingsGroup>
+
+          <SettingsGroup title={copy.builderSection}>
+            <SettingsCard>
+              <SettingsRow
+                title={copy.builderInterval}
+                description={copy.builderIntervalDesc}
+                control={(
+                  <SettingsInput
+                    variant="md"
+                    defaultValue={String(settings.builder_interval_min)}
+                    disabled={busy === 'settings'}
+                    onBlur={(event) => {
+                      const value = Number(event.currentTarget.value)
+                      if (Number.isFinite(value) && value >= 5 && value !== settings.builder_interval_min) {
+                        setCustom({ builder_interval_min: Math.round(value) })
+                      }
+                    }}
+                    className="w-[132px]"
+                  />
+                )}
+              />
+              <SettingsRow
+                title={copy.buildNow}
+                description={copy.builderManualDesc}
+                control={(
+                  <div className="flex items-center gap-2">
+                    {builderRunning ? <StatusPill tone="success">{copy.builderRunning}</StatusPill> : null}
+                    <SettingsButton
+                      variant="secondary"
+                      icon={busy === 'build' || builderRunning ? <Loader2 className="animate-spin" /> : <Play />}
+                      disabled={busy !== null || !runtimeReady || !enabled || builderRunning}
+                      onClick={() => void triggerBuilder()}
+                    >
+                      {builderRunning ? copy.builderRunning : copy.buildNow}
+                    </SettingsButton>
                   </div>
                 )}
               />

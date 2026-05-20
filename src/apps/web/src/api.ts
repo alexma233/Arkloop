@@ -2411,6 +2411,13 @@ export type PluginRuntimeState = {
   updated_at?: string
 }
 
+export type ActivityRecorderBuilderRun = {
+  triggered: boolean
+  next_run_at: string
+  running?: boolean
+  run_id?: string
+}
+
 export async function listPlugins(accessToken: string): Promise<PluginPackage[]> {
   const response = await apiFetch<{ items: PluginPackage[] }>('/v1/plugins', { accessToken })
   return response.items ?? []
@@ -2468,6 +2475,15 @@ export async function installPluginRuntime(accessToken: string, pluginID: string
 
 export async function checkPluginRuntime(accessToken: string, pluginID: string): Promise<PluginRuntimeState> {
   return apiFetch<PluginRuntimeState>(`/v1/plugins/${encodeURIComponent(pluginID)}/runtime/check`, {
+    method: 'POST',
+    accessToken,
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30_000),
+  })
+}
+
+export async function triggerActivityRecorderBuilder(accessToken: string): Promise<ActivityRecorderBuilderRun> {
+  return apiFetch<ActivityRecorderBuilderRun>(`/v1/plugins/${encodeURIComponent('arkloop.plugins.activity-recorder')}/activity-recorder/run`, {
     method: 'POST',
     accessToken,
     body: JSON.stringify({}),

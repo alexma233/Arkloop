@@ -1,7 +1,7 @@
 package catalogapi
 
 import (
-	httpkit "arkloop/services/api/internal/http/httpkit"
+	"context"
 	"encoding/json"
 	nethttp "net/http"
 	"strings"
@@ -10,6 +10,7 @@ import (
 	"arkloop/services/api/internal/audit"
 	"arkloop/services/api/internal/auth"
 	"arkloop/services/api/internal/data"
+	httpkit "arkloop/services/api/internal/http/httpkit"
 	"arkloop/services/api/internal/observability"
 	"arkloop/services/api/internal/plugincontrib"
 	sharedenvironmentref "arkloop/services/shared/environmentref"
@@ -72,6 +73,94 @@ type pluginRuntimeStateResponse struct {
 	Status        string          `json:"status"`
 	StatusJSON    json.RawMessage `json:"status_json,omitempty"`
 	UpdatedAt     string          `json:"updated_at,omitempty"`
+}
+
+type activityRecorderBuilderRunResponse struct {
+	Triggered bool   `json:"triggered"`
+	NextRunAt string `json:"next_run_at"`
+	Running   bool   `json:"running"`
+	RunID     string `json:"run_id,omitempty"`
+}
+
+func formatActivityRecorderBuilderTimestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04:05.999999999")
+}
+
+func augmentActivityRecorderBuilderStatus(ctx context.Context, pool data.DB, actor *httpkit.Actor, state *data.PluginRuntimeState) {
+	if pool == nil || actor == nil || state == nil || state.PluginID != "arkloop.plugins.activity-recorder" {
+		return
+	}
+	var runningRunID, runningStatus, lastRunID, lastRunStatus, nextRunAt string
+	var lastFinishStatus, lastFinishReason, lastSourcesChecked, lastSourcesUnavailable, lastFinishedAt string
+	var intervalMin, lastMemoryWriteCount int
+	err := pool.QueryRow(ctx, `
+		SELECT COALESCE(s.running_run_id, ''),
+		       COALESCE(r.status, ''),
+		       COALESCE(s.last_run_id, ''),
+		       s.last_run_status,
+		       s.next_run_at,
+		       s.interval_min,
+		       s.last_finish_status,
+		       s.last_finish_reason,
+		       s.last_sources_checked,
+		       s.last_sources_unavailable,
+		       s.last_memory_write_count,
+		       COALESCE(s.last_finished_at, '')
+		  FROM activity_recorder_builder_state s
+		  LEFT JOIN runs r ON r.id = s.running_run_id
+		 WHERE s.account_id = $1
+		   AND s.user_id = $2
+		   AND s.profile_ref = $3
+		   AND s.workspace_ref = $4
+		 LIMIT 1`,
+		actor.AccountID.String(),
+		actor.UserID.String(),
+		state.ProfileRef,
+		state.WorkspaceRef,
+	).Scan(
+		&runningRunID,
+		&runningStatus,
+		&lastRunID,
+		&lastRunStatus,
+		&nextRunAt,
+		&intervalMin,
+		&lastFinishStatus,
+		&lastFinishReason,
+		&lastSourcesChecked,
+		&lastSourcesUnavailable,
+		&lastMemoryWriteCount,
+		&lastFinishedAt,
+	)
+	if err != nil {
+		return
+	}
+	statusMap := map[string]any{}
+	if len(state.StatusJSON) > 0 {
+		_ = json.Unmarshal(state.StatusJSON, &statusMap)
+	}
+	statusMap["activity_recorder.builder.running"] = runningRunID != "" && runningStatus == "running"
+	statusMap["activity_recorder.builder.running_run_id"] = runningRunID
+	statusMap["activity_recorder.builder.last_run_id"] = lastRunID
+	statusMap["activity_recorder.builder.last_run_status"] = lastRunStatus
+	statusMap["activity_recorder.builder.next_run_at"] = nextRunAt
+	statusMap["activity_recorder.builder.interval_min"] = intervalMin
+	statusMap["activity_recorder.builder.last_finish_status"] = lastFinishStatus
+	statusMap["activity_recorder.builder.last_finish_reason"] = lastFinishReason
+	statusMap["activity_recorder.builder.last_sources_checked"] = decodeActivityRecorderStringArray(lastSourcesChecked)
+	statusMap["activity_recorder.builder.last_sources_unavailable"] = decodeActivityRecorderStringArray(lastSourcesUnavailable)
+	statusMap["activity_recorder.builder.last_memory_write_count"] = lastMemoryWriteCount
+	statusMap["activity_recorder.builder.last_finished_at"] = lastFinishedAt
+	if raw, err := json.Marshal(statusMap); err == nil {
+		state.StatusJSON = raw
+	}
+}
+
+func decodeActivityRecorderStringArray(raw string) []string {
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return []string{}
+	}
+	return out
 }
 
 func pluginsEntry(
@@ -167,11 +256,13 @@ func pluginEntry(
 		case "settings":
 			handlePluginSettings(w, r, traceID, actor, enabler, pool, pluginID)
 		case "runtime/status":
-			handlePluginRuntimeStatus(w, r, traceID, actor, enabler, pluginID)
+			handlePluginRuntimeStatus(w, r, traceID, actor, enabler, pool, pluginID)
 		case "runtime/install":
 			handlePluginRuntimeInstall(w, r, traceID, actor, enabler, pool, pluginID)
 		case "runtime/check":
-			handlePluginRuntimeCheck(w, r, traceID, actor, enabler, pluginID)
+			handlePluginRuntimeCheck(w, r, traceID, actor, enabler, pool, pluginID)
+		case "activity-recorder/run":
+			handleActivityRecorderBuilderRun(w, r, traceID, actor, pool, pluginID)
 		default:
 			httpkit.WriteNotFound(w, r)
 		}
@@ -320,7 +411,7 @@ func handlePluginRuntimeInstall(w nethttp.ResponseWriter, r *nethttp.Request, tr
 	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, toPluginRuntimeStateResponse(&state))
 }
 
-func handlePluginRuntimeStatus(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, enabler *plugincontrib.Enabler, pluginID string) {
+func handlePluginRuntimeStatus(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, enabler *plugincontrib.Enabler, pool data.DB, pluginID string) {
 	if r.Method != nethttp.MethodGet {
 		writeMethodNotAllowedJSON(w, traceID)
 		return
@@ -339,10 +430,11 @@ func handlePluginRuntimeStatus(w nethttp.ResponseWriter, r *nethttp.Request, tra
 		httpkit.WriteJSON(w, traceID, nethttp.StatusOK, pluginRuntimeStateResponse{Status: "not_installed"})
 		return
 	}
+	augmentActivityRecorderBuilderStatus(r.Context(), pool, actor, status)
 	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, toPluginRuntimeStateResponse(status))
 }
 
-func handlePluginRuntimeCheck(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, enabler *plugincontrib.Enabler, pluginID string) {
+func handlePluginRuntimeCheck(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, enabler *plugincontrib.Enabler, pool data.DB, pluginID string) {
 	if r.Method != nethttp.MethodPost {
 		writeMethodNotAllowedJSON(w, traceID)
 		return
@@ -368,7 +460,152 @@ func handlePluginRuntimeCheck(w nethttp.ResponseWriter, r *nethttp.Request, trac
 		httpkit.WriteError(w, nethttp.StatusBadRequest, "plugins.runtime_check_failed", err.Error(), traceID, nil)
 		return
 	}
+	augmentActivityRecorderBuilderStatus(r.Context(), pool, actor, &state)
 	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, toPluginRuntimeStateResponse(&state))
+}
+
+func handleActivityRecorderBuilderRun(w nethttp.ResponseWriter, r *nethttp.Request, traceID string, actor *httpkit.Actor, pool data.DB, pluginID string) {
+	if r.Method != nethttp.MethodPost {
+		writeMethodNotAllowedJSON(w, traceID)
+		return
+	}
+	if pluginID != "arkloop.plugins.activity-recorder" {
+		httpkit.WriteNotFound(w, r)
+		return
+	}
+	if pool == nil {
+		httpkit.WriteError(w, nethttp.StatusServiceUnavailable, "plugins.not_configured", "plugins not configured", traceID, nil)
+		return
+	}
+	if !httpkit.RequirePerm(actor, auth.PermDataPersonasManage, w, traceID) {
+		return
+	}
+	var req pluginSettingsRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpkit.WriteError(w, nethttp.StatusBadRequest, "plugins.invalid_request", "invalid JSON body", traceID, nil)
+			return
+		}
+	}
+
+	profileRef := sharedenvironmentref.BuildProfileRef(actor.AccountID, &actor.UserID)
+	workspaceRef := strings.TrimSpace(req.WorkspaceRef)
+	now := time.Now().UTC()
+	nowText := formatActivityRecorderBuilderTimestamp(now)
+
+	var activeRunID string
+	if err := pool.QueryRow(r.Context(), `
+		SELECT COALESCE((
+		    SELECT s.running_run_id
+		      FROM activity_recorder_builder_state s
+		      JOIN runs r ON r.id = s.running_run_id
+		     WHERE s.account_id = $1
+		       AND s.user_id = $2
+		       AND s.profile_ref = $3
+		       AND ($4 = '' OR s.workspace_ref = $4)
+		       AND r.status = 'running'
+		     ORDER BY s.updated_at DESC
+		     LIMIT 1
+		), '')`,
+		actor.AccountID.String(),
+		actor.UserID.String(),
+		profileRef,
+		workspaceRef,
+	).Scan(&activeRunID); err != nil {
+		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
+		return
+	}
+	if activeRunID != "" {
+		httpkit.WriteJSON(w, traceID, nethttp.StatusOK, activityRecorderBuilderRunResponse{Triggered: false, Running: true, RunID: activeRunID, NextRunAt: now.Format(time.RFC3339)})
+		return
+	}
+
+	tag, err := pool.Exec(r.Context(), `
+		INSERT INTO activity_recorder_builder_state
+		    (account_id, user_id, profile_ref, workspace_ref, enabled, interval_min, next_run_at, last_run_status, last_error, last_finish_status, last_finish_reason, last_sources_checked, last_sources_unavailable, last_memory_write_count, last_finished_at, created_at, updated_at)
+		SELECT pe.account_id,
+		       pe.enabled_by_user_id,
+		       pe.profile_ref,
+		       pe.workspace_ref,
+		       1,
+		       300,
+		       $1,
+		       '',
+		       '',
+		       '',
+		       '',
+		       '[]',
+		       '[]',
+		       0,
+		       NULL,
+		       $1,
+		       $1
+		  FROM plugin_enablements pe
+		  JOIN plugin_runtime_state prs
+		    ON prs.account_id = pe.account_id
+		   AND prs.package_id = pe.package_id
+		   AND prs.profile_ref = pe.profile_ref
+		   AND prs.workspace_ref = pe.workspace_ref
+		 WHERE pe.account_id = $2
+		   AND pe.enabled_by_user_id = $3
+		   AND pe.profile_ref = $4
+		   AND pe.plugin_id = $5
+		   AND pe.desired_enabled = 1
+		   AND prs.status = 'installed'
+		   AND ($6 = '' OR pe.workspace_ref = $6)
+		 ORDER BY pe.updated_at DESC
+		 LIMIT 1
+		ON CONFLICT (account_id, user_id, profile_ref, workspace_ref) DO UPDATE
+		    SET enabled = 1,
+		        next_run_at = CASE
+		            WHEN NOT EXISTS (
+		                SELECT 1 FROM runs
+		                 WHERE runs.id = activity_recorder_builder_state.running_run_id
+		                   AND runs.status = 'running'
+		            ) THEN excluded.next_run_at
+		            ELSE activity_recorder_builder_state.next_run_at
+		        END,
+		        running_run_id = CASE
+		            WHEN EXISTS (
+		                SELECT 1 FROM runs
+		                 WHERE runs.id = activity_recorder_builder_state.running_run_id
+		                   AND runs.status = 'running'
+		            ) THEN activity_recorder_builder_state.running_run_id
+		            ELSE NULL
+		        END,
+		        running_started_at = CASE
+		            WHEN EXISTS (
+		                SELECT 1 FROM runs
+		                 WHERE runs.id = activity_recorder_builder_state.running_run_id
+		                   AND runs.status = 'running'
+		            ) THEN activity_recorder_builder_state.running_started_at
+		            ELSE NULL
+		        END,
+		        last_run_status = '',
+		        last_error = '',
+		        last_finish_status = '',
+		        last_finish_reason = '',
+		        last_sources_checked = '[]',
+		        last_sources_unavailable = '[]',
+		        last_memory_write_count = 0,
+		        last_finished_at = NULL,
+		        updated_at = excluded.updated_at`,
+		nowText,
+		actor.AccountID.String(),
+		actor.UserID.String(),
+		profileRef,
+		pluginID,
+		workspaceRef,
+	)
+	if err != nil {
+		httpkit.WriteError(w, nethttp.StatusInternalServerError, "internal.error", "internal error", traceID, nil)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		httpkit.WriteError(w, nethttp.StatusBadRequest, "activity_recorder.not_ready", "activity recorder is not enabled or installed", traceID, nil)
+		return
+	}
+	httpkit.WriteJSON(w, traceID, nethttp.StatusOK, activityRecorderBuilderRunResponse{Triggered: true, Running: false, NextRunAt: now.Format(time.RFC3339)})
 }
 
 func parsePluginPath(path string) (string, string) {

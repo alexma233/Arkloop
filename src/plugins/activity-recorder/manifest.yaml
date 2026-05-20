@@ -56,6 +56,9 @@ settings:
   - key: snapshot_compaction
     type: boolean
     default: false
+  - key: builder_interval_min
+    type: integer
+    default: 300
 
 runtime:
   - id: screenpipe
@@ -165,7 +168,12 @@ mcp_servers:
     display_name: ActivityWatch
     transport: stdio
     command: npx
-    args: ["-y", "github:8bitgentleman/activitywatch-mcp-server"]
+    args:
+      - "-y"
+      - "--package"
+      - "github:8bitgentleman/activitywatch-mcp-server"
+      - "-c"
+      - "node \"$(which activitywatch-mcp-server)\""
     env:
       AW_API_BASE: "http://127.0.0.1:5600/api/0"
     enabled_when:
@@ -176,7 +184,7 @@ mcp_servers:
     display_name: CatchMe
     transport: stdio
     command: uv
-    args: ["tool", "run", "--from", "git+https://github.com/HKUDS/CatchMe.git", "catchme", "mcp"]
+    args: ["tool", "run", "--with", "mcp", "--from", "git+https://github.com/HKUDS/CatchMe.git", "catchme", "mcp"]
     enabled_when:
       - setting: enable_catchme
         equals: true

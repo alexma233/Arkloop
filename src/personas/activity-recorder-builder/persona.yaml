@@ -11,15 +11,20 @@ core_tools:
     - memory_search
     - memory_read
     - memory_write
+    - activity_recorder_finish
+    - exec_command
+    - x_search
 tool_allowlist:
     - load_skill
     - load_tools
     - memory_search
     - memory_read
     - memory_write
+    - activity_recorder_finish
+    - exec_command
+    - x_search
 budgets:
-    reasoning_iterations: 80
-    max_output_tokens: 16384
+    reasoning_iterations: 99999
     temperature: 0.3
 reasoning_mode: auto
 prompt_cache_control: system_prompt
