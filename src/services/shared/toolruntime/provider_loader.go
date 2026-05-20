@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	sharedoutbound "arkloop/services/shared/outboundurl"
 
@@ -29,16 +30,21 @@ const (
 )
 
 type ProviderRuntimeStatus struct {
-	OwnerKind     string
-	GroupName     string
-	ProviderName  string
-	KeyPrefix     *string
-	BaseURL       *string
-	APIKeyValue   *string
-	OAuthValue    *string
-	ConfigJSON    map[string]any
-	RuntimeState  ProviderRuntimeState
-	RuntimeReason string
+	OwnerKind          string
+	OwnerUserID        *uuid.UUID
+	GroupName          string
+	ProviderName       string
+	KeyPrefix          *string
+	BaseURL            *string
+	APIKeyValue        *string
+	OAuthValue         *string
+	OAuthTokenSecretID *uuid.UUID
+	OAuthClientID      *string
+	OAuthScope         *string
+	OAuthExpiresAt     *time.Time
+	ConfigJSON         map[string]any
+	RuntimeState       ProviderRuntimeState
+	RuntimeReason      string
 }
 
 func (s ProviderRuntimeStatus) Ready() bool {
@@ -86,7 +92,8 @@ func ReadyProvidersFromStatuses(statuses []ProviderRuntimeStatus) []ProviderConf
 func LoadPlatformProviderStatuses(ctx context.Context, pool providerQuerier, decrypt ProviderSecretDecrypter) ([]ProviderRuntimeStatus, error) {
 	return loadProviderStatuses(ctx, pool, `
 		SELECT c.owner_kind, c.group_name, c.provider_name, c.key_prefix, c.base_url, c.config_json,
-		       s.encrypted_value, s.key_version, os.encrypted_value, os.key_version
+		       s.encrypted_value, s.key_version, os.encrypted_value, os.key_version,
+		       c.owner_user_id, oc.token_secret_id, oc.client_id, oc.scope, oc.expires_at
 		FROM tool_provider_configs c
 		LEFT JOIN secrets s ON s.id = c.secret_id AND s.owner_kind = 'platform'
 		LEFT JOIN tool_provider_oauth_connections oc ON oc.owner_kind = 'platform'
@@ -103,7 +110,8 @@ func LoadUserProviderStatuses(ctx context.Context, pool providerQuerier, userID 
 	}
 	return loadProviderStatuses(ctx, pool, `
 		SELECT c.owner_kind, c.group_name, c.provider_name, c.key_prefix, c.base_url, c.config_json,
-		       s.encrypted_value, s.key_version, os.encrypted_value, os.key_version
+		       s.encrypted_value, s.key_version, os.encrypted_value, os.key_version,
+		       c.owner_user_id, oc.token_secret_id, oc.client_id, oc.scope, oc.expires_at
 		FROM tool_provider_configs c
 		LEFT JOIN secrets s ON s.id = c.secret_id AND s.owner_kind = 'user'
 		LEFT JOIN tool_provider_oauth_connections oc ON oc.owner_kind = 'user'
@@ -142,19 +150,33 @@ func loadProviderStatuses(ctx context.Context, pool providerQuerier, sql string,
 			keyVersion      *int
 			oauthEncrypted  *string
 			oauthKeyVersion *int
+			ownerUserID     *uuid.UUID
+			oauthSecretID   *uuid.UUID
+			oauthClientID   *string
+			oauthScope      *string
+			oauthExpiresAt  *time.Time
 		)
-		if err := rows.Scan(&ownerKind, &groupName, &providerName, &keyPrefix, &baseURL, &configJSON, &encrypted, &keyVersion, &oauthEncrypted, &oauthKeyVersion); err != nil {
+		if err := rows.Scan(
+			&ownerKind, &groupName, &providerName, &keyPrefix, &baseURL, &configJSON,
+			&encrypted, &keyVersion, &oauthEncrypted, &oauthKeyVersion,
+			&ownerUserID, &oauthSecretID, &oauthClientID, &oauthScope, &oauthExpiresAt,
+		); err != nil {
 			return nil, fmt.Errorf("tool_provider_configs scan: %w", err)
 		}
 
 		status := ProviderRuntimeStatus{
-			OwnerKind:    strings.TrimSpace(ownerKind),
-			GroupName:    strings.TrimSpace(groupName),
-			ProviderName: strings.TrimSpace(providerName),
-			KeyPrefix:    keyPrefix,
-			BaseURL:      baseURL,
-			ConfigJSON:   map[string]any{},
-			RuntimeState: ProviderRuntimeStateReady,
+			OwnerKind:          strings.TrimSpace(ownerKind),
+			OwnerUserID:        ownerUserID,
+			GroupName:          strings.TrimSpace(groupName),
+			ProviderName:       strings.TrimSpace(providerName),
+			KeyPrefix:          keyPrefix,
+			BaseURL:            baseURL,
+			OAuthTokenSecretID: oauthSecretID,
+			OAuthClientID:      oauthClientID,
+			OAuthScope:         oauthScope,
+			OAuthExpiresAt:     oauthExpiresAt,
+			ConfigJSON:         map[string]any{},
+			RuntimeState:       ProviderRuntimeStateReady,
 		}
 		if len(configJSON) > 0 {
 			_ = json.Unmarshal(configJSON, &status.ConfigJSON)

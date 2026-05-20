@@ -211,9 +211,14 @@ func BuildProviderExecutor(cfg toolprovider.ActiveProviderConfig) tools.Executor
 		if rawAuthMode, ok := cfg.ConfigJSON["auth_mode"].(string); ok {
 			authMode = strings.TrimSpace(rawAuthMode)
 		}
+		baseURL := ""
+		if cfg.BaseURL != nil {
+			baseURL = strings.TrimSpace(*cfg.BaseURL)
+		}
 		provider, err := xsearch.NewXAIProvider(xsearch.XAIProviderConfig{
 			APIKey:     apiKey,
 			OAuthValue: oauthValue,
+			BaseURL:    baseURL,
 			Model:      model,
 			AuthMode:   authMode,
 		})
