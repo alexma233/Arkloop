@@ -1508,7 +1508,7 @@ func desktopChannelDelivery(db data.DesktopDB, stickerStore interface {
 		}
 
 		var stopTyping context.CancelFunc
-		if preloaded != nil && ux.TypingIndicator && strings.TrimSpace(preloaded.Token) != "" && !pipeline.IsHeartbeatRunContext(rc) {
+		if preloaded != nil && ux.TypingIndicator && strings.TrimSpace(preloaded.Token) != "" && pipeline.ShouldSendTelegramTypingRefresh(rc) {
 			stopTyping = pipeline.StartTelegramTypingRefresh(ctx, client, preloaded.Token, rc.ChannelContext.Conversation.Target)
 		}
 
