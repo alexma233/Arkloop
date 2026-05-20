@@ -112,7 +112,7 @@ export type AppConfig = {
   saas: { baseUrl: string }
   selfHosted: { baseUrl: string }
   local: LocalConfig
-  window: { width: number; height: number }
+  window: { width: number; height: number; maximized: boolean }
   onboarding_completed: boolean
   connectors_migrated: boolean
   connectors: ConnectorsConfig
@@ -127,7 +127,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   saas: { baseUrl: 'https://api.arkloop.io' },
   selfHosted: { baseUrl: '' },
   local: { port: 19001, portMode: 'auto' },
-  window: { width: 1280, height: 800 },
+  window: { width: 1280, height: 800, maximized: false },
   onboarding_completed: false,
   connectors_migrated: false,
   connectors: {

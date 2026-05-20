@@ -148,7 +148,7 @@ export type AppConfig = {
   saas: { baseUrl: string }
   selfHosted: { baseUrl: string }
   local: { port: number; portMode: LocalPortMode }
-  window: { width: number; height: number }
+  window: { width: number; height: number; maximized: boolean }
   onboarding_completed: boolean
   connectors: ConnectorsConfig
   memory: MemoryConfig
