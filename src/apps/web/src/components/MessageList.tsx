@@ -80,6 +80,7 @@ export type MessageListProps = {
   clearUserEnterAnimation: () => void
   isWorkMode?: boolean
   workFolder?: string | null
+  messagesOverride?: AgentMessage[]
 }
 
 export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(function MessageList({
@@ -102,6 +103,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
   clearUserEnterAnimation,
   isWorkMode,
   workFolder,
+  messagesOverride,
 }, ref) {
   const { threadId, isSearchThread } = useChatSession()
   const { accessToken } = useAuth()
@@ -118,7 +120,7 @@ export const MessageList = memo(forwardRef<MessageListHandle, MessageListProps>(
   const locationState = location.state as LocationState
   const baseUrl = apiBaseUrl()
 
-  const messages = msgs.messages
+  const messages = messagesOverride ?? msgs.messages
   const isStreaming = run.isStreaming
   const sending = run.sending
   const terminalRunDisplayId = run.terminalRunDisplayId

@@ -53,6 +53,10 @@ export interface LocaleStrings {
     newTab: string;
     browser: string;
     files: string;
+    conversationGraph: string;
+    conversationGraphUser: string;
+    conversationGraphAssistant: string;
+    conversationGraphSystem: string;
   };
   browserPanel: {
     preview: string;

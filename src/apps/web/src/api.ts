@@ -582,6 +582,7 @@ export type ThreadResponse = {
   hidden?: boolean
   updated_at?: string
   parent_thread_id?: string | null
+  branched_from_message_id?: string | null
 }
 
 export type ThreadRunStateEvent = {
@@ -950,6 +951,7 @@ export type MessageResponse = {
   id: string
   account_id: string
   thread_id: string
+  thread_seq?: number
   created_by_user_id: string
   role: string
   content: string
@@ -957,6 +959,36 @@ export type MessageResponse = {
   created_at: string
   run_id?: string
   client_message_id?: string
+}
+
+export type ConversationGraphMessageInstance = {
+  thread_id: string
+  message_id: string
+  thread_seq: number
+}
+
+export type ConversationGraphMessage = {
+  graph_node_id: string
+  parent_graph_node_id?: string | null
+  message: MessageResponse
+  instances: ConversationGraphMessageInstance[]
+}
+
+export type ConversationGraphEdge = {
+  id: string
+  kind: 'message'
+  source: string
+  target: string
+  source_thread_id?: string
+  target_thread_id?: string
+}
+
+export type ConversationGraphResponse = {
+  root_thread_id: string
+  active_thread_id: string
+  threads: ThreadResponse[]
+  messages: ConversationGraphMessage[]
+  edges: ConversationGraphEdge[]
 }
 
 export type UploadedThreadAttachment = {
@@ -1006,6 +1038,16 @@ export async function listMessages(
       accessToken,
     },
   )
+}
+
+export async function getConversationGraph(
+  accessToken: string,
+  threadId: string,
+): Promise<ConversationGraphResponse> {
+  return await apiFetch<ConversationGraphResponse>(`/v1/threads/${threadId}/graph`, {
+    method: 'GET',
+    accessToken,
+  })
 }
 
 export async function editMessage(
