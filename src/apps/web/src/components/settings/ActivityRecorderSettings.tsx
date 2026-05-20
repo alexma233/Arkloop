@@ -255,6 +255,7 @@ function SourceRow({
 }) {
   const status = sourceStatus(runtime, source)
   const checked = settings[source.setting]
+  const showStatus = Boolean(source.daemonKeys && checked && status !== 'running')
   const description = {
     screen: copy.screenSource,
     activity: copy.activitySource,
@@ -267,7 +268,7 @@ function SourceRow({
       description={description}
       control={(
         <div className="flex items-center gap-3">
-          {source.daemonKeys ? <StatusPill tone={sourceTone(status)}>{checked ? (copy.statusLabels[status] ?? status) : copy.disabled}</StatusPill> : null}
+          {showStatus ? <StatusPill tone={sourceTone(status)}>{copy.statusLabels[status] ?? status}</StatusPill> : null}
           <SettingsSwitch
             checked={checked}
             disabled={disabled}
@@ -491,7 +492,6 @@ export function ActivityRecorderSettings({ accessToken }: { accessToken: string 
                 description={copy.builderManualDesc}
                 control={(
                   <div className="flex items-center gap-2">
-                    {builderRunning ? <StatusPill tone="success">{copy.builderRunning}</StatusPill> : null}
                     <SettingsButton
                       variant="secondary"
                       icon={busy === 'build' || builderRunning ? <Loader2 className="animate-spin" /> : <Play />}
