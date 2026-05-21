@@ -8,13 +8,13 @@ import (
 )
 
 func TestActiveWindowReturnsData(t *testing.T) {
-	info, err := activeWindow()
+	info, err := ActiveWindow()
 	if err != nil {
-		t.Fatalf("activeWindow() error: %v", err)
+		t.Fatalf("ActiveWindow() error: %v", err)
 	}
-	fmt.Printf("activeWindow: app=%q title=%q pid=%d\n", info.App, info.WindowTitle, info.PID)
+	fmt.Printf("ActiveWindow: app=%q title=%q pid=%d\n", info.App, info.WindowTitle, info.PID)
 	if info.App == "" {
-		t.Fatal("activeWindow() returned empty app name")
+		t.Fatal("ActiveWindow() returned empty app name")
 	}
 }
 

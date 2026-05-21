@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func activeWindow() (WindowInfo, error) {
+func ActiveWindow() (WindowInfo, error) {
 	var info WindowInfo
 	// xdotool for X11
 	nameOut, err := exec.Command("xdotool", "getactivewindow", "getwindowname").Output()

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"arkloop/services/activity-record/internal/sources/window"
 	"arkloop/services/activity-record/internal/store"
 )
 
@@ -51,18 +52,33 @@ func (s *Source) Run(ctx context.Context, _ *store.Store, events chan<- store.Ev
 			if clicks == 0 && scrolls == 0 {
 				continue
 			}
+			app, windowTitle := currentWindow()
+			title := fmt.Sprintf("%d clicks, %d scrolls", clicks, scrolls)
+			if app != "" {
+				title = fmt.Sprintf("%d clicks, %d scrolls in %s", clicks, scrolls, app)
+			}
 			events <- store.Event{
 				Source:        "mouse",
 				SourceEventID: fmt.Sprintf("mouse:%d", now.UnixMilli()),
 				OccurredAt:    now,
 				Action:        "mouse_activity",
-				Title:         fmt.Sprintf("%d clicks, %d scrolls", clicks, scrolls),
+				Title:         title,
 				Metadata: map[string]any{
 					"clicks":       clicks,
 					"scrolls":      scrolls,
 					"interval_sec": int(s.emitInterval.Seconds()),
+					"app":          app,
+					"window_title": windowTitle,
 				},
 			}
 		}
 	}
+}
+
+func currentWindow() (string, string) {
+	info, err := window.ActiveWindow()
+	if err != nil {
+		return "", ""
+	}
+	return info.App, info.WindowTitle
 }

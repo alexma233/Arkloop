@@ -88,7 +88,7 @@ func (s *Source) Run(ctx context.Context, db *store.Store, events chan<- store.E
 				continue
 			}
 
-			info, err := activeWindow()
+			info, err := ActiveWindow()
 			if err != nil {
 				continue
 			}

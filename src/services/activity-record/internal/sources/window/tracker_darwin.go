@@ -71,7 +71,7 @@ static double getIdleSeconds() {
 import "C"
 import "unsafe"
 
-func activeWindow() (WindowInfo, error) {
+func ActiveWindow() (WindowInfo, error) {
 	result := C.getActiveWindow()
 	var info WindowInfo
 	if result.app != nil {

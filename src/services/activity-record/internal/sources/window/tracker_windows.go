@@ -22,7 +22,7 @@ type lastInputInfo struct {
 	dwTime uint32
 }
 
-func activeWindow() (WindowInfo, error) {
+func ActiveWindow() (WindowInfo, error) {
 	var info WindowInfo
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	if hwnd == 0 {

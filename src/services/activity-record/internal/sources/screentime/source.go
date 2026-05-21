@@ -40,6 +40,15 @@ func (s *Source) Name() string {
 	return "screentime"
 }
 
+var trackedStreams = []string{
+	"/app/usage",
+	"/display/isBacklit",
+	"/notification/usage",
+	"/app/mediaUsage",
+	"/media/nowPlaying",
+	"/app/webUsage",
+}
+
 func (s *Source) Sync(ctx context.Context, db *store.Store) (int, error) {
 	var cur cursor
 	if err := db.Cursor(ctx, s.Name(), &cur); err != nil {
@@ -59,17 +68,31 @@ func (s *Source) Sync(ctx context.Context, db *store.Store) (int, error) {
 
 	rows, err := srcDB.QueryContext(ctx, `
 SELECT
-  ZOBJECT.Z_PK,
-  ZOBJECT.ZSTARTDATE,
-  ZOBJECT.ZENDDATE,
-  ZOBJECT.ZVALUESTRING,
-  COALESCE(ZSOURCE.ZBUNDLEID, ''),
-  COALESCE(ZSOURCE.ZDEVICEID, '')
-FROM ZOBJECT
-LEFT JOIN ZSOURCE ON ZSOURCE.Z_PK = ZOBJECT.ZSOURCE
-WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
-  AND ZOBJECT.ZSTARTDATE > ?
-ORDER BY ZOBJECT.ZSTARTDATE ASC
+  o.Z_PK,
+  o.ZSTREAMNAME,
+  o.ZSTARTDATE,
+  o.ZENDDATE,
+  COALESCE(o.ZVALUESTRING, ''),
+  COALESCE(o.ZVALUEINTEGER, 0),
+  COALESCE(src.ZBUNDLEID, ''),
+  COALESCE(src.ZDEVICEID, ''),
+  COALESCE(sm.Z_DKNOTIFICATIONUSAGEMETADATAKEY__BUNDLEID, ''),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__TITLE, ''),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__ARTIST, ''),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__ALBUM, ''),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__GENRE, ''),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__DURATION, 0),
+  COALESCE(sm.Z_DKNOWPLAYINGMETADATAKEY__PLAYING, 0),
+  COALESCE(sm.Z_DKDIGITALHEALTHMETADATAKEY__WEBDOMAIN, ''),
+  COALESCE(sm.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL, ''),
+  COALESCE(sm.Z_DKAPPMEDIAUSAGEMETADATAKEY__URL, ''),
+  COALESCE(sm.Z_DKAPPMEDIAUSAGEMETADATAKEY__MEDIAURL, '')
+FROM ZOBJECT o
+LEFT JOIN ZSOURCE src ON src.Z_PK = o.ZSOURCE
+LEFT JOIN ZSTRUCTUREDMETADATA sm ON sm.Z_PK = o.ZSTRUCTUREDMETADATA
+WHERE o.ZSTREAMNAME IN ('/app/usage', '/display/isBacklit', '/notification/usage', '/app/mediaUsage', '/media/nowPlaying', '/app/webUsage')
+  AND o.ZSTARTDATE > ?
+ORDER BY o.ZSTARTDATE ASC
 `, cur.MaxStartDate)
 	if err != nil {
 		return 0, fmt.Errorf("query knowledgeC.db: %w", err)
@@ -78,41 +101,51 @@ ORDER BY ZOBJECT.ZSTARTDATE ASC
 	var events []store.Event
 	next := cur
 	for rows.Next() {
-		var pk int64
-		var startDate, endDate float64
-		var valueString sql.NullString
-		var bundleID, deviceID string
-		if err := rows.Scan(&pk, &startDate, &endDate, &valueString, &bundleID, &deviceID); err != nil {
+		var (
+			pk             int64
+			stream         string
+			startDate      float64
+			endDate        float64
+			valueString    string
+			valueInteger   int64
+			sourceBundleID string
+			deviceID       string
+			notifBundleID  string
+			npTitle        string
+			npArtist       string
+			npAlbum        string
+			npGenre        string
+			npDuration     float64
+			npPlaying      int64
+			webDomain      string
+			webURL         string
+			mediaURL       string
+			mediaMediaURL  string
+		)
+		if err := rows.Scan(
+			&pk, &stream, &startDate, &endDate,
+			&valueString, &valueInteger,
+			&sourceBundleID, &deviceID,
+			&notifBundleID,
+			&npTitle, &npArtist, &npAlbum, &npGenre, &npDuration, &npPlaying,
+			&webDomain, &webURL,
+			&mediaURL, &mediaMediaURL,
+		); err != nil {
 			rows.Close()
 			return 0, err
-		}
-		if !valueString.Valid || valueString.String == "" {
-			continue
 		}
 		if startDate > next.MaxStartDate {
 			next.MaxStartDate = startDate
 		}
-		duration := endDate - startDate
-		if duration < 0 {
-			duration = 0
+
+		ev, ok := buildEvent(pk, stream, startDate, endDate, valueString, valueInteger,
+			sourceBundleID, deviceID, notifBundleID,
+			npTitle, npArtist, npAlbum, npGenre, npDuration, npPlaying,
+			webDomain, webURL, mediaURL, mediaMediaURL)
+		if !ok {
+			continue
 		}
-		appName := readableAppName(valueString.String)
-		events = append(events, store.Event{
-			Source:        "screentime",
-			SourceEventID: fmt.Sprintf("screentime:%d", pk),
-			OccurredAt:    cocoaTime(startDate),
-			App:           appName,
-			Action:        "app_used",
-			Title:         appName,
-			Metadata: map[string]any{
-				"bundle_id":    valueString.String,
-				"source_bundle": bundleID,
-				"device_id":    deviceID,
-				"duration_sec": duration,
-			},
-			RefKind: "bundle_id",
-			RefKey:  valueString.String,
-		})
+		events = append(events, ev)
 	}
 	if err := rows.Close(); err != nil {
 		return 0, err
@@ -129,7 +162,157 @@ ORDER BY ZOBJECT.ZSTARTDATE ASC
 	return inserted, nil
 }
 
-// macOS Core Data "Cocoa" timestamp: seconds since 2001-01-01 00:00:00 UTC
+func buildEvent(
+	pk int64, stream string,
+	startDate, endDate float64,
+	valueString string, valueInteger int64,
+	sourceBundleID, deviceID string,
+	notifBundleID string,
+	npTitle, npArtist, npAlbum, npGenre string, npDuration float64, npPlaying int64,
+	webDomain, webURL string,
+	mediaURL, mediaMediaURL string,
+) (store.Event, bool) {
+	base := store.Event{
+		Source:     "screentime",
+		OccurredAt: cocoaTime(startDate),
+	}
+	duration := endDate - startDate
+	if duration < 0 {
+		duration = 0
+	}
+
+	switch stream {
+	case "/app/usage":
+		if valueString == "" {
+			return base, false
+		}
+		appName := readableAppName(valueString)
+		base.SourceEventID = fmt.Sprintf("screentime:%d", pk)
+		base.App = appName
+		base.Action = "app_used"
+		base.Title = appName
+		base.Metadata = map[string]any{
+			"bundle_id":     valueString,
+			"source_bundle": sourceBundleID,
+			"device_id":     deviceID,
+			"duration_sec":  duration,
+		}
+		base.RefKind = "bundle_id"
+		base.RefKey = valueString
+
+	case "/display/isBacklit":
+		base.SourceEventID = fmt.Sprintf("screentime:backlit:%d", pk)
+		if valueInteger == 1 {
+			base.Action = "screen_on"
+			base.Title = "screen on"
+		} else {
+			base.Action = "screen_off"
+			base.Title = "screen off"
+		}
+		base.Metadata = map[string]any{
+			"duration_sec": duration,
+		}
+
+	case "/notification/usage":
+		bundleID := notifBundleID
+		if bundleID == "" {
+			bundleID = sourceBundleID
+		}
+		if bundleID == "" {
+			return base, false
+		}
+		base.SourceEventID = fmt.Sprintf("screentime:notif:%d", pk)
+		base.App = readableAppName(bundleID)
+		base.Action = "notification_received"
+		base.Title = readableAppName(bundleID)
+		base.Metadata = map[string]any{
+			"bundle_id": bundleID,
+		}
+		base.RefKind = "bundle_id"
+		base.RefKey = bundleID
+
+	case "/app/mediaUsage":
+		if valueString == "" {
+			return base, false
+		}
+		appName := readableAppName(valueString)
+		base.SourceEventID = fmt.Sprintf("screentime:media:%d", pk)
+		base.App = appName
+		base.Action = "media_used"
+		base.Title = appName
+		meta := map[string]any{
+			"bundle_id":    valueString,
+			"duration_sec": duration,
+		}
+		if mediaURL != "" {
+			meta["url"] = mediaURL
+		}
+		if mediaMediaURL != "" {
+			meta["media_url"] = mediaMediaURL
+		}
+		base.Metadata = meta
+
+	case "/media/nowPlaying":
+		if valueString == "" {
+			return base, false
+		}
+		appName := readableAppName(valueString)
+		base.SourceEventID = fmt.Sprintf("screentime:np:%d", pk)
+		base.App = appName
+		base.Action = "media_playing"
+		if npTitle != "" {
+			base.Title = npTitle
+		} else {
+			base.Title = appName
+		}
+		meta := map[string]any{
+			"bundle_id":    valueString,
+			"duration_sec": npDuration,
+			"playing":      npPlaying == 1,
+		}
+		if npArtist != "" {
+			meta["artist"] = npArtist
+		}
+		if npAlbum != "" {
+			meta["album"] = npAlbum
+		}
+		if npGenre != "" {
+			meta["genre"] = npGenre
+		}
+		base.Metadata = meta
+
+	case "/app/webUsage":
+		if valueString == "" {
+			return base, false
+		}
+		appName := readableAppName(valueString)
+		base.SourceEventID = fmt.Sprintf("screentime:web:%d", pk)
+		base.App = appName
+		base.Action = "web_used"
+		base.Title = webDomain
+		if base.Title == "" {
+			base.Title = appName
+		}
+		base.URL = webURL
+		meta := map[string]any{
+			"bundle_id":  valueString,
+			"web_domain": webDomain,
+		}
+		if duration > 0 {
+			meta["duration_sec"] = duration
+		}
+		base.Metadata = meta
+		if webURL != "" {
+			base.RefKind = "url"
+			base.RefKey = webURL
+		}
+
+	default:
+		return base, false
+	}
+	return base, true
+}
+
 var cocoaEpoch = time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func cocoaTime(seconds float64) time.Time {

@@ -97,5 +97,5 @@ func splitList(value string) []string {
 func printUsage() {
 	fmt.Fprintln(os.Stdout, `Usage:
   activity-record sync   [--data-dir DIR] [--sources codex,chrome]
-  activity-record daemon [--data-dir DIR] [--sync-sources codex,chrome] [--sources window,clipboard,mouse] [--sync-interval 300] [--idle-threshold 300]`)
+  activity-record daemon [--data-dir DIR] [--sync-sources codex,chrome,screentime] [--sources window,clipboard,mouse] [--sync-interval 300] [--idle-threshold 300]`)
 }
