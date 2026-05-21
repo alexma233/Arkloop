@@ -16,7 +16,6 @@ import (
 )
 
 const activityRecorderPluginID = "arkloop.plugins.activity-recorder"
-const activityRecordSyncStaleAfter = time.Hour
 
 func prepareActivityRecorderSources(ctx context.Context, pluginID string, settings, runtimeState map[string]any) {
 	if pluginID != activityRecorderPluginID {
@@ -25,15 +24,12 @@ func prepareActivityRecorderSources(ctx context.Context, pluginID string, settin
 	stopLegacyContextInitialSync(runtimeState)
 	activityRecordEnabled := settingBoolDefault(settings, "enable_activity_record", true)
 	if activityRecordEnabled {
-		prepareActivityRecord(runtimeState)
-	}
-	if settingBool(settings, "enable_screentime") {
-		checkScreenTimeAccess(runtimeState)
+		prepareActivityRecord(settings, runtimeState)
 	}
 	_ = ctx
 }
 
-func prepareActivityRecord(runtimeState map[string]any) {
+func prepareActivityRecord(settings map[string]any, runtimeState map[string]any) {
 	prefix := "activity_record."
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -46,30 +42,18 @@ func prepareActivityRecord(runtimeState map[string]any) {
 	runtimeState[prefix+"db_path"] = dbPath
 	if records, err := sqliteCount(dbPath, "SELECT COUNT(*) FROM activity_events"); err == nil {
 		runtimeState[prefix+"db_records"] = records
-		clearActivityRecordSyncIfStopped(runtimeState)
-		if records == 0 {
-			startActivityRecordSync(runtimeState, dataDir)
-			return
-		}
 		if latestUnix, err := sqliteCount(dbPath, "SELECT COALESCE(MAX(unixepoch(occurred_at)), 0) FROM activity_events"); err == nil && latestUnix > 0 {
 			latest := time.Unix(int64(latestUnix), 0).UTC()
 			runtimeState[prefix+"db_latest_at"] = latest.Format(time.RFC3339)
-			stale := time.Since(latest) > activityRecordSyncStaleAfter
-			runtimeState[prefix+"stale"] = stale
-			if stale {
-				startActivityRecordSync(runtimeState, dataDir)
-			}
 		}
-		return
 	} else if !errors.Is(err, os.ErrNotExist) {
 		runtimeState[prefix+"db_error"] = err.Error()
 	}
-	runtimeState[prefix+"db_records"] = 0
-	startActivityRecordSync(runtimeState, dataDir)
+	startActivityRecordDaemon(settings, runtimeState, dataDir)
 }
 
-func clearActivityRecordSyncIfStopped(runtimeState map[string]any) {
-	key := "activity_record.sync"
+func clearActivityRecordDaemonIfStopped(runtimeState map[string]any) {
+	key := "activity_record.daemon"
 	if pid := daemonPID(runtimeState, key); processRunning(pid) {
 		runtimeState[key+".status"] = "running"
 		return
@@ -81,22 +65,26 @@ func clearActivityRecordSyncIfStopped(runtimeState map[string]any) {
 	}
 }
 
-func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
-	key := "activity_record.sync"
+func startActivityRecordDaemon(settings map[string]any, runtimeState map[string]any, dataDir string) {
+	key := "activity_record.daemon"
 	prefix := key + "."
 	delete(runtimeState, prefix+"error")
+
+	clearActivityRecordDaemonIfStopped(runtimeState)
 	if pid := daemonPID(runtimeState, key); processRunning(pid) {
 		runtimeState[prefix+"status"] = "running"
 		return
 	}
 	removeDaemonPID(runtimeState, key)
+
 	cmdParts, err := activityRecordCommand()
 	if err != nil {
 		runtimeState[prefix+"status"] = "error"
 		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	logPath := filepath.Join(dataDir, "logs", "sync.log")
+
+	logPath := filepath.Join(dataDir, "logs", "daemon.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		runtimeState[prefix+"status"] = "error"
 		runtimeState[prefix+"error"] = err.Error()
@@ -108,7 +96,37 @@ func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
 		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	args := append(cmdParts[1:], "sync", "--data-dir", dataDir)
+
+	var daemonSources []string
+	if settingBoolDefault(settings, "enable_window_tracking", true) {
+		daemonSources = append(daemonSources, "window")
+	}
+	if settingBoolDefault(settings, "enable_clipboard", true) {
+		daemonSources = append(daemonSources, "clipboard")
+	}
+	if settingBool(settings, "enable_keyboard") {
+		daemonSources = append(daemonSources, "keyboard")
+	}
+
+	syncSources := []string{"codex", "chrome"}
+	if settingBoolDefault(settings, "enable_screentime", true) {
+		syncSources = append(syncSources, "screentime")
+	}
+
+	args := append(cmdParts[1:], "daemon", "--data-dir", dataDir)
+	if len(daemonSources) > 0 {
+		args = append(args, "--sources", strings.Join(daemonSources, ","))
+	}
+	if len(syncSources) > 0 {
+		args = append(args, "--sync-sources", strings.Join(syncSources, ","))
+	}
+	if v, ok := settings["sync_interval_sec"]; ok {
+		args = append(args, "--sync-interval", fmt.Sprint(v))
+	}
+	if v, ok := settings["idle_threshold_sec"]; ok {
+		args = append(args, "--idle-threshold", fmt.Sprint(v))
+	}
+
 	cmd := exec.CommandContext(detachedContext(context.Background()), cmdParts[0], args...)
 	configureDaemonCommand(cmd)
 	cmd.Env = os.Environ()
@@ -121,6 +139,7 @@ func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
 		return
 	}
 	_ = logFile.Close()
+
 	writeDaemonPID(runtimeState, key, cmd.Process.Pid)
 	runtimeState[prefix+"pid"] = cmd.Process.Pid
 	runtimeState[prefix+"log_path"] = logPath
@@ -250,36 +269,6 @@ func stopLegacyContextInitialSync(runtimeState map[string]any) {
 	removeDaemonPID(runtimeState, key)
 	runtimeState[key+".status"] = "disabled"
 	runtimeState[key+".stopped_at"] = time.Now().UTC().Format(time.RFC3339)
-}
-
-func checkScreenTimeAccess(runtimeState map[string]any) {
-	prefix := "screentime.permissions."
-	runtimeState[prefix+"checked_at"] = time.Now().UTC().Format(time.RFC3339)
-	delete(runtimeState, prefix+"error")
-	if runtime.GOOS != "darwin" {
-		runtimeState[prefix+"full_disk_access"] = true
-		return
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		runtimeState[prefix+"full_disk_access"] = false
-		runtimeState[prefix+"error"] = err.Error()
-		return
-	}
-	path := filepath.Join(home, "Library", "Application Support", "Knowledge", "knowledgeC.db")
-	runtimeState[prefix+"db_path"] = path
-	if _, err := os.Stat(path); err != nil {
-		runtimeState[prefix+"full_disk_access"] = false
-		runtimeState[prefix+"error"] = err.Error()
-		return
-	}
-	_, err = sqliteCount(path, "SELECT COUNT(*) FROM ZOBJECT")
-	if err != nil {
-		runtimeState[prefix+"full_disk_access"] = false
-		runtimeState[prefix+"error"] = err.Error()
-		return
-	}
-	runtimeState[prefix+"full_disk_access"] = true
 }
 
 func sqliteCount(path, query string) (int, error) {
