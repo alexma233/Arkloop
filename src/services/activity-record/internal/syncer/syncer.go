@@ -17,6 +17,14 @@ func errUnknownSource(name string) error {
 	return fmt.Errorf("unknown source %q", name)
 }
 
+type sourceBuilder func() (Source, error)
+
+var extraSourceBuilders = map[string]sourceBuilder{}
+
+func registerSourceBuilder(name string, builder sourceBuilder) {
+	extraSourceBuilders[name] = builder
+}
+
 type Options struct {
 	DataDir string
 	Sources []string
@@ -58,6 +66,9 @@ func buildSource(name string) (Source, error) {
 	case "chrome":
 		return chrome.NewDefault()
 	default:
+		if builder, ok := extraSourceBuilders[name]; ok {
+			return builder()
+		}
 		return nil, errUnknownSource(name)
 	}
 }

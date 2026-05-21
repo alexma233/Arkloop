@@ -55,7 +55,7 @@ func runSync(args []string) error {
 func runDaemon(args []string) error {
 	flags := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	dataDir := flags.String("data-dir", defaultDataDir(), "activity-record data directory")
-	syncSources := flags.String("sync-sources", "codex,chrome", "comma-separated sync source list")
+	syncSources := flags.String("sync-sources", "codex,chrome,screentime", "comma-separated sync source list")
 	daemonSources := flags.String("sources", "window,clipboard", "comma-separated daemon source list")
 	syncInterval := flags.Int("sync-interval", 300, "sync interval in seconds")
 	idleThreshold := flags.Int("idle-threshold", 300, "idle detection threshold in seconds")
