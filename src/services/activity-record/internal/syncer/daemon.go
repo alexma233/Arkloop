@@ -1,7 +1,6 @@
 package syncer
 
 import (
-	"arkloop/services/activity-record/internal/store"
 	"context"
 	"log"
 	"os"
@@ -11,6 +10,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"arkloop/services/activity-record/internal/sources/clipboard"
+	"arkloop/services/activity-record/internal/sources/keyboard"
+	"arkloop/services/activity-record/internal/sources/window"
+	"arkloop/services/activity-record/internal/store"
 )
 
 type DaemonSource interface {
@@ -152,8 +156,13 @@ func runSyncSources(ctx context.Context, db *store.Store, sourceNames []string) 
 }
 
 func buildDaemonSource(name string, opts DaemonOptions) (DaemonSource, error) {
-	_ = opts
 	switch name {
+	case "window":
+		return window.New(opts.IdleThreshold), nil
+	case "clipboard":
+		return clipboard.New(true), nil
+	case "keyboard":
+		return keyboard.New(), nil
 	default:
 		return nil, errUnknownSource(name)
 	}
