@@ -194,6 +194,7 @@ mcp_servers:
     transport: stdio
     command: uv
     args: ["tool", "run", "--from", "git+https://github.com/vincent-pli/chrome-history-mcp.git", "chrome-history-mcp"]
+    working_dir: data/chrome-history
     enabled_when:
       - setting: enable_chrome_history
         equals: true
