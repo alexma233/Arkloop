@@ -358,7 +358,7 @@ func buildEvents(sessionID string, sourceFile string, projectPath string, candid
 		ordinal := roleOrdinals[ordinalKey]
 		roleOrdinals[ordinalKey] = ordinal + 1
 		messageID := "turn:" + msg.TurnID + ":" + msg.Role + ":" + strconvItoa(ordinal)
-		sourceEventID := sessionID + "#file:" + sourceFile + "#" + messageID
+		sourceEventID := sessionID + "#" + messageID
 		events = append(events, store.Event{
 			Source:        "codex",
 			SourceEventID: sourceEventID,
@@ -444,4 +444,4 @@ func homeRelative(path string) string {
 	return path
 }
 
-func strconvItoa(value int) string { return strconv.FormatInt(int64(value), 10) }
+func strconvItoa(value int) string { return strconv.Itoa(value) }

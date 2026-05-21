@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"arkloop/services/activity-record/internal/store"
@@ -38,17 +40,75 @@ func NewDefault() (*Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	candidates := []profile{
-		{Name: "chrome", Path: filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "History")},
-		{Name: "chrome-canary", Path: filepath.Join(home, "Library", "Application Support", "Google", "Chrome Canary", "Default", "History")},
+	browsers := chromeBrowserDirs(home)
+	profiles := discoverProfiles(browsers)
+	return &Source{profiles: profiles}, nil
+}
+
+type browserDir struct {
+	Browser string
+	Dir     string
+}
+
+func chromeBrowserDirs(home string) []browserDir {
+	switch runtime.GOOS {
+	case "darwin":
+		base := filepath.Join(home, "Library", "Application Support")
+		return []browserDir{
+			{"chrome", filepath.Join(base, "Google", "Chrome")},
+			{"chrome-canary", filepath.Join(base, "Google", "Chrome Canary")},
+			{"chromium", filepath.Join(base, "Chromium")},
+			{"edge", filepath.Join(base, "Microsoft Edge")},
+		}
+	case "linux":
+		return []browserDir{
+			{"chrome", filepath.Join(home, ".config", "google-chrome")},
+			{"chromium", filepath.Join(home, ".config", "chromium")},
+			{"edge", filepath.Join(home, ".config", "microsoft-edge")},
+		}
+	case "windows":
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+		return []browserDir{
+			{"chrome", filepath.Join(localAppData, "Google", "Chrome", "User Data")},
+			{"chrome-canary", filepath.Join(localAppData, "Google", "Chrome SxS", "User Data")},
+			{"chromium", filepath.Join(localAppData, "Chromium", "User Data")},
+			{"edge", filepath.Join(localAppData, "Microsoft", "Edge", "User Data")},
+		}
+	default:
+		return nil
 	}
-	profiles := make([]profile, 0, len(candidates))
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate.Path); err == nil {
-			profiles = append(profiles, candidate)
+}
+
+func discoverProfiles(browsers []browserDir) []profile {
+	var profiles []profile
+	for _, browser := range browsers {
+		if _, err := os.Stat(browser.Dir); err != nil {
+			continue
+		}
+		candidates := []string{"Default"}
+		entries, err := os.ReadDir(browser.Dir)
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && strings.HasPrefix(entry.Name(), "Profile ") {
+					candidates = append(candidates, entry.Name())
+				}
+			}
+		}
+		for _, profileDir := range candidates {
+			historyPath := filepath.Join(browser.Dir, profileDir, "History")
+			if _, err := os.Stat(historyPath); err == nil {
+				name := browser.Browser
+				if profileDir != "Default" {
+					name = browser.Browser + "-" + strings.ToLower(strings.ReplaceAll(profileDir, " ", ""))
+				}
+				profiles = append(profiles, profile{Name: name, Path: historyPath})
+			}
 		}
 	}
-	return &Source{profiles: profiles}, nil
+	return profiles
 }
 
 func (s *Source) Name() string {
@@ -232,18 +292,11 @@ func chromeTime(value int64) time.Time {
 	return time.UnixMicro(value - chromeEpochOffsetMicros).UTC()
 }
 
-func secondsFromMicros(value int64) float64 {
-	if value <= 0 {
-		return 0
-	}
-	return float64(value) / 1000000
-}
-
 func secondsFromNullableMicros(value sql.NullInt64) float64 {
-	if !value.Valid {
+	if !value.Valid || value.Int64 <= 0 {
 		return 0
 	}
-	return secondsFromMicros(value.Int64)
+	return float64(value.Int64) / 1000000
 }
 
 func nullableInt64(value sql.NullInt64) int64 {

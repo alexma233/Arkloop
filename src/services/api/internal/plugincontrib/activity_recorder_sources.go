@@ -90,7 +90,7 @@ func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
 		return
 	}
 	removeDaemonPID(runtimeState, key)
-	command, err := activityRecordCommand()
+	cmdParts, err := activityRecordCommand()
 	if err != nil {
 		runtimeState[prefix+"status"] = "error"
 		runtimeState[prefix+"error"] = err.Error()
@@ -108,7 +108,8 @@ func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
 		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	cmd := exec.CommandContext(detachedContext(context.Background()), command, "sync", "--data-dir", dataDir)
+	args := append(cmdParts[1:], "sync", "--data-dir", dataDir)
+	cmd := exec.CommandContext(detachedContext(context.Background()), cmdParts[0], args...)
 	configureDaemonCommand(cmd)
 	cmd.Env = os.Environ()
 	cmd.Stdout = logFile
@@ -130,29 +131,35 @@ func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
 	}()
 }
 
-func activityRecordCommand() (string, error) {
+func activityRecordCommand() ([]string, error) {
 	if command := strings.TrimSpace(os.Getenv("ARKLOOP_ACTIVITY_RECORD_BIN")); command != "" {
-		return command, nil
+		return []string{command}, nil
+	}
+	name := "activity-record"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
 	executable, _ := os.Executable()
-	candidates := []string{}
+	var candidates []string
 	if executable != "" {
 		dir := filepath.Dir(executable)
-		name := "activity-record"
-		if runtime.GOOS == "windows" {
-			name += ".exe"
-		}
 		candidates = append(candidates,
 			filepath.Join(dir, name),
+			filepath.Join(dir, "bin", name),
 			filepath.Join(filepath.Dir(filepath.Dir(dir)), "activity-record", "bin", name),
 		)
-	}
-	cwd, err := os.Getwd()
-	if err == nil {
-		name := "activity-record"
-		if runtime.GOOS == "windows" {
-			name += ".exe"
+		resourcesDir := filepath.Join(filepath.Dir(dir), "Resources", "arkloop-project", "bin")
+		candidates = append(candidates, filepath.Join(resourcesDir, name))
+		if runtime.GOOS == "darwin" {
+			for d := dir; d != "/" && d != "."; d = filepath.Dir(d) {
+				if strings.HasSuffix(d, ".app") {
+					candidates = append(candidates, filepath.Join(d, "Contents", "Resources", "arkloop-project", "bin", name))
+					break
+				}
+			}
 		}
+	}
+	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(cwd, "src", "services", "activity-record", "bin", name),
 			filepath.Join(cwd, "..", "activity-record", "bin", name),
@@ -160,15 +167,23 @@ func activityRecordCommand() (string, error) {
 	}
 	for _, candidate := range candidates {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
+			return []string{candidate}, nil
 		}
 	}
 	for _, dir := range candidateDirs(candidates) {
 		if match := firstActivityRecordBinary(dir); match != "" {
-			return match, nil
+			return []string{match}, nil
 		}
 	}
-	return "", fmt.Errorf("activity-record binary not found")
+	if goPath, err := exec.LookPath("go"); err == nil {
+		if cwd, err := os.Getwd(); err == nil {
+			mainPkg := filepath.Join(cwd, "src", "services", "activity-record", "cmd", "activity-record")
+			if info, err := os.Stat(mainPkg); err == nil && info.IsDir() {
+				return []string{goPath, "run", mainPkg}, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("activity-record binary not found")
 }
 
 func candidateDirs(paths []string) []string {
