@@ -912,6 +912,10 @@ export const zh: LocaleStrings = {
   checkInPlaceholder: "输入你的回复...",
   replyPlaceholder: "回复...",
   followUpPlaceholder: "追加回复...",
+  previousResponse: "上一条回复",
+  nextResponse: "下一条回复",
+  alreadyAtFirstResponse: "已经是第一条回复",
+  alreadyAtLastResponse: "已经是最后一条回复",
   connection: {
     title: "连接模式",
     local: "本地",

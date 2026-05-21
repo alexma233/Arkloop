@@ -893,6 +893,10 @@ export interface LocaleStrings {
   checkInPlaceholder: string;
   replyPlaceholder: string;
   followUpPlaceholder: string;
+  previousResponse: string;
+  nextResponse: string;
+  alreadyAtFirstResponse: string;
+  alreadyAtLastResponse: string;
   // connection settings (desktop only)
   connection: {
     title: string;

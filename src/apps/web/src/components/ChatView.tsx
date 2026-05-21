@@ -36,6 +36,7 @@ import { resourceTitle } from './resource-preview/resourceUri'
 import { isPlanMarkdownPath } from '../planMetadata'
 import { ChatTitleMenu } from './ChatTitleMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
+import { ChatMessageNavigator } from './ChatMessageNavigator'
 import { CopSegmentBlocks } from './CopSegmentBlocks'
 import { TopLevelCopToolBlock } from './TopLevelCopToolBlock'
 import { ContextCompactBar } from './ContextCompactBar'
@@ -3669,6 +3670,10 @@ export const ChatView = memo(function ChatView() {
           <div className="pointer-events-none absolute inset-x-0 top-[60px] z-10 h-10" style={{ background: 'linear-gradient(to bottom, var(--c-chat-bg-gradient-stop, var(--c-bg-page-gradient-stop, var(--c-bg-page))), transparent)' }} />
           {/* 消息列表 */}
           {messageListArea}
+          <ChatMessageNavigator
+            messages={displayedMessages}
+            scrollContainerRef={scrollContainerRef}
+          />
 
       {/* 输入区域 */}
       <div

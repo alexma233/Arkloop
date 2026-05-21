@@ -918,6 +918,10 @@ export const en: LocaleStrings = {
   checkInPlaceholder: "Type your response...",
   replyPlaceholder: "Reply...",
   followUpPlaceholder: "Send follow-up",
+  previousResponse: "Previous response",
+  nextResponse: "Next response",
+  alreadyAtFirstResponse: "Already at first response",
+  alreadyAtLastResponse: "Already at last response",
   connection: {
     title: "Connection Mode",
     local: "Local",
