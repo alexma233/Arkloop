@@ -24,6 +24,9 @@ settings:
   - key: enable_keyboard
     type: boolean
     default: false
+  - key: enable_mouse_tracking
+    type: boolean
+    default: true
   - key: enable_screentime
     type: boolean
     default: true

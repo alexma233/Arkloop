@@ -13,6 +13,7 @@ import (
 
 	"arkloop/services/activity-record/internal/sources/clipboard"
 	"arkloop/services/activity-record/internal/sources/keyboard"
+	"arkloop/services/activity-record/internal/sources/mouse"
 	"arkloop/services/activity-record/internal/sources/window"
 	"arkloop/services/activity-record/internal/store"
 )
@@ -53,7 +54,8 @@ func Daemon(ctx context.Context, opts DaemonOptions) error {
 	defer stop()
 
 	events := make(chan store.Event, 256)
-	var wg sync.WaitGroup
+	var srcWg sync.WaitGroup
+	var svcWg sync.WaitGroup
 
 	for _, name := range opts.DaemonSources {
 		src, err := buildDaemonSource(name, opts)
@@ -61,27 +63,27 @@ func Daemon(ctx context.Context, opts DaemonOptions) error {
 			log.Printf("daemon source %s: skip: %v", name, err)
 			continue
 		}
-		wg.Add(1)
+		srcWg.Add(1)
 		go func(s DaemonSource) {
-			defer wg.Done()
+			defer srcWg.Done()
 			if err := s.Run(ctx, db, events); err != nil && ctx.Err() == nil {
 				log.Printf("daemon source %s: %v", s.Name(), err)
 			}
 		}(src)
 	}
 
-	wg.Add(1)
+	svcWg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer svcWg.Done()
 		collectEvents(ctx, db, events)
 	}()
 
 	if len(opts.SyncSources) > 0 {
 		runSyncSources(ctx, db, opts.SyncSources)
 
-		wg.Add(1)
+		svcWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer svcWg.Done()
 			ticker := time.NewTicker(opts.SyncInterval)
 			defer ticker.Stop()
 			for {
@@ -96,8 +98,9 @@ func Daemon(ctx context.Context, opts DaemonOptions) error {
 	}
 
 	<-ctx.Done()
+	srcWg.Wait()
 	close(events)
-	wg.Wait()
+	svcWg.Wait()
 	return nil
 }
 
@@ -137,6 +140,7 @@ func collectEvents(ctx context.Context, db *store.Store, events <-chan store.Eve
 }
 
 func runSyncSources(ctx context.Context, db *store.Store, sourceNames []string) {
+	var wg sync.WaitGroup
 	for _, name := range sourceNames {
 		if ctx.Err() != nil {
 			return
@@ -146,13 +150,18 @@ func runSyncSources(ctx context.Context, db *store.Store, sourceNames []string) 
 			log.Printf("sync source %s: skip: %v", name, err)
 			continue
 		}
-		count, err := src.Sync(ctx, db)
-		if err != nil {
-			log.Printf("sync source=%s error=%v", name, err)
-			continue
-		}
-		log.Printf("sync source=%s events=%d", name, count)
+		wg.Add(1)
+		go func(s Source) {
+			defer wg.Done()
+			count, err := s.Sync(ctx, db)
+			if err != nil {
+				log.Printf("sync source=%s error=%v", s.Name(), err)
+				return
+			}
+			log.Printf("sync source=%s events=%d", s.Name(), count)
+		}(src)
 	}
+	wg.Wait()
 }
 
 func buildDaemonSource(name string, opts DaemonOptions) (DaemonSource, error) {
@@ -163,6 +172,8 @@ func buildDaemonSource(name string, opts DaemonOptions) (DaemonSource, error) {
 		return clipboard.New(true), nil
 	case "keyboard":
 		return keyboard.New(), nil
+	case "mouse":
+		return mouse.New(), nil
 	default:
 		return nil, errUnknownSource(name)
 	}

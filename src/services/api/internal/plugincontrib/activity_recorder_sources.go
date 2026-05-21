@@ -107,6 +107,9 @@ func startActivityRecordDaemon(settings map[string]any, runtimeState map[string]
 	if settingBool(settings, "enable_keyboard") {
 		daemonSources = append(daemonSources, "keyboard")
 	}
+	if settingBoolDefault(settings, "enable_mouse_tracking", true) {
+		daemonSources = append(daemonSources, "mouse")
+	}
 
 	syncSources := []string{"codex", "chrome"}
 	if settingBoolDefault(settings, "enable_screentime", true) {

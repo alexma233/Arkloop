@@ -7,7 +7,7 @@ import (
 
 func TestBuildDaemonSourceKnownNames(t *testing.T) {
 	opts := DaemonOptions{IdleThreshold: 5 * time.Minute}
-	for _, name := range []string{"window", "clipboard", "keyboard"} {
+	for _, name := range []string{"window", "clipboard", "keyboard", "mouse"} {
 		src, err := buildDaemonSource(name, opts)
 		if err != nil {
 			t.Fatalf("buildDaemonSource(%q) error: %v", name, err)

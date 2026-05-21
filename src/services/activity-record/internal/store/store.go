@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -14,6 +15,7 @@ import (
 
 type Store struct {
 	db *sql.DB
+	mu sync.Mutex
 }
 
 type Event struct {
@@ -35,7 +37,7 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +74,8 @@ func (s *Store) Cursor(ctx context.Context, source string, dest any) error {
 }
 
 func (s *Store) SaveCursor(ctx context.Context, source string, cursor any, syncErr error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	payload, err := json.Marshal(cursor)
 	if err != nil {
 		return err
@@ -97,6 +101,8 @@ func (s *Store) UpsertEvents(ctx context.Context, events []Event) (int, error) {
 	if len(events) == 0 {
 		return 0, nil
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	events = dedupeEvents(events)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

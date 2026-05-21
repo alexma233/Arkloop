@@ -58,17 +58,18 @@ func TestRunEmitsIdleEvents(t *testing.T) {
 	defer cancel()
 
 	events := make(chan store.Event, 100)
+	done := make(chan struct{})
 	go func() {
 		_ = s.Run(ctx, nil, events)
+		close(done)
 	}()
 
-	<-ctx.Done()
+	<-done
 	close(events)
 
 	var actions []string
 	for ev := range events {
 		actions = append(actions, ev.Action)
 	}
-	// idle behavior depends on platform; just verify no panics
 	_ = actions
 }
