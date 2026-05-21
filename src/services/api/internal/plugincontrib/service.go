@@ -841,11 +841,44 @@ func renderLaunchSpec(spec map[string]any, settings map[string]any, runtimeState
 	if err != nil {
 		return nil, err
 	}
+	if renderedMap, ok := rendered.(map[string]any); ok {
+		if err := resolvePluginLaunchCwd(renderedMap, runtimeState); err != nil {
+			return nil, err
+		}
+	}
 	payload, err := json.Marshal(rendered)
 	if err != nil {
 		return nil, err
 	}
 	return payload, nil
+}
+
+func resolvePluginLaunchCwd(spec map[string]any, runtimeState map[string]any) error {
+	raw := launchCwdValue(spec)
+	if raw == "" || filepath.IsAbs(raw) {
+		return nil
+	}
+	pluginData := stringFromPluginMap(runtimeState, "plugin_data")
+	if pluginData == "" {
+		return nil
+	}
+	resolved := filepath.Join(pluginData, raw)
+	if err := os.MkdirAll(resolved, 0o755); err != nil {
+		return err
+	}
+	spec["cwd"] = resolved
+	delete(spec, "working_dir")
+	delete(spec, "workingDir")
+	return nil
+}
+
+func launchCwdValue(spec map[string]any) string {
+	for _, key := range []string{"cwd", "working_dir", "workingDir"} {
+		if value, ok := spec[key]; ok && value != nil {
+			return strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	return ""
 }
 
 func renderValue(value any, settings map[string]any, runtimeState map[string]any, strictPlaceholders bool) (any, error) {
