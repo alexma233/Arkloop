@@ -71,6 +71,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          cache-dependency-path: |
+            src/services/*/go.sum
 
       - name: Build sidecar
         run: |
@@ -134,14 +136,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          cache-dependency-path: |
+            src/services/*/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -220,15 +225,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+          cache-dependency-path: |
+            src/services/*/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
 
       - name: Resolve release metadata
         id: release_meta
@@ -237,8 +248,18 @@ jobs:
           FALLBACK_VERSION="$(node -p "require('./src/apps/desktop/package.json').version")" \
             node .github/scripts/resolve-release-version.mjs
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Cache Electron
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ matrix.os }}-${{ hashFiles('src/apps/desktop/package.json') }}
+          restore-keys: electron-${{ matrix.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
