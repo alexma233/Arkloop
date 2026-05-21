@@ -36,7 +36,7 @@ type SourceView = {
   label: string
   setting: keyof Pick<RecorderSettings,
     | 'enable_activitywatch'
-    | 'enable_aicontext'
+    | 'enable_activity_record'
     | 'enable_catchme'
     | 'enable_chrome_history'
     | 'enable_clipboard'
@@ -55,7 +55,7 @@ const sources: SourceView[] = [
     kind: 'activity',
     daemonKeys: ['activitywatch.server', 'activitywatch.window', 'activitywatch.afk'],
   },
-  { key: 'aicontext', label: 'AIContext', setting: 'enable_aicontext', kind: 'context' },
+  { key: 'activity-record', label: 'Activity Record', setting: 'enable_activity_record', kind: 'context' },
   { key: 'catchme', label: 'CatchMe', setting: 'enable_catchme', kind: 'activity', daemonKeys: ['catchme'] },
   { key: 'chrome-history', label: 'Chrome History', setting: 'enable_chrome_history', kind: 'context' },
   { key: 'clipboard', label: 'Clipboard', setting: 'enable_clipboard', kind: 'tool' },
@@ -68,7 +68,7 @@ type RecorderMode = 'lightweight' | 'full' | 'custom'
 type RecorderSettings = {
   mode: RecorderMode
   enable_activitywatch: boolean
-  enable_aicontext: boolean
+  enable_activity_record: boolean
   enable_catchme: boolean
   enable_chrome_history: boolean
   enable_clipboard: boolean
@@ -87,7 +87,7 @@ type RecorderSettings = {
 const defaultRecorderSettings: RecorderSettings = {
   mode: 'lightweight',
   enable_activitywatch: true,
-  enable_aicontext: true,
+  enable_activity_record: true,
   enable_catchme: true,
   enable_chrome_history: true,
   enable_clipboard: true,
@@ -108,7 +108,7 @@ const presetSettings: Record<RecorderMode, RecorderSettings> = {
   full: {
     mode: 'full',
     enable_activitywatch: true,
-    enable_aicontext: true,
+    enable_activity_record: true,
     enable_catchme: true,
     enable_chrome_history: true,
     enable_clipboard: true,
@@ -147,7 +147,7 @@ function currentSettings(enablement: PluginEnablement | null): RecorderSettings 
   return {
     mode,
     enable_activitywatch: toBool(raw.enable_activitywatch, defaultRecorderSettings.enable_activitywatch),
-    enable_aicontext: toBool(raw.enable_aicontext, defaultRecorderSettings.enable_aicontext),
+    enable_activity_record: toBool(raw.enable_activity_record, defaultRecorderSettings.enable_activity_record),
     enable_catchme: toBool(raw.enable_catchme, defaultRecorderSettings.enable_catchme),
     enable_chrome_history: toBool(raw.enable_chrome_history, defaultRecorderSettings.enable_chrome_history),
     enable_clipboard: toBool(raw.enable_clipboard, defaultRecorderSettings.enable_clipboard),
@@ -195,12 +195,12 @@ function daemonStatus(runtime: PluginRuntimeState | null, key: string): string {
 }
 
 function sourceStatus(runtime: PluginRuntimeState | null, source: SourceView): string {
-  if (source.key === 'aicontext') {
-    const initialStatus = runtimeValue(runtime, 'aicontext.initial_sync.status')
-    if (initialStatus === 'running' || initialStatus === 'starting') return 'starting'
-    if (runtimeBool(runtime, 'aicontext.initialized') === false) return 'setup'
-    if (runtimeNumber(runtime, 'aicontext.db_records') > 0) return 'ready'
-    if (runtimeBool(runtime, 'aicontext.initialized') === true) return 'setup'
+  if (source.key === 'activity-record') {
+    const syncStatus = runtimeValue(runtime, 'activity_record.sync.status')
+    if (syncStatus === 'running' || syncStatus === 'starting') return 'starting'
+    if (syncStatus === 'error') return 'error'
+    if (runtimeNumber(runtime, 'activity_record.db_records') > 0) return 'ready'
+    return 'setup'
   }
   if (source.key === 'screentime' && runtimeBool(runtime, 'screentime.permissions.full_disk_access') === false) {
     return 'permission'
@@ -255,7 +255,7 @@ function SourceRow({
 }) {
   const status = sourceStatus(runtime, source)
   const checked = settings[source.setting]
-  const showStatus = Boolean(source.daemonKeys && checked && status !== 'running')
+  const showStatus = checked && (source.key === 'activity-record' || Boolean(source.daemonKeys && status !== 'running'))
   const description = {
     screen: copy.screenSource,
     activity: copy.activitySource,

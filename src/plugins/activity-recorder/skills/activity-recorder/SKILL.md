@@ -11,7 +11,7 @@ Use this skill when running background activity recording or when the user asks 
 
 Load source-owned skills first:
 
-- `aicontext`
+- `activity-record`
 - `catchme`
 - `chrome-history`
 - `clipboard`

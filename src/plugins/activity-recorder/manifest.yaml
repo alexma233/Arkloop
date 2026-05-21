@@ -15,7 +15,7 @@ settings:
   - key: enable_activitywatch
     type: boolean
     default: true
-  - key: enable_aicontext
+  - key: enable_activity_record
     type: boolean
     default: true
   - key: enable_catchme
@@ -113,10 +113,6 @@ runtime:
         - "git+https://github.com/HKUDS/CatchMe.git"
         - "catchme"
         - "awake"
-
-  - id: aicontext
-    detect:
-      - path: uv
 
   - id: activitywatch
     path: runtime/activitywatch/aw-server/aw-server
@@ -218,8 +214,8 @@ mcp_servers:
         equals: true
 
 skills:
-  - skill_key: aicontext
-    bundle: skills/aicontext
+  - skill_key: activity-record
+    bundle: skills/activity-record
     version: "0.1.0"
   - skill_key: catchme
     bundle: skills/catchme

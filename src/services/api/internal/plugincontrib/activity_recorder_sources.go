@@ -3,38 +3,29 @@ package plugincontrib
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 const activityRecorderPluginID = "arkloop.plugins.activity-recorder"
-const aiContextSyncStaleAfter = 10 * time.Minute
-const aiContextSyncRetryAfter = 15 * time.Minute
-
-type aiContextSourceConfig struct {
-	Key  string `json:"key"`
-	Path string `json:"path"`
-	Mode string `json:"mode"`
-}
-
-type aiContextConfig struct {
-	Sources []aiContextSourceConfig `json:"sources"`
-}
+const activityRecordSyncStaleAfter = time.Hour
 
 func prepareActivityRecorderSources(ctx context.Context, pluginID string, settings, runtimeState map[string]any) {
 	if pluginID != activityRecorderPluginID {
 		return
 	}
-	if settingBool(settings, "enable_aicontext") {
-		prepareAIContext(runtimeState)
+	stopLegacyContextInitialSync(runtimeState)
+	activityRecordEnabled := settingBoolDefault(settings, "enable_activity_record", true)
+	if activityRecordEnabled {
+		prepareActivityRecord(runtimeState)
 	}
 	if settingBool(settings, "enable_screentime") {
 		checkScreenTimeAccess(runtimeState)
@@ -42,90 +33,43 @@ func prepareActivityRecorderSources(ctx context.Context, pluginID string, settin
 	_ = ctx
 }
 
-func settingBool(settings map[string]any, key string) bool {
-	value, ok := settings[key]
-	if !ok {
-		return false
-	}
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return typed == "true"
-	default:
-		return fmt.Sprint(typed) == "true"
-	}
-}
-
-func prepareAIContext(runtimeState map[string]any) {
-	prefix := "aicontext."
-	delete(runtimeState, prefix+"setup_error")
+func prepareActivityRecord(runtimeState map[string]any) {
+	prefix := "activity_record."
 	home, err := os.UserHomeDir()
 	if err != nil {
-		runtimeState[prefix+"initialized"] = false
-		runtimeState[prefix+"setup_error"] = err.Error()
+		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	root := filepath.Join(home, ".aicontext")
-	dataDir := filepath.Join(root, "data")
-	configPath := filepath.Join(root, "config.json")
+	dataDir := filepath.Join(home, ".Arkloop", "activity-record")
 	dbPath := filepath.Join(dataDir, "activity.db")
-	runtimeState[prefix+"config_path"] = configPath
+	runtimeState[prefix+"data_dir"] = dataDir
 	runtimeState[prefix+"db_path"] = dbPath
-
-	config, err := readAIContextConfig(configPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		runtimeState[prefix+"initialized"] = false
-		runtimeState[prefix+"setup_error"] = err.Error()
-		return
-	}
-	if len(config.Sources) == 0 {
-		config.Sources = discoverAIContextSources(home)
-		if len(config.Sources) == 0 {
-			runtimeState[prefix+"initialized"] = false
-			runtimeState[prefix+"setup_error"] = "no supported source found"
-			return
-		}
-		if err := os.MkdirAll(dataDir, 0o755); err != nil {
-			runtimeState[prefix+"initialized"] = false
-			runtimeState[prefix+"setup_error"] = err.Error()
-			return
-		}
-		if err := writeAIContextConfig(configPath, config); err != nil {
-			runtimeState[prefix+"initialized"] = false
-			runtimeState[prefix+"setup_error"] = err.Error()
-			return
-		}
-		runtimeState[prefix+"initialized_at"] = time.Now().UTC().Format(time.RFC3339)
-	}
-	runtimeState[prefix+"initialized"] = true
-	runtimeState[prefix+"source_count"] = len(config.Sources)
-	if records, err := sqliteCount(dbPath, "SELECT COUNT(*) FROM activity"); err == nil {
+	if records, err := sqliteCount(dbPath, "SELECT COUNT(*) FROM activity_events"); err == nil {
 		runtimeState[prefix+"db_records"] = records
+		clearActivityRecordSyncIfStopped(runtimeState)
 		if records == 0 {
-			startAIContextInitialSync(runtimeState)
+			startActivityRecordSync(runtimeState, dataDir)
 			return
 		}
-		clearAIContextInitialSyncIfStopped(runtimeState)
-		if latestUnix, err := sqliteCount(dbPath, "SELECT COALESCE(MAX(unixepoch(timestamp)), 0) FROM activity"); err == nil && latestUnix > 0 {
+		if latestUnix, err := sqliteCount(dbPath, "SELECT COALESCE(MAX(unixepoch(occurred_at)), 0) FROM activity_events"); err == nil && latestUnix > 0 {
 			latest := time.Unix(int64(latestUnix), 0).UTC()
 			runtimeState[prefix+"db_latest_at"] = latest.Format(time.RFC3339)
-			stale := time.Since(latest) > aiContextSyncStaleAfter
+			stale := time.Since(latest) > activityRecordSyncStaleAfter
 			runtimeState[prefix+"stale"] = stale
 			if stale {
-				startAIContextInitialSync(runtimeState)
+				startActivityRecordSync(runtimeState, dataDir)
 			}
 		}
+		return
 	} else if !errors.Is(err, os.ErrNotExist) {
 		runtimeState[prefix+"db_error"] = err.Error()
-	} else {
-		runtimeState[prefix+"db_records"] = 0
-		startAIContextInitialSync(runtimeState)
 	}
+	runtimeState[prefix+"db_records"] = 0
+	startActivityRecordSync(runtimeState, dataDir)
 }
 
-func clearAIContextInitialSyncIfStopped(runtimeState map[string]any) {
-	key := "aicontext.initial_sync"
+func clearActivityRecordSyncIfStopped(runtimeState map[string]any) {
+	key := "activity_record.sync"
 	if pid := daemonPID(runtimeState, key); processRunning(pid) {
 		runtimeState[key+".status"] = "running"
 		return
@@ -137,58 +81,8 @@ func clearAIContextInitialSyncIfStopped(runtimeState map[string]any) {
 	}
 }
 
-func readAIContextConfig(path string) (aiContextConfig, error) {
-	var config aiContextConfig
-	payload, err := os.ReadFile(path)
-	if err != nil {
-		return config, err
-	}
-	if err := json.Unmarshal(payload, &config); err != nil {
-		return config, err
-	}
-	return config, nil
-}
-
-func writeAIContextConfig(path string, config aiContextConfig) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-	payload = append(payload, '\n')
-	return os.WriteFile(path, payload, 0o644)
-}
-
-func discoverAIContextSources(home string) []aiContextSourceConfig {
-	candidates := []aiContextSourceConfig{
-		{Key: "claude_code", Path: filepath.Join(home, ".claude", "projects"), Mode: "dynamic"},
-		{Key: "codex", Path: filepath.Join(home, ".codex", "sessions"), Mode: "dynamic"},
-		{Key: "browser_chrome", Path: filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "History"), Mode: "dynamic"},
-		{Key: "browser_chrome", Path: filepath.Join(home, "Library", "Application Support", "Google", "Chrome Canary", "Default", "History"), Mode: "dynamic"},
-		{Key: "browser_edge", Path: filepath.Join(home, "Library", "Application Support", "Microsoft Edge", "Default", "History"), Mode: "dynamic"},
-		{Key: "browser_dia", Path: filepath.Join(home, "Library", "Application Support", "Dia", "User Data", "Default", "History"), Mode: "dynamic"},
-		{Key: "browser_safari", Path: filepath.Join(home, "Library", "Safari", "History.db"), Mode: "dynamic"},
-	}
-	out := make([]aiContextSourceConfig, 0, len(candidates))
-	seen := map[string]bool{}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate.Path); err != nil {
-			continue
-		}
-		key := candidate.Key + "\x00" + candidate.Path
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, candidate)
-	}
-	return out
-}
-
-func startAIContextInitialSync(runtimeState map[string]any) {
-	key := "aicontext.initial_sync"
+func startActivityRecordSync(runtimeState map[string]any, dataDir string) {
+	key := "activity_record.sync"
 	prefix := key + "."
 	delete(runtimeState, prefix+"error")
 	if pid := daemonPID(runtimeState, key); processRunning(pid) {
@@ -196,15 +90,13 @@ func startAIContextInitialSync(runtimeState map[string]any) {
 		return
 	}
 	removeDaemonPID(runtimeState, key)
-	if recentAIContextSync(runtimeState, key) {
-		runtimeState[prefix+"status"] = "stale"
+	command, err := activityRecordCommand()
+	if err != nil {
+		runtimeState[prefix+"status"] = "error"
+		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	pluginData := stringFromPluginMap(runtimeState, "plugin_data")
-	logPath := filepath.Join(pluginData, "runtime", "logs", "aicontext.initial-sync.log")
-	if pluginData == "" {
-		logPath = filepath.Join(os.TempDir(), "arkloop-aicontext.initial-sync.log")
-	}
+	logPath := filepath.Join(dataDir, "logs", "sync.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		runtimeState[prefix+"status"] = "error"
 		runtimeState[prefix+"error"] = err.Error()
@@ -216,7 +108,7 @@ func startAIContextInitialSync(runtimeState map[string]any) {
 		runtimeState[prefix+"error"] = err.Error()
 		return
 	}
-	cmd := exec.CommandContext(detachedContext(context.Background()), "uv", "tool", "run", "--from", "sophonme-aicontext", "aicontext", "sync")
+	cmd := exec.CommandContext(detachedContext(context.Background()), command, "sync", "--data-dir", dataDir)
 	configureDaemonCommand(cmd)
 	cmd.Env = os.Environ()
 	cmd.Stdout = logFile
@@ -238,16 +130,111 @@ func startAIContextInitialSync(runtimeState map[string]any) {
 	}()
 }
 
-func recentAIContextSync(runtimeState map[string]any, key string) bool {
-	startedAt := stringFromPluginMap(runtimeState, key+".started_at")
-	if startedAt == "" {
-		return false
+func activityRecordCommand() (string, error) {
+	if command := strings.TrimSpace(os.Getenv("ARKLOOP_ACTIVITY_RECORD_BIN")); command != "" {
+		return command, nil
 	}
-	parsed, err := time.Parse(time.RFC3339, startedAt)
+	executable, _ := os.Executable()
+	candidates := []string{}
+	if executable != "" {
+		dir := filepath.Dir(executable)
+		name := "activity-record"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		candidates = append(candidates,
+			filepath.Join(dir, name),
+			filepath.Join(filepath.Dir(filepath.Dir(dir)), "activity-record", "bin", name),
+		)
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		name := "activity-record"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		candidates = append(candidates,
+			filepath.Join(cwd, "src", "services", "activity-record", "bin", name),
+			filepath.Join(cwd, "..", "activity-record", "bin", name),
+		)
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	for _, dir := range candidateDirs(candidates) {
+		if match := firstActivityRecordBinary(dir); match != "" {
+			return match, nil
+		}
+	}
+	return "", fmt.Errorf("activity-record binary not found")
+}
+
+func candidateDirs(paths []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, path := range paths {
+		dir := filepath.Dir(path)
+		if dir == "." || dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		out = append(out, dir)
+	}
+	return out
+}
+
+func firstActivityRecordBinary(dir string) string {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return false
+		return ""
 	}
-	return time.Since(parsed) < aiContextSyncRetryAfter
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if runtime.GOOS == "windows" {
+			if strings.HasPrefix(name, "activity-record-") && strings.HasSuffix(name, ".exe") {
+				return filepath.Join(dir, name)
+			}
+			continue
+		}
+		if strings.HasPrefix(name, "activity-record-") {
+			return filepath.Join(dir, name)
+		}
+	}
+	return ""
+}
+
+func settingBool(settings map[string]any, key string) bool {
+	return settingBoolDefault(settings, key, false)
+}
+
+func settingBoolDefault(settings map[string]any, key string, defaultValue bool) bool {
+	value, ok := settings[key]
+	if !ok {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return typed == "true"
+	default:
+		return fmt.Sprint(typed) == "true"
+	}
+}
+
+func stopLegacyContextInitialSync(runtimeState map[string]any) {
+	key := "aicontext.initial_sync"
+	if pid := daemonPID(runtimeState, key); processRunning(pid) {
+		_ = killDaemonProcess(pid)
+	}
+	removeDaemonPID(runtimeState, key)
+	runtimeState[key+".status"] = "disabled"
+	runtimeState[key+".stopped_at"] = time.Now().UTC().Format(time.RFC3339)
 }
 
 func checkScreenTimeAccess(runtimeState map[string]any) {
