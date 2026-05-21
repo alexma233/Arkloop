@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
+	"time"
 
 	"arkloop/services/activity-record/internal/syncer"
 )
@@ -30,6 +29,8 @@ func run() error {
 	switch command {
 	case "sync":
 		return runSync(args)
+	case "daemon":
+		return runDaemon(args)
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -45,11 +46,28 @@ func runSync(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	return syncer.Sync(ctx, syncer.Options{
+	return syncer.Sync(context.Background(), syncer.Options{
 		DataDir: *dataDir,
 		Sources: splitList(*sourceList),
+	})
+}
+
+func runDaemon(args []string) error {
+	flags := flag.NewFlagSet("daemon", flag.ContinueOnError)
+	dataDir := flags.String("data-dir", defaultDataDir(), "activity-record data directory")
+	syncSources := flags.String("sync-sources", "codex,chrome", "comma-separated sync source list")
+	daemonSources := flags.String("sources", "window,clipboard", "comma-separated daemon source list")
+	syncInterval := flags.Int("sync-interval", 300, "sync interval in seconds")
+	idleThreshold := flags.Int("idle-threshold", 300, "idle detection threshold in seconds")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	return syncer.Daemon(context.Background(), syncer.DaemonOptions{
+		DataDir:       *dataDir,
+		SyncSources:   splitList(*syncSources),
+		DaemonSources: splitList(*daemonSources),
+		SyncInterval:  time.Duration(*syncInterval) * time.Second,
+		IdleThreshold: time.Duration(*idleThreshold) * time.Second,
 	})
 }
 
@@ -78,5 +96,6 @@ func splitList(value string) []string {
 
 func printUsage() {
 	fmt.Fprintln(os.Stdout, `Usage:
-  activity-record sync [--data-dir DIR] [--sources codex,chrome]`)
+  activity-record sync   [--data-dir DIR] [--sources codex,chrome]
+  activity-record daemon [--data-dir DIR] [--sync-sources codex,chrome] [--sources window,clipboard] [--sync-interval 300] [--idle-threshold 300]`)
 }

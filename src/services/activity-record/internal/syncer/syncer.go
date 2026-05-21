@@ -11,6 +11,12 @@ import (
 	"arkloop/services/activity-record/internal/store"
 )
 
+var errDataDirRequired = fmt.Errorf("data dir is required")
+
+func errUnknownSource(name string) error {
+	return fmt.Errorf("unknown source %q", name)
+}
+
 type Options struct {
 	DataDir string
 	Sources []string
@@ -23,7 +29,7 @@ type Source interface {
 
 func Sync(ctx context.Context, opts Options) error {
 	if opts.DataDir == "" {
-		return fmt.Errorf("data dir is required")
+		return errDataDirRequired
 	}
 	db, err := store.Open(filepath.Join(opts.DataDir, "activity.db"))
 	if err != nil {
@@ -52,6 +58,6 @@ func buildSource(name string) (Source, error) {
 	case "chrome":
 		return chrome.NewDefault()
 	default:
-		return nil, fmt.Errorf("unknown source %q", name)
+		return nil, errUnknownSource(name)
 	}
 }
