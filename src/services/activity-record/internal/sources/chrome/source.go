@@ -31,8 +31,9 @@ type cursor struct {
 }
 
 type profileCursor struct {
-	MaxVisitTime    int64 `json:"max_visit_time"`
-	MaxDownloadTime int64 `json:"max_download_time"`
+	MaxVisitTime        int64 `json:"max_visit_time"`
+	MaxDownloadTime     int64 `json:"max_download_time"`
+	MaxSearchTermURLTime int64 `json:"max_search_term_url_time"`
 }
 
 func NewDefault() (*Source, error) {
@@ -262,6 +263,53 @@ SELECT id, start_time, target_path, tab_url, total_bytes, mime_type
 	if err := downloadRows.Close(); err != nil {
 		return cur, nil, err
 	}
+
+	searchRows, err := db.QueryContext(ctx, `
+SELECT kst.url_id, kst.term, kst.normalized_term, u.url, u.title, u.last_visit_time
+  FROM keyword_search_terms kst
+  JOIN urls u ON u.id = kst.url_id
+ WHERE u.last_visit_time > ?
+ ORDER BY u.last_visit_time ASC
+`, cur.MaxSearchTermURLTime)
+	if err != nil {
+		return cur, nil, err
+	}
+	for searchRows.Next() {
+		var urlID int64
+		var term string
+		var normalizedTerm string
+		var url sql.NullString
+		var title sql.NullString
+		var lastVisitTime int64
+		if err := searchRows.Scan(&urlID, &term, &normalizedTerm, &url, &title, &lastVisitTime); err != nil {
+			searchRows.Close()
+			return cur, nil, err
+		}
+		if term == "" {
+			continue
+		}
+		if lastVisitTime > next.MaxSearchTermURLTime {
+			next.MaxSearchTermURLTime = lastVisitTime
+		}
+		events = append(events, store.Event{
+			Source:        "chrome",
+			SourceEventID: fmt.Sprintf("%s:search:%d", profile.Name, urlID),
+			OccurredAt:    chromeTime(lastVisitTime),
+			App:           profile.Name,
+			URL:           url.String,
+			Action:        "searched",
+			Title:         term,
+			Metadata: map[string]any{
+				"profile":         profile.Name,
+				"normalized_term": normalizedTerm,
+			},
+			RefKind: "url",
+			RefKey:  url.String,
+		})
+	}
+	if err := searchRows.Close(); err != nil {
+		return cur, nil, err
+	}
 	return next, events, nil
 }
 
@@ -305,3 +353,4 @@ func nullableInt64(value sql.NullInt64) int64 {
 	}
 	return value.Int64
 }
+

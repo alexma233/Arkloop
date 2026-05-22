@@ -8,6 +8,7 @@ import (
 
 	"arkloop/services/activity-record/internal/sources/chrome"
 	"arkloop/services/activity-record/internal/sources/codex"
+	"arkloop/services/activity-record/internal/sources/shell"
 	"arkloop/services/activity-record/internal/store"
 )
 
@@ -65,6 +66,8 @@ func buildSource(name string) (Source, error) {
 		return codex.NewDefault()
 	case "chrome":
 		return chrome.NewDefault()
+	case "shell":
+		return shell.NewDefault()
 	default:
 		if builder, ok := extraSourceBuilders[name]; ok {
 			return builder()

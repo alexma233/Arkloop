@@ -30,6 +30,12 @@ settings:
   - key: enable_screentime
     type: boolean
     default: true
+  - key: enable_safari
+    type: boolean
+    default: true
+  - key: enable_shell_history
+    type: boolean
+    default: true
   - key: idle_threshold_sec
     type: integer
     default: 300
@@ -126,9 +132,6 @@ skills:
     version: "0.1.0"
   - skill_key: screenpipe-logs
     bundle: skills/screenpipe-logs
-    version: "0.1.0"
-  - skill_key: activity-recorder
-    bundle: skills/activity-recorder
     version: "0.1.0"
 
 context: context.md

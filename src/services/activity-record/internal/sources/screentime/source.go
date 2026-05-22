@@ -47,6 +47,7 @@ var trackedStreams = []string{
 	"/app/mediaUsage",
 	"/media/nowPlaying",
 	"/app/webUsage",
+	"/bluetooth/isConnected",
 }
 
 func (s *Source) Sync(ctx context.Context, db *store.Store) (int, error) {
@@ -86,11 +87,14 @@ SELECT
   COALESCE(sm.Z_DKDIGITALHEALTHMETADATAKEY__WEBDOMAIN, ''),
   COALESCE(sm.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL, ''),
   COALESCE(sm.Z_DKAPPMEDIAUSAGEMETADATAKEY__URL, ''),
-  COALESCE(sm.Z_DKAPPMEDIAUSAGEMETADATAKEY__MEDIAURL, '')
+  COALESCE(sm.Z_DKAPPMEDIAUSAGEMETADATAKEY__MEDIAURL, ''),
+  COALESCE(sm.Z_DKBLUETOOTHMETADATAKEY__NAME, ''),
+  COALESCE(sm.Z_DKBLUETOOTHMETADATAKEY__DEVICETYPE, 0),
+  COALESCE(sm.Z_DKBLUETOOTHMETADATAKEY__ISAPPLEAUDIODEVICE, 0)
 FROM ZOBJECT o
 LEFT JOIN ZSOURCE src ON src.Z_PK = o.ZSOURCE
 LEFT JOIN ZSTRUCTUREDMETADATA sm ON sm.Z_PK = o.ZSTRUCTUREDMETADATA
-WHERE o.ZSTREAMNAME IN ('/app/usage', '/display/isBacklit', '/notification/usage', '/app/mediaUsage', '/media/nowPlaying', '/app/webUsage')
+WHERE o.ZSTREAMNAME IN ('/app/usage', '/display/isBacklit', '/notification/usage', '/app/mediaUsage', '/media/nowPlaying', '/app/webUsage', '/bluetooth/isConnected')
   AND o.ZSTARTDATE > ?
 ORDER BY o.ZSTARTDATE ASC
 `, cur.MaxStartDate)
@@ -121,6 +125,9 @@ ORDER BY o.ZSTARTDATE ASC
 			webURL         string
 			mediaURL       string
 			mediaMediaURL  string
+			btName         string
+			btDeviceType   int64
+			btIsAppleAudio int64
 		)
 		if err := rows.Scan(
 			&pk, &stream, &startDate, &endDate,
@@ -130,6 +137,7 @@ ORDER BY o.ZSTARTDATE ASC
 			&npTitle, &npArtist, &npAlbum, &npGenre, &npDuration, &npPlaying,
 			&webDomain, &webURL,
 			&mediaURL, &mediaMediaURL,
+			&btName, &btDeviceType, &btIsAppleAudio,
 		); err != nil {
 			rows.Close()
 			return 0, err
@@ -141,7 +149,8 @@ ORDER BY o.ZSTARTDATE ASC
 		ev, ok := buildEvent(pk, stream, startDate, endDate, valueString, valueInteger,
 			sourceBundleID, deviceID, notifBundleID,
 			npTitle, npArtist, npAlbum, npGenre, npDuration, npPlaying,
-			webDomain, webURL, mediaURL, mediaMediaURL)
+			webDomain, webURL, mediaURL, mediaMediaURL,
+			btName, btDeviceType, btIsAppleAudio)
 		if !ok {
 			continue
 		}
@@ -171,6 +180,7 @@ func buildEvent(
 	npTitle, npArtist, npAlbum, npGenre string, npDuration float64, npPlaying int64,
 	webDomain, webURL string,
 	mediaURL, mediaMediaURL string,
+	btName string, btDeviceType, btIsAppleAudio int64,
 ) (store.Event, bool) {
 	base := store.Event{
 		Source:     "screentime",
@@ -307,6 +317,25 @@ func buildEvent(
 			base.RefKey = webURL
 		}
 
+	case "/bluetooth/isConnected":
+		base.SourceEventID = fmt.Sprintf("screentime:bt:%d", pk)
+		if valueInteger == 1 {
+			base.Action = "bluetooth_connected"
+			base.Title = btName
+		} else {
+			base.Action = "bluetooth_disconnected"
+			base.Title = btName
+		}
+		if base.Title == "" {
+			base.Title = "bluetooth"
+		}
+		base.Metadata = map[string]any{
+			"device_name":          btName,
+			"device_type":          btDeviceType,
+			"is_apple_audio_device": btIsAppleAudio == 1,
+			"duration_sec":         duration,
+		}
+
 	default:
 		return base, false
 	}
@@ -319,12 +348,47 @@ func cocoaTime(seconds float64) time.Time {
 	return cocoaEpoch.Add(time.Duration(seconds * float64(time.Second))).UTC()
 }
 
+var genericLastParts = map[string]bool{
+	"app":      true,
+	"desktop":  true,
+	"electron": true,
+	"helper":   true,
+	"client":   true,
+	"main":     true,
+	"agent":    true,
+}
+
 func readableAppName(bundleID string) string {
 	parts := strings.Split(bundleID, ".")
-	if len(parts) == 0 {
+	if len(parts) <= 1 {
 		return bundleID
 	}
-	return parts[len(parts)-1]
+	last := parts[len(parts)-1]
+	if isGenericPart(last) && len(parts) >= 2 {
+		return parts[len(parts)-2]
+	}
+	return last
+}
+
+func isGenericPart(s string) bool {
+	if genericLastParts[strings.ToLower(s)] {
+		return true
+	}
+	if len(s) <= 1 {
+		return true
+	}
+	if len(s) >= 8 {
+		digits := 0
+		for _, c := range s {
+			if c >= '0' && c <= '9' {
+				digits++
+			}
+		}
+		if float64(digits)/float64(len(s)) > 0.3 {
+			return true
+		}
+	}
+	return false
 }
 
 func copyDB(path string) (string, error) {
