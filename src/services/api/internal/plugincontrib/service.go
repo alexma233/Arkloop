@@ -232,9 +232,42 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 	txMCP := i.mcpInstallsRepo.WithTx(tx)
 	txSkillPackages := i.skillPackagesRepo.WithTx(tx)
 	txSkills := i.skillInstallsRepo.WithTx(tx)
+	oldPluginSkillKeys, err := txSkillPackages.ListActivePluginSkillKeys(ctx, req.AccountID, manifest.ID)
+	if err != nil {
+		return data.PluginPackage{}, err
+	}
 	for _, skill := range manifest.Skills {
 		if err := i.ensureSkillPackage(ctx, txSkillPackages, req.AccountID, manifest, skill, pluginRoot); err != nil {
 			return data.PluginPackage{}, err
+		}
+	}
+	activeSkillKeys := make([]string, 0, len(manifest.Skills))
+	for _, skill := range manifest.Skills {
+		activeSkillKeys = append(activeSkillKeys, skill.SkillKey)
+	}
+	if _, err := txSkillPackages.DeactivateOrphanedPluginSkills(ctx, req.AccountID, manifest.ID, activeSkillKeys); err != nil {
+		return data.PluginPackage{}, err
+	}
+	newKeySet := make(map[string]bool, len(manifest.Skills))
+	for _, skill := range manifest.Skills {
+		newKeySet[skill.SkillKey] = true
+	}
+	txWorkspaceSkills := i.workspaceSkillRepo.WithTx(tx)
+	for _, oldKey := range oldPluginSkillKeys {
+		if !newKeySet[oldKey] {
+			if err := txWorkspaceSkills.DeleteBySkillKey(ctx, req.AccountID, oldKey); err != nil {
+				return data.PluginPackage{}, err
+			}
+		}
+	}
+	for _, enablement := range priorEnablements {
+		if !enablement.Enabled {
+			continue
+		}
+		for _, skill := range manifest.Skills {
+			if err := txWorkspaceSkills.Set(ctx, req.AccountID, enablement.WorkspaceRef, enablement.EnabledByUserID, skill.SkillKey, skill.Version, true); err != nil {
+				return data.PluginPackage{}, err
+			}
 		}
 	}
 	_, defaultSettings, err := normalizeSettings(nil, manifest)
@@ -246,6 +279,9 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 		return data.PluginPackage{}, err
 	}
 	if _, err := syncProfileMCPInstalls(ctx, txMCP, req.AccountID, profileRef, manifest, defaultSettings, runtimeState, false); err != nil {
+		return data.PluginPackage{}, err
+	}
+	if err := txSkills.DeleteByOwnerPlugin(ctx, req.AccountID, manifest.ID); err != nil {
 		return data.PluginPackage{}, err
 	}
 	if err := installProfileSkills(ctx, txSkills, req.AccountID, req.UserID, profileRef, manifest); err != nil {
