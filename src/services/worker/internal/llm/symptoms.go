@@ -236,6 +236,23 @@ var anthropicSymptoms = []Symptom{
 		},
 	},
 	{
+		ID: SymptomReasoningContentPassback,
+		Match: func(c SymptomMatchContext) bool {
+			if c.Status != 400 {
+				return false
+			}
+			lower := strings.ToLower(c.RawBody)
+			if !strings.Contains(lower, "reasoning_content") {
+				return false
+			}
+			if strings.Contains(lower, "passed back") {
+				return true
+			}
+			return strings.Contains(lower, "reasoning_content is missing") &&
+				strings.Contains(lower, "thinking is enabled")
+		},
+	},
+	{
 		ID: SymptomUnsignedThinking,
 		Match: func(c SymptomMatchContext) bool {
 			if c.Status != 400 {
