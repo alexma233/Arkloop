@@ -232,33 +232,9 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 	txMCP := i.mcpInstallsRepo.WithTx(tx)
 	txSkillPackages := i.skillPackagesRepo.WithTx(tx)
 	txSkills := i.skillInstallsRepo.WithTx(tx)
-	oldPluginSkillKeys, err := txSkillPackages.ListActivePluginSkillKeys(ctx, req.AccountID, manifest.ID)
-	if err != nil {
-		return data.PluginPackage{}, err
-	}
-	for _, skill := range manifest.Skills {
-		if err := i.ensureSkillPackage(ctx, txSkillPackages, req.AccountID, manifest, skill, pluginRoot); err != nil {
-			return data.PluginPackage{}, err
-		}
-	}
-	activeSkillKeys := make([]string, 0, len(manifest.Skills))
-	for _, skill := range manifest.Skills {
-		activeSkillKeys = append(activeSkillKeys, skill.SkillKey)
-	}
-	if _, err := txSkillPackages.DeactivateOrphanedPluginSkills(ctx, req.AccountID, manifest.ID, activeSkillKeys); err != nil {
-		return data.PluginPackage{}, err
-	}
-	newKeySet := make(map[string]bool, len(manifest.Skills))
-	for _, skill := range manifest.Skills {
-		newKeySet[skill.SkillKey] = true
-	}
 	txWorkspaceSkills := i.workspaceSkillRepo.WithTx(tx)
-	for _, oldKey := range oldPluginSkillKeys {
-		if !newKeySet[oldKey] {
-			if err := txWorkspaceSkills.DeleteBySkillKey(ctx, req.AccountID, oldKey); err != nil {
-				return data.PluginPackage{}, err
-			}
-		}
+	if _, _, err := i.reconcilePluginSkills(ctx, txSkillPackages, txWorkspaceSkills, req.AccountID, manifest, pluginRoot); err != nil {
+		return data.PluginPackage{}, err
 	}
 	for _, enablement := range priorEnablements {
 		if !enablement.Enabled {
@@ -291,6 +267,40 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (data.Plugi
 		return data.PluginPackage{}, err
 	}
 	return pkg, nil
+}
+
+func (i *Installer) reconcilePluginSkills(
+	ctx context.Context,
+	skillPkgRepo *data.SkillPackagesRepository,
+	wsSkillRepo *data.WorkspaceSkillEnablementsRepository,
+	accountID uuid.UUID,
+	manifest Manifest,
+	pluginRoot string,
+) (oldKeys []string, activeKeys []string, err error) {
+	oldKeys, err = skillPkgRepo.ListActivePluginSkillKeys(ctx, accountID, manifest.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	activeKeys = make([]string, 0, len(manifest.Skills))
+	newKeySet := make(map[string]bool, len(manifest.Skills))
+	for _, skill := range manifest.Skills {
+		if err := i.ensureSkillPackage(ctx, skillPkgRepo, accountID, manifest, skill, pluginRoot); err != nil {
+			return nil, nil, err
+		}
+		activeKeys = append(activeKeys, skill.SkillKey)
+		newKeySet[skill.SkillKey] = true
+	}
+	if _, err := skillPkgRepo.DeactivateOrphanedPluginSkills(ctx, accountID, manifest.ID, activeKeys); err != nil {
+		return nil, nil, err
+	}
+	for _, key := range oldKeys {
+		if !newKeySet[key] {
+			if err := wsSkillRepo.DeleteBySkillKey(ctx, accountID, key); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	return oldKeys, activeKeys, nil
 }
 
 func (i *Installer) Uninstall(ctx context.Context, accountID uuid.UUID, pluginID string) error {

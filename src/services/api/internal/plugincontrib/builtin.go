@@ -144,30 +144,8 @@ func (i *Installer) SeedBuiltin(ctx context.Context, accountID, userID uuid.UUID
 		if err := persistPluginAssets(ctx, i.pluginStore, manifest, pluginRoot); err != nil {
 			return err
 		}
-		oldPluginSkillKeys, err := i.skillPackagesRepo.ListActivePluginSkillKeys(ctx, accountID, manifest.ID)
-		if err != nil {
+		if _, _, err := i.reconcilePluginSkills(ctx, i.skillPackagesRepo, i.workspaceSkillRepo, accountID, manifest, pluginRoot); err != nil {
 			return err
-		}
-		for _, skill := range manifest.Skills {
-			if err := i.ensureSkillPackage(ctx, i.skillPackagesRepo, accountID, manifest, skill, pluginRoot); err != nil {
-				return err
-			}
-		}
-		activeSkillKeys := make([]string, 0, len(manifest.Skills))
-		for _, skill := range manifest.Skills {
-			activeSkillKeys = append(activeSkillKeys, skill.SkillKey)
-		}
-		if _, err := i.skillPackagesRepo.DeactivateOrphanedPluginSkills(ctx, accountID, manifest.ID, activeSkillKeys); err != nil {
-			return err
-		}
-		newKeySet := make(map[string]bool, len(manifest.Skills))
-		for _, skill := range manifest.Skills {
-			newKeySet[skill.SkillKey] = true
-		}
-		for _, key := range oldPluginSkillKeys {
-			if !newKeySet[key] {
-				_ = i.workspaceSkillRepo.DeleteBySkillKey(ctx, accountID, key)
-			}
 		}
 		if err := i.skillInstallsRepo.DeleteByOwnerPlugin(ctx, accountID, manifest.ID); err != nil {
 			return err

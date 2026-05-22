@@ -19,7 +19,7 @@ type Source struct {
 }
 
 type cursor struct {
-	SeenHashes map[string]bool `json:"seen_hashes"`
+	Files map[string]int64 `json:"files"`
 }
 
 func NewDefault() (*Source, error) {
@@ -52,20 +52,25 @@ func (s *Source) Sync(ctx context.Context, db *store.Store) (int, error) {
 	if err := db.Cursor(ctx, s.Name(), &cur); err != nil {
 		return 0, err
 	}
-	if cur.SeenHashes == nil {
-		cur.SeenHashes = map[string]bool{}
+	if cur.Files == nil {
+		cur.Files = map[string]int64{}
+	}
+
+	next := cursor{Files: make(map[string]int64, len(cur.Files))}
+	for k, v := range cur.Files {
+		next.Files[k] = v
 	}
 
 	var events []store.Event
-	next := cursor{SeenHashes: cur.SeenHashes}
-
 	for _, histFile := range s.historyFiles {
 		shell := shellName(histFile)
-		fileEvents, err := parseHistoryFile(histFile, shell, next.SeenHashes)
+		savedSize := cur.Files[histFile]
+		fileEvents, newSize, err := parseHistoryFile(histFile, shell, savedSize)
 		if err != nil {
 			continue
 		}
 		events = append(events, fileEvents...)
+		next.Files[histFile] = newSize
 	}
 
 	inserted, err := db.UpsertEvents(ctx, events)
@@ -79,38 +84,56 @@ func (s *Source) Sync(ctx context.Context, db *store.Store) (int, error) {
 	return inserted, nil
 }
 
-func parseHistoryFile(path, shell string, seen map[string]bool) ([]store.Event, error) {
+func parseHistoryFile(path, shell string, savedSize int64) ([]store.Event, int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, savedSize, err
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, savedSize, err
 	}
-	fileMtime := info.ModTime()
+	currentSize := info.Size()
+
+	if currentSize == savedSize {
+		return nil, savedSize, nil
+	}
+	startAfter := savedSize
+	if currentSize < savedSize {
+		startAfter = 0
+	}
 
 	var events []store.Event
+	seen := map[string]bool{}
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var pendingTimestamp int64
-	lineNum := 0
+	bytesRead := int64(0)
 
 	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
+		raw := scanner.Bytes()
+		bytesRead += int64(len(raw)) + 1
 
-		if ts, cmd, ok := parseZshExtended(line); ok {
-			pendingTimestamp = ts
-			line = cmd
-		} else if strings.HasPrefix(line, ": ") && pendingTimestamp == 0 {
+		if bytesRead <= startAfter {
 			continue
 		}
 
-		cmd := strings.TrimSpace(line)
+		line := string(raw)
+
+		var cmd string
+		var occurredAt time.Time
+
+		if ts, parsed, ok := parseZshExtended(line); ok {
+			cmd = strings.TrimSpace(parsed)
+			occurredAt = time.Unix(ts, 0).UTC()
+		} else if strings.HasPrefix(line, ": ") {
+			continue
+		} else {
+			cmd = strings.TrimSpace(line)
+			occurredAt = info.ModTime()
+		}
+
 		if cmd == "" {
 			continue
 		}
@@ -121,14 +144,6 @@ func parseHistoryFile(path, shell string, seen map[string]bool) ([]store.Event, 
 		}
 		seen[h] = true
 
-		var occurredAt time.Time
-		if pendingTimestamp > 0 {
-			occurredAt = time.Unix(pendingTimestamp, 0).UTC()
-			pendingTimestamp = 0
-		} else {
-			occurredAt = fileMtime
-		}
-
 		events = append(events, store.Event{
 			Source:        "shell",
 			SourceEventID: fmt.Sprintf("shell:%s:%s", shell, h[:16]),
@@ -138,12 +153,12 @@ func parseHistoryFile(path, shell string, seen map[string]bool) ([]store.Event, 
 			Title:         truncate(cmd, 200),
 			Text:          cmd,
 			Metadata: map[string]any{
-				"shell":    shell,
-				"line_num": lineNum,
+				"shell": shell,
 			},
 		})
 	}
-	return events, scanner.Err()
+
+	return events, currentSize, scanner.Err()
 }
 
 // : 1234567890:0;command
