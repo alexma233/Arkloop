@@ -1314,6 +1314,9 @@ export interface LocaleStrings {
     xSearchProviderXaiOAuth: string;
     xSearchProviderXaiApiKey: string;
     oauthConnect: string;
+    oauthReconnect: string;
+    oauthCodePlaceholder: string;
+    oauthCodeSubmit: string;
     searchProviderBasicDesc: string;
     searchProviderTavilyDesc: string;
     searchProviderExaDesc: string;
