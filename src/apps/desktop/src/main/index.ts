@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, nativeImage, powerSaveBlocker, session, shell
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { loadConfig, normalizeConfig, saveConfig } from './config'
+import { loadConfig, normalizeConfig, resourcePath, saveConfig } from './config'
 import {
   startSidecar,
   stopSidecar,
@@ -69,19 +69,19 @@ function getAppIconPath(): string {
     ? (
       process.platform === 'darwin'
         ? [
-            path.join(process.resourcesPath, 'icon.icns'),
-            path.join(process.resourcesPath, 'app.asar', 'resources', 'icon.png'),
+            resourcePath('icon.icns'),
+            resourcePath('app.asar', 'resources', 'icon.png'),
             path.join(app.getAppPath(), 'resources', 'icon.icns'),
           ]
         : process.platform === 'win32'
           ? [
-              path.join(process.resourcesPath, 'icon.ico'),
-              path.join(process.resourcesPath, 'app.asar', 'resources', 'icon.ico'),
+              resourcePath('icon.ico'),
+              resourcePath('app.asar', 'resources', 'icon.ico'),
               path.join(app.getAppPath(), 'resources', 'icon.ico'),
             ]
           : [
-              path.join(process.resourcesPath, 'icon.png'),
-              path.join(process.resourcesPath, 'app.asar', 'resources', 'icon.png'),
+              resourcePath('icon.png'),
+              resourcePath('app.asar', 'resources', 'icon.png'),
               path.join(app.getAppPath(), 'resources', 'icon.png'),
             ]
     )
@@ -457,7 +457,7 @@ function loadContent(win: BrowserWindow): void {
     win.webContents.openDevTools({ mode: 'detach' })
   } else if (app.isPackaged) {
     // 生产打包模式
-    const rendererPath = path.join(process.resourcesPath, 'renderer', 'index.html')
+    const rendererPath = resourcePath('renderer', 'index.html')
     win.loadFile(rendererPath)
   } else {
     // 开发模式但非 ELECTRON_DEV（直接 build 后测试）

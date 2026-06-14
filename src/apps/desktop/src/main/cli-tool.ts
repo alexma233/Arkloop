@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { execFileSync } from 'child_process'
-import { loadConfig, saveConfig } from './config'
+import { loadConfig, resourcePath, saveConfig } from './config'
 
 export type CommandLineToolStatus = {
   available: boolean
@@ -36,7 +36,7 @@ function fileExists(pathname: string): boolean {
 }
 
 function bundledCliPath(): string {
-  return path.join(process.resourcesPath, 'cli', cliBinaryName())
+  return resourcePath('cli', cliBinaryName())
 }
 
 function bundledWebRoot(sourcePath: string): string {

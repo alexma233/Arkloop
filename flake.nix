@@ -220,35 +220,36 @@
               exit 1
             fi
 
-            mkdir -p "$out/opt/arkloop" "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/512x512/apps"
-            cp -R "$release_dir/." "$out/opt/arkloop/"
-
-            mkdir -p "$out/opt/arkloop/resources/activity-record/bin"
-            cp ${goBin}/bin/activity-record "$out/opt/arkloop/resources/activity-record/bin/activity-record"
-
-            app_bin=""
-            for candidate in arkloop Arkloop @arkloopdesktop; do
-              if [ -x "$out/opt/arkloop/$candidate" ]; then
-                app_bin="$candidate"
-                break
-              fi
-            done
-            if [ -z "$app_bin" ]; then
-              echo "missing Arkloop executable in $release_dir" >&2
+            if [ ! -d "$release_dir/resources" ]; then
+              echo "missing electron-builder resources: $release_dir/resources" >&2
+              exit 1
+            fi
+            if [ ! -f "$release_dir/resources/app.asar" ]; then
+              echo "missing electron app archive: $release_dir/resources/app.asar" >&2
               exit 1
             fi
 
+            resources_dir="$out/share/arkloop/resources"
+            mkdir -p "$resources_dir" "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/512x512/apps"
+            cp -R "$release_dir/resources/." "$resources_dir/"
+
+            mkdir -p "$resources_dir/activity-record/bin"
+            cp ${goBin}/bin/activity-record "$resources_dir/activity-record/bin/activity-record"
+
             gappsWrapperArgsHook
-            makeWrapper "$out/opt/arkloop/$app_bin" "$out/bin/arkloop" \
+            makeWrapper "${pkgs.electron_41}/bin/electron" "$out/bin/arkloop" \
               "''${gappsWrapperArgs[@]}" \
+              --set ELECTRON_FORCE_IS_PACKAGED 1 \
+              --set ARKLOOP_RESOURCES_PATH "$resources_dir" \
               --set ARKLOOP_DISABLE_APP_UPDATER 1 \
-              --set ARKLOOP_ACTIVITY_RECORD_BIN "$out/opt/arkloop/resources/activity-record/bin/activity-record" \
+              --set ARKLOOP_ACTIVITY_RECORD_BIN "$resources_dir/activity-record/bin/activity-record" \
               --set CHROME_DEVEL_SANDBOX ${pkgs.electron_41}/libexec/electron/chrome-sandbox \
               --add-flags "--disable-gpu" \
               --add-flags "--disable-gpu-compositing" \
+              --add-flags "$resources_dir/app.asar" \
               --prefix PATH : ${lib.escapeShellArg runtimePath}
 
-            makeWrapper "$out/opt/arkloop/resources/cli/ark" "$out/bin/ark" \
+            makeWrapper "$resources_dir/cli/ark" "$out/bin/ark" \
               --prefix PATH : ${lib.escapeShellArg runtimePath}
 
             install -Dm644 src/apps/desktop/resources/icon.png "$out/share/icons/hicolor/512x512/apps/arkloop.png"
