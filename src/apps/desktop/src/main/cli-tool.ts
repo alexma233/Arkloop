@@ -161,6 +161,7 @@ export async function installCommandLineTool(): Promise<CommandLineToolStatus> {
 
 function shouldPromptForCommandLineTool(): boolean {
   if (!app.isPackaged) return false
+  if (process.env.ARKLOOP_NIX_PACKAGE === '1') return false
   const config = loadConfig()
   if (config.desktop.commandLineToolPromptDisabled) return false
   const status = getCommandLineToolStatus()

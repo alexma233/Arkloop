@@ -257,6 +257,7 @@
             makeWrapper "$out/libexec/arkloop/arkloop" "$out/bin/arkloop" \
               "''${gappsWrapperArgs[@]}" \
               --set ELECTRON_FORCE_IS_PACKAGED 1 \
+              --set ARKLOOP_NIX_PACKAGE 1 \
               --set ARKLOOP_RESOURCES_PATH "$resources_dir" \
               --set ARKLOOP_DISABLE_APP_UPDATER 1 \
               --set ARKLOOP_ACTIVITY_RECORD_BIN "$resources_dir/activity-record/bin/activity-record" \
