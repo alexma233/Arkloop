@@ -124,6 +124,12 @@
           pnpm = pkgs.pnpm_10_29_2;
           electronArch = electronArchFor pkgs;
           goBin = goBinaries pkgs;
+          gpuLibraryPath = lib.makeLibraryPath [
+            pkgs.libglvnd
+            pkgs.libva
+            pkgs.mesa
+            pkgs.vulkan-loader
+          ];
           runtimePath = lib.makeBinPath [
             pkgs.bash
             pkgs.coreutils
@@ -236,17 +242,27 @@
             mkdir -p "$resources_dir/activity-record/bin"
             cp ${goBin}/bin/activity-record "$resources_dir/activity-record/bin/activity-record"
 
+            mkdir -p "$out/libexec/arkloop"
+            cat > "$out/libexec/arkloop/arkloop" <<EOF
+            #!${pkgs.runtimeShell}
+            gpu_flags=(--ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --disable-gpu-sandbox --ozone-platform=x11)
+            if [ "\''${ARKLOOP_DISABLE_GPU:-}" = "1" ]; then
+              gpu_flags=(--disable-gpu --disable-gpu-compositing)
+            fi
+            exec ${pkgs.electron_41}/bin/electron "\''${gpu_flags[@]}" "$resources_dir/app.asar" "\''${@}"
+            EOF
+            chmod +x "$out/libexec/arkloop/arkloop"
+
             gappsWrapperArgsHook
-            makeWrapper "${pkgs.electron_41}/bin/electron" "$out/bin/arkloop" \
+            makeWrapper "$out/libexec/arkloop/arkloop" "$out/bin/arkloop" \
               "''${gappsWrapperArgs[@]}" \
               --set ELECTRON_FORCE_IS_PACKAGED 1 \
               --set ARKLOOP_RESOURCES_PATH "$resources_dir" \
               --set ARKLOOP_DISABLE_APP_UPDATER 1 \
               --set ARKLOOP_ACTIVITY_RECORD_BIN "$resources_dir/activity-record/bin/activity-record" \
               --set CHROME_DEVEL_SANDBOX ${pkgs.electron_41}/libexec/electron/chrome-sandbox \
-              --add-flags "--disable-gpu" \
-              --add-flags "--disable-gpu-compositing" \
-              --add-flags "$resources_dir/app.asar" \
+              --set LIBVA_DRIVERS_PATH /run/opengl-driver/lib/dri \
+              --prefix LD_LIBRARY_PATH : ${lib.escapeShellArg "${gpuLibraryPath}:/run/opengl-driver/lib"} \
               --prefix PATH : ${lib.escapeShellArg runtimePath}
 
             makeWrapper "$resources_dir/cli/ark" "$out/bin/ark" \

@@ -466,6 +466,25 @@ function loadContent(win: BrowserWindow): void {
   }
 }
 
+async function logGpuInfoIfRequested(): Promise<void> {
+  if (process.env.ARKLOOP_LOG_GPU !== '1') return
+  try {
+    console.info('[desktop] gpu command line', {
+      disableGpu: app.commandLine.hasSwitch('disable-gpu'),
+      disableGpuSandbox: app.commandLine.hasSwitch('disable-gpu-sandbox'),
+      ignoreBlocklist: app.commandLine.hasSwitch('ignore-gpu-blocklist'),
+      ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+      useGl: app.commandLine.getSwitchValue('use-gl'),
+      useAngle: app.commandLine.getSwitchValue('use-angle'),
+      disableFeatures: app.commandLine.getSwitchValue('disable-features'),
+    })
+    console.info('[desktop] gpu feature status', app.getGPUFeatureStatus())
+    console.info('[desktop] gpu info', await app.getGPUInfo('complete'))
+  } catch (error) {
+    console.warn('[desktop] gpu info unavailable', { error })
+  }
+}
+
 let isQuitting = false
 let shutdownInProgress = false
 let powerSaveBlockerId: number | null = null
@@ -545,6 +564,9 @@ if (!hasSingleInstanceLock) {
 
     // 先创建窗口，让用户立即看到 LoadingPage
     mainWindow = createWindow()
+    setTimeout(() => {
+      void logGpuInfoIfRequested()
+    }, 1000)
 
     const pushEmbeddedStateToRendererOnce = (() => {
       let sent = false
