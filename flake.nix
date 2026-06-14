@@ -152,8 +152,18 @@
             pkgs.makeWrapper
             pkgs.nodejs_24
             pkgs.pnpmConfigHook
+            pkgs.wrapGAppsHook3
             pnpm
           ];
+
+          buildInputs = [
+            pkgs.glib
+            pkgs.gsettings-desktop-schemas
+            pkgs.gtk3
+            pkgs.gtk4
+          ];
+
+          dontWrapGApps = true;
 
           env = {
             ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
@@ -228,9 +238,14 @@
               exit 1
             fi
 
+            gappsWrapperArgsHook
             makeWrapper "$out/opt/arkloop/$app_bin" "$out/bin/arkloop" \
+              "''${gappsWrapperArgs[@]}" \
               --set ARKLOOP_DISABLE_APP_UPDATER 1 \
               --set ARKLOOP_ACTIVITY_RECORD_BIN "$out/opt/arkloop/resources/activity-record/bin/activity-record" \
+              --set CHROME_DEVEL_SANDBOX ${pkgs.electron_41}/libexec/electron/chrome-sandbox \
+              --add-flags "--disable-gpu" \
+              --add-flags "--disable-gpu-compositing" \
               --prefix PATH : ${lib.escapeShellArg runtimePath}
 
             makeWrapper "$out/opt/arkloop/resources/cli/ark" "$out/bin/ark" \
